@@ -16,8 +16,13 @@ add_library(simcad_occt SHARED simcad_occt.cpp simcad_occt.h)
 target_include_directories(simcad_occt PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(simcad_occt PRIVATE
   TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlgo TKPrim
-  TKBO TKBool TKFillet TKOffset TKShHealing TKMesh
-  TKXSBase TKSTEP TKSTEPBase TKSTEPAttr TKSTEP209)
+  TKBO TKBool TKFillet TKOffset TKShHealing TKMesh TKXSBase)
+# OpenCASCADE 7.8 juntó los módulos STEP en TKDESTEP; las versiones anteriores los tienen separados.
+if(TARGET TKDESTEP)
+  target_link_libraries(simcad_occt PRIVATE TKDESTEP)
+else()
+  target_link_libraries(simcad_occt PRIVATE TKSTEP TKSTEPBase TKSTEPAttr TKSTEP209)
+endif()
 
 install(TARGETS simcad_occt RUNTIME DESTINATION . LIBRARY DESTINATION .)
 
