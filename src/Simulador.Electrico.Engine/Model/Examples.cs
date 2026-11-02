@@ -12,15 +12,17 @@ public static class Examples
         ("Telerruptor y minutero de escalera", ImpulseAndStairTimer),
     ];
 
-    /// <summary>Potencia común: red, guardamotor, contactor y motor. Devuelve los elementos para cablear el mando.</summary>
-    private static (PlacedElement red, PlacedElement q1, PlacedElement fuse) PowerHead(SchematicBuilder b, int fuseX)
+    /// <summary>Potencia común. Devuelve también el borne XN del que sale el neutro del mando.</summary>
+    private static (PlacedElement xn, PlacedElement q1, PlacedElement fuse) PowerHead(SchematicBuilder b, int fuseX)
     {
         var red = b.Add("red_3f", "XS1", 0, 0);
+        var xn = b.Add("borne", "XN", fuseX - 2, 3);
+        b.Wire(red, "N", xn, "1");
         var q1 = b.Add("guardamotor", "Q1", 0, 5, ("Ir", 8.5));
         b.Wire(red, "L1", q1, "1").Wire(red, "L2", q1, "3").Wire(red, "L3", q1, "5");
         var f3 = b.Add("fusible", "F3", fuseX, 5, ("In", 2), ("tipo", 0));
         b.Wire(red, "L1", f3, "1"); // el mando se toma de L1 antes del guardamotor, para poder señalizar su disparo
-        return (red, q1, f3);
+        return (xn, q1, f3);
     }
 
     private static PlacedElement Aux(SchematicBuilder b, string type, string tag, int x, int y, string terminals)
@@ -35,7 +37,7 @@ public static class Examples
         var b = new SchematicBuilder("Arranque directo con autorretención",
             "Pulsa S2 (marcha) y el contactor KM1 se queda enclavado por su contacto 13-14. S1 para y S0 es la seta de emergencia. " +
             "Sube la carga del motor por encima del 120 % y el guardamotor Q1 disparará al cabo de un rato.");
-        var (red, q1, f3) = PowerHead(b, 16);
+        var (xn, q1, f3) = PowerHead(b, 16);
         var km = b.Add("contactos_principales", "KM1", 0, 12, ("In", 9));
         var m = b.Add("motor_3f", "M1", 0, 20);
         b.Wire(q1, "2", km, "1").Wire(q1, "4", km, "3").Wire(q1, "6", km, "5");
@@ -51,7 +53,7 @@ public static class Examples
         var qnc = Aux(b, "contacto_nc", "Q1", 26, 20, "21-22");
         b.Chain(f3, s0, s1, s2, coil);
         b.Wire(s1, "2", ka, "1").Wire(ka, "2", coil, "A1");
-        b.Wire(coil, "A1", h1, "1").Wire(h1, "2", coil, "A2").Wire(coil, "A2", red, "N");
+        b.Wire(coil, "A1", h1, "1").Wire(h1, "2", coil, "A2").Wire(coil, "A2", xn, "1");
         // H2 (rojo): avisa de que el guardamotor está abierto o disparado.
         b.Wire(f3, "2", qnc, "1").Wire(qnc, "2", h2, "1").Wire(h2, "2", coil, "A2");
         return b.Schematic;
@@ -62,7 +64,7 @@ public static class Examples
         var b = new SchematicBuilder("Inversión de giro con enclavamiento",
             "S2 gira a derechas (KM1) y S3 a izquierdas (KM2), que cruza L1 y L3. Cada contactor bloquea al otro con su contacto NC 21-22. " +
             "Para cambiar de sentido hay que parar antes con S1.");
-        var (red, q1, f3) = PowerHead(b, 22);
+        var (xn, q1, f3) = PowerHead(b, 22);
         var km1 = b.Add("contactos_principales", "KM1", 0, 12);
         var km2 = b.Add("contactos_principales", "KM2", 8, 12);
         var f2 = b.Add("rele_termico", "F2", 0, 19, ("Ir", 8.5));
@@ -89,7 +91,7 @@ public static class Examples
         b.Wire(s1, "2", s3, "1");
         b.Chain(s3, k1i, c2);
         b.Wire(s3, "1", k2h, "1").Wire(k2h, "2", k1i, "1");
-        b.Wire(c1, "A2", c2, "A2").Wire(c1, "A2", red, "N");
+        b.Wire(c1, "A2", c2, "A2").Wire(c1, "A2", xn, "1");
         return b.Schematic;
     }
 
@@ -98,7 +100,7 @@ public static class Examples
         var b = new SchematicBuilder("Arranque estrella-triángulo",
             "S2 conecta KM1 (línea) y KM2 (estrella). Pasados los segundos de KT1, sale KM2 y entra KM3 (triángulo). " +
             "Fíjate en la corriente de arranque: es un tercio de la de un arranque directo.");
-        var (red, q1, f3) = PowerHead(b, 26);
+        var (xn, q1, f3) = PowerHead(b, 26);
         q1.Params["Ir"] = 16;
         var km1 = b.Add("contactos_principales", "KM1", 0, 12, ("In", 18));
         var f2 = b.Add("rele_termico", "F2", 0, 19, ("Ir", 15));
@@ -134,7 +136,7 @@ public static class Examples
         b.Chain(ktNc, k3i, c2);
         b.Wire(c1, "A1", ktNa, "1");
         b.Chain(ktNa, k2i, c3);
-        b.Wire(c1, "A2", kt, "A2").Wire(c1, "A2", c2, "A2").Wire(c1, "A2", c3, "A2").Wire(c1, "A2", red, "N");
+        b.Wire(c1, "A2", kt, "A2").Wire(c1, "A2", c2, "A2").Wire(c1, "A2", c3, "A2").Wire(c1, "A2", xn, "1");
         return b.Schematic;
     }
 
@@ -148,13 +150,17 @@ public static class Examples
         var q2 = b.Add("diferencial_2p", "Q2", 0, 10, ("Idn", 30));
         b.Wire(src, "L", q1, "1").Wire(src, "N", q1, "3");
         b.Wire(q1, "2", q2, "1").Wire(q1, "4", q2, "3");
-        var s1 = b.Add("conmutador", "S1", 8, 18);
-        var s2 = b.Add("cruzamiento", "S2", 14, 12);
-        var s3 = b.Add("conmutador", "S3", 20, 18);
-        var e1 = b.Add("lampara", "E1", 28, 14);
+        // Conmutadores y cruzamiento en horizontal: los dos hilos de puente (viajeros) van en paralelo.
+        var s1 = b.Add("conmutador", "S1", 12, 20);
+        s1.Rotation = 1; // C a la izquierda, 1 y 2 a la derecha
+        var s2 = b.Add("cruzamiento", "S2", 20, 20);
+        s2.Rotation = 1;
+        var s3 = b.Add("conmutador", "S3", 24, 22);
+        s3.Rotation = 3; // 1 y 2 a la izquierda, C a la derecha
+        var e1 = b.Add("lampara", "E1", 32, 22);
         b.Wire(q2, "2", s1, "C");
-        b.Wire(s1, "1", s2, "1").Wire(s1, "2", s2, "2");
-        b.Wire(s2, "3", s3, "1").Wire(s2, "4", s3, "2");
+        b.Wire(s1, "1", s2, "3").Wire(s1, "2", s2, "4");
+        b.Wire(s2, "1", s3, "2").Wire(s2, "2", s3, "1");
         b.Wire(s3, "C", e1, "1").Wire(e1, "2", q2, "4");
         return b.Schematic;
     }

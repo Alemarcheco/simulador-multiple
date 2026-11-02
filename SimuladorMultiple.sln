@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulador.Electrico.Engine"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulador.Electrico.Tests", "tests\Simulador.Electrico.Tests\Simulador.Electrico.Tests.csproj", "{4B9422A5-B946-44D9-9C5D-83D370FBE329}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulador.Electrico", "src\Simulador.Electrico\Simulador.Electrico.csproj", "{8444FB3A-C594-44CD-AF98-4B195955D471}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -58,6 +60,10 @@ Global
 		{4B9422A5-B946-44D9-9C5D-83D370FBE329}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4B9422A5-B946-44D9-9C5D-83D370FBE329}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4B9422A5-B946-44D9-9C5D-83D370FBE329}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8444FB3A-C594-44CD-AF98-4B195955D471}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8444FB3A-C594-44CD-AF98-4B195955D471}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8444FB3A-C594-44CD-AF98-4B195955D471}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8444FB3A-C594-44CD-AF98-4B195955D471}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{E94275A9-7C9C-4034-8940-09C677163850} = {7E1BE741-BF48-4ACB-BFDA-111E0283AA78}
@@ -67,5 +73,6 @@ Global
 		{6F13D4F6-C40B-4BC2-A0DD-4180BD1C46C8} = {41DD0724-5436-4F9B-9B7D-9A03806E6EB2}
 		{0A0FE87C-E4A1-4104-9BCA-7531D84F8363} = {7E1BE741-BF48-4ACB-BFDA-111E0283AA78}
 		{4B9422A5-B946-44D9-9C5D-83D370FBE329} = {41DD0724-5436-4F9B-9B7D-9A03806E6EB2}
+		{8444FB3A-C594-44CD-AF98-4B195955D471} = {7E1BE741-BF48-4ACB-BFDA-111E0283AA78}
 	EndGlobalSection
 EndGlobal
