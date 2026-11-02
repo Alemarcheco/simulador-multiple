@@ -51,15 +51,38 @@ public sealed class DocumentEvaluator
 
     public DocumentEvaluator(IGeometryKernel kernel) { _kernel = kernel; }
 
+    public IGeometryKernel Kernel => _kernel;
+
+    /// <summary>Construye el sólido de la pieza (sin teselar), p. ej. para exportar a STEP.</summary>
+    public ISolid? BuildSolid(Part part, List<string>? errors = null) => Build(part, errors ?? new List<string>());
+
     public PartResult Evaluate(Part part)
     {
         var errors = new List<string>();
+        var current = Build(part, errors);
+        Mesh? mesh = null;
+        if (current is not null)
+        {
+            try { mesh = _kernel.ToMesh(current); }
+            catch (Exception ex) { errors.Add($"Teselado: {ex.Message}"); }
+        }
+        return new PartResult(part, mesh, errors);
+    }
+
+    private ISolid? Build(Part part, List<string> errors)
+    {
         ISolid? current = null;
         foreach (var f in part.Features)
         {
             if (!f.Enabled) continue;
             try
             {
+                if (f is ModifierFeature mod)
+                {
+                    if (current is null) throw new InvalidOperationException("no hay nada antes que modificar");
+                    current = mod.Apply(_kernel, current);
+                    continue;
+                }
                 var s = f.Build(_kernel);
                 current = (current, f.Mode) switch
                 {
@@ -76,13 +99,7 @@ public sealed class DocumentEvaluator
                 errors.Add($"{(string.IsNullOrEmpty(f.Name) ? f.KindName : f.Name)}: {ex.Message}");
             }
         }
-        Mesh? mesh = null;
-        if (current is not null)
-        {
-            try { mesh = _kernel.ToMesh(current); }
-            catch (Exception ex) { errors.Add($"Teselado: {ex.Message}"); }
-        }
-        return new PartResult(part, mesh, errors);
+        return current;
     }
 
     /// <summary>

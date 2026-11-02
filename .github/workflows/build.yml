@@ -14,9 +14,30 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      # Motor exacto del módulo Diseño 3D: OpenCASCADE precompilado de conda-forge + envoltorio nativo simcad_occt.
+      - name: Instalar OpenCASCADE
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: occt
+          create-args: occt=7.8.*=novtk*
+          condarc: |
+            channels:
+              - conda-forge
+          cache-environment: true
+      - name: Compilar envoltorio de OpenCASCADE
+        shell: pwsh
+        run: |
+          $prefix = (Join-Path $env:MAMBA_ROOT_PREFIX "envs/occt/Library") -replace '\\','/'
+          $env:OCCT_BIN_DIRS = "$prefix/bin"
+          cmake -S native/simcad_occt -B native/build -G "Visual Studio 17 2022" -A x64 "-DOpenCASCADE_DIR=$prefix/lib/cmake/opencascade"
+          cmake --build native/build --config Release
+          cmake --install native/build --config Release --prefix native/bin
+          Get-ChildItem native/bin | Select-Object Name, Length
       - name: Compilar
         run: dotnet build -c Release
       - name: Pruebas
+        env:
+          CAD3D_REQUIRE_OCCT: "1"
         run: dotnet test -c Release --no-build
       - name: Publicar ejecutable para Windows (x64)
         run: dotnet publish src/Simulador.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/SimuladorMultiple
