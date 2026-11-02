@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Simulador.Circuitos.Catalog;
 using Simulador.Circuitos.Libraries;
+using Simulador.Circuitos.Schematic;
 using Simulador.Core.Modules;
 
 namespace Simulador.Circuitos;
@@ -16,12 +18,15 @@ public sealed class CircuitosModule : IModule
 
     public object CreateRootView(IModuleHost host)
     {
+        var catalog = new ComponentCatalog(host.GetDataDirectory(Id));
+        var schematic = new SchematicEditorView(host, catalog);
+
         var tabs = new TabControl { TabStripPlacement = Dock.Left, Padding = new Thickness(8) };
-        tabs.Items.Add(new TabItem { Header = "Esquemático", Content = Pending("Editor de esquemáticos", "Fase 1: colocar componentes de las librerías, cablear y etiquetar redes.") });
-        tabs.Items.Add(new TabItem { Header = "Simulación", Content = Pending("Simulación con ngspice", "Fase 1: análisis DC, AC y transitorio con instrumentos virtuales (voltímetro, amperímetro, osciloscopio, generador).") });
+        tabs.Items.Add(new TabItem { Header = "Esquemático", Content = schematic });
+        tabs.Items.Add(new TabItem { Header = "Simulación", Content = Pending("Simulación con ngspice", "Fase 1b: análisis DC, AC y transitorio con instrumentos virtuales (voltímetro, amperímetro, osciloscopio, generador).") });
         tabs.Items.Add(new TabItem { Header = "PCB", Content = Pending("Diseño de placa", "Fase 2: pasar del esquemático a la placa, colocar huellas, rutear pistas y comprobar reglas de diseño.") });
         tabs.Items.Add(new TabItem { Header = "Fabricación", Content = Pending("Salidas de fabricación", "Fase 3: Gerber y taladros para fabricar, e impresión 1:1 en espejo para transferencia térmica.") });
-        tabs.Items.Add(new TabItem { Header = "Librerías", Content = new LibraryView(host) });
+        tabs.Items.Add(new TabItem { Header = "Librerías", Content = new LibraryView(host, catalog) });
         return tabs;
     }
 

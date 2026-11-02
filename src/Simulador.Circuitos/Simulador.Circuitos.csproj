@@ -4,6 +4,12 @@
     <RootNamespace>Simulador.Circuitos</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Resources\**\*" LogicalName="Simulador.Circuitos.Resources.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Circuitos.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia" />
   </ItemGroup>
   <ItemGroup>
