@@ -30,6 +30,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext` | Entorno combinado |
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
+| `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
 
 ## Unidades
 
@@ -44,3 +45,20 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 4. **PCB**: importar la netlist, colocar huellas, ratsnest, ruteo manual, planos de masa y comprobación de reglas.
 5. **Fabricación**: Gerber RS-274X, taladros Excellon, e impresión 1:1 en espejo (PDF) para transferencia térmica.
 6. **Más adelante**: autorruteo, vista 3D, simulación de microcontroladores.
+
+## Módulo Edificación (`Simulador.Civil`, Order 15)
+
+Diseño civil básico (sin cálculo estructural) para ubicar sobre él las instalaciones de los demás módulos.
+Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos del proyecto).
+
+- **Hecho (fase 1)**: niveles con cota y altura; muros con espesor, altura y material; puertas y ventanas alojadas en
+  muros; losas y cubiertas; escaleras rectas con cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
+  habitaciones con nombre, uso, área y perímetro; copiar planta encima (planta tipo); planta 2D editable con imán y
+  ortogonal; vista 3D sombreada; plantillas (casa, casa de dos plantas, hotel, nave industrial); colocar
+  tomacorrientes, interruptores, luminarias, tableros, puntos de agua, desagües y tanques; rutas por el techo con
+  longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una
+  puerta, escaleras incómodas, habitaciones pequeñas); deshacer/rehacer; archivo `.edif.json`.
+- **Siguiente**: asistente de sugerencias por reglas configurables por país (tomas por habitación, dotación y
+  tanque, evacuación, ventilación), metrado y presupuesto, escaleras en L/U, importar DXF y planos escaneados como
+  calco, exportar planos PDF/DXF.
+- **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
