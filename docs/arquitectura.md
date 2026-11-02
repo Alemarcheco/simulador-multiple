@@ -30,6 +30,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext` | Entorno combinado |
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
+| `Simulador.Core.Model3D` | `AnimatedModel` (piezas móviles y conectores para la vista animada) | Diseño 3D |
 
 ## Unidades
 
@@ -44,3 +45,18 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 4. **PCB**: importar la netlist, colocar huellas, ratsnest, ruteo manual, planos de masa y comprobación de reglas.
 5. **Fabricación**: Gerber RS-274X, taladros Excellon, e impresión 1:1 en espejo (PDF) para transferencia térmica.
 6. **Más adelante**: autorruteo, vista 3D, simulación de microcontroladores.
+
+## Módulo Diseño 3D (plan)
+
+Proyectos: `Simulador.Cad3D.Geometry` (sin interfaz: documento paramétrico, motor de sólidos, STL/3MF, plantillas)
+y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `tests/Simulador.Cad3D.Tests`.
+
+1. **Prototipo** (hecho): piezas con historial de operaciones (caja, caja redondeada, cilindro/cono, esfera,
+   extrusión de perfil) que suman, restan o intersecan; visor 3D por software; proyecto `.cad3d` (JSON);
+   exportación STL binario y 3MF (una pieza por objeto, con color); plantilla de caja con tapa y caja a medida
+   de una `BoardExport`. El motor actual (`MeshKernel`, árboles BSP en C#) da mallas cerradas.
+2. **Motor exacto**: `IGeometryKernel` con OpenCASCADE (envoltorio nativo) para redondeos, chaflanes, vaciados
+   e importación/exportación STEP; visor OpenGL.
+3. **Bocetos 2D** con restricciones y cotas, revolución, patrones y simetrías.
+4. **Integración**: caja desde la placa del módulo de circuitos con un clic; exportar equipos animables `.sm3d`
+   para el banco de pruebas (contrato `Simulador.Core.Model3D`).

@@ -17,5 +17,6 @@
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
     <!-- Módulos: añade aquí la referencia a tu proyecto Simulador.<Nombre> para que se copie junto al ejecutable. -->
     <ProjectReference Include="..\Simulador.Circuitos\Simulador.Circuitos.csproj" />
+    <ProjectReference Include="..\Simulador.Cad3D\Simulador.Cad3D.csproj" />
   </ItemGroup>
 </Project>
