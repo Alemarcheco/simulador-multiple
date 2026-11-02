@@ -8,7 +8,7 @@ Hecha con C# (.NET 8) y [Avalonia](https://avaloniaui.net/). La simulación de c
 
 | Pestaña | Proyecto | Estado |
 |---|---|---|
-| ⚡ Circuitos y PCB | `src/Simulador.Circuitos` | Importación de librerías lista; esquemático, simulación y PCB en construcción |
+| ⚡ Circuitos y PCB | `src/Simulador.Circuitos` | Librerías y editor de esquemáticos listos; simulación y PCB en construcción |
 
 ## Descargar y ejecutar
 

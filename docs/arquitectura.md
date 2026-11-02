@@ -38,7 +38,7 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 ## Módulo Circuitos y PCB (plan)
 
 1. **Librerías** (hecho): importar símbolos y huellas de KiCad y modelos SPICE de fabricantes.
-2. **Esquemático**: colocar símbolos, cablear, etiquetas de red, anotación y comprobación eléctrica.
+2. **Esquemático** (hecho): colocar símbolos, cablear, etiquetas de red, girar/espejo, deshacer, guardar (.esquema) y netlist SPICE. Pendiente: comprobación de reglas eléctricas.
 3. **Simulación**: netlist hacia ngspice (biblioteca compartida `ngspice.dll`), análisis DC/AC/transitorio,
    instrumentos virtuales.
 4. **PCB**: importar la netlist, colocar huellas, ratsnest, ruteo manual, planos de masa y comprobación de reglas.

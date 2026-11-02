@@ -32,6 +32,7 @@ public sealed class SchematicEditorView : DockPanel
         _canvas.SelectionChanged += (_, _) => ShowProperties();
         _canvas.DocumentChanged += (_, _) => { if (_canvas.Selected is not null) ShowProperties(); };
         _canvas.Status += (_, msg) => _host.SetStatus(msg);
+        _canvas.ToolChanged += (_, _) => { if (_canvas.Tool != SchematicTool.Place) _palette.SelectedItem = null; };
         _catalog.Changed += (_, _) => RefreshPalette();
         _labelName.TextChanged += (_, _) => _canvas.LabelName = string.IsNullOrWhiteSpace(_labelName.Text) ? "RED" : _labelName.Text.Trim();
 

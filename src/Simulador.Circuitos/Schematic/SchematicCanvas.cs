@@ -59,6 +59,7 @@ public sealed class SchematicCanvas : Control
     public event EventHandler? SelectionChanged;
     public event EventHandler? DocumentChanged;
     public event EventHandler<string>? Status;
+    public event EventHandler? ToolChanged;
 
     public SchematicDocument Document => _doc;
     public object? Selected { get; private set; }
@@ -143,6 +144,7 @@ public sealed class SchematicCanvas : Control
             Status?.Invoke(this, "Cable: clic para empezar y en cada esquina; doble clic, clic derecho o Esc para terminar. Espacio cambia el sentido de la esquina.");
         else if (tool == SchematicTool.Label)
             Status?.Invoke(this, $"Etiqueta «{LabelName}»: clic sobre un cable o pin. Puntos con la misma etiqueta quedan unidos.");
+        ToolChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
     }
 
