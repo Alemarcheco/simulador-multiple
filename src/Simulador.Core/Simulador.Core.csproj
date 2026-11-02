@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Contratos comunes, sin dependencias de interfaz gráfica, para poder probarlos y co-simular sin ventana. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

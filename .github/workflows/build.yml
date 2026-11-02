@@ -1,0 +1,27 @@
+name: Compilar y probar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Compilar
+        run: dotnet build -c Release
+      - name: Pruebas
+        run: dotnet test -c Release --no-build
+      - name: Publicar ejecutable para Windows (x64)
+        run: dotnet publish src/Simulador.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/SimuladorMultiple
+      - name: Subir ejecutable
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimuladorMultiple-win-x64
+          path: publish/SimuladorMultiple
