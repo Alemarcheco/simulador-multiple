@@ -10,7 +10,25 @@ public static class Examples
     [
         ("LED con transistor", LedTransistor),
         ("Divisor de tensión", Divider),
+        ("Filtro RC paso bajo", RcFilter),
     ];
+
+    public static SchematicDocument RcFilter(ComponentCatalog catalog)
+    {
+        var b = new Builder(catalog, "Filtro RC paso bajo");
+        b.Add("VSIN", 0, 0, value: "SIN(0 1 1k)");
+        b.Add("R", 12.7, -10.16, rotation: 90, value: "1k");
+        b.Add("C", 25.4, -3.81, value: "100n");
+        b.Add("GND", 0, 12.7);
+        b.Add("GND", 25.4, 12.7);
+        b.Wire((0, -5.08), (0, -10.16), (8.89, -10.16));
+        b.Wire((16.51, -10.16), (25.4, -10.16), (25.4, -7.62));
+        b.Wire((25.4, 0), (25.4, 12.7));
+        b.Wire((0, 5.08), (0, 12.7));
+        b.Doc.Labels.Add(new NetLabel { Name = "ENTRADA", Position = new Vec2(0, -10.16) });
+        b.Doc.Labels.Add(new NetLabel { Name = "SALIDA", Position = new Vec2(25.4, -10.16) });
+        return b.Doc;
+    }
 
     public static SchematicDocument LedTransistor(ComponentCatalog catalog)
     {

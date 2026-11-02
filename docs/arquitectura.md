@@ -39,8 +39,8 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 
 1. **Librerías** (hecho): importar símbolos y huellas de KiCad y modelos SPICE de fabricantes.
 2. **Esquemático** (hecho): colocar símbolos, cablear, etiquetas de red, girar/espejo, deshacer, guardar (.esquema) y netlist SPICE. Pendiente: comprobación de reglas eléctricas.
-3. **Simulación**: netlist hacia ngspice (biblioteca compartida `ngspice.dll`), análisis DC/AC/transitorio,
-   instrumentos virtuales.
+3. **Simulación** (hecho): netlist hacia ngspice (biblioteca compartida `ngspice.dll`, `Simulation/NgSpice.cs`),
+   punto de trabajo con tensiones sobre el esquema, transitorio (osciloscopio) y respuesta en frecuencia (Bode).
 4. **PCB**: importar la netlist, colocar huellas, ratsnest, ruteo manual, planos de masa y comprobación de reglas.
 5. **Fabricación**: Gerber RS-274X, taladros Excellon, e impresión 1:1 en espejo (PDF) para transferencia térmica.
 6. **Más adelante**: autorruteo, vista 3D, simulación de microcontroladores.

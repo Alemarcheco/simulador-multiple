@@ -69,6 +69,15 @@ public sealed class SchematicCanvas : Control
     public string LabelName { get; set; } = "SALIDA";
     public bool IsDirty { get; set; }
 
+    private Dictionary<string, double>? _opVoltages;
+
+    /// <summary>Muestra sobre el esquema la tensión de cada red (resultado del punto de trabajo). null = ocultar.</summary>
+    public void SetOperatingPoint(Dictionary<string, double>? voltages)
+    {
+        _opVoltages = voltages;
+        InvalidateVisual();
+    }
+
     // ---------- Documento ----------
 
     public void Load(SchematicDocument doc)
@@ -469,6 +478,8 @@ public sealed class SchematicCanvas : Control
             foreach (var l in _doc.Labels)
                 DrawLabel(ctx, l, ReferenceEquals(l, Selected));
 
+            if (_opVoltages is not null) DrawVoltages(ctx);
+
             if (_ghost is not null)
                 DrawSymbol(ctx, _ghost, BodyColor, 0.45);
 
@@ -580,6 +591,25 @@ public sealed class SchematicCanvas : Control
         {
             var dash = new Pen(new SolidColorBrush(SelectColor, 0.8), minPen, dashStyle: DashStyle.Dash);
             ctx.DrawRectangle(null, dash, new Rect(P(min), P(max)));
+        }
+    }
+
+    private static readonly IBrush ProbeBrush = new SolidColorBrush(Color.Parse("#E8F1FF"));
+    private static readonly IBrush ProbeText = new SolidColorBrush(Color.Parse("#0B4FB3"));
+
+    private void DrawVoltages(DrawingContext ctx)
+    {
+        foreach (var net in _conn.Nets)
+        {
+            if (!_opVoltages!.TryGetValue(net.Name, out var v) || net.Pins.Count == 0) continue;
+            // Se coloca junto al primer pin de la red que no sea de un símbolo de alimentación.
+            var (sym, pin) = net.Pins.FirstOrDefault(p => p.Symbol.Symbol?.IsPower != true);
+            if (sym is null) continue;
+            var pos = SymbolTransform.ToWorld(sym, pin.Position);
+            var ft = Text(Simulation.EngineeringFormat.Format(v, "V", 3), 1.1, ProbeText);
+            var rect = new Rect(pos.X + 0.6, pos.Y - ft.Height - 0.6, ft.Width + 0.8, ft.Height + 0.2);
+            ctx.DrawRectangle(ProbeBrush, new Pen(ProbeText, 0.08), rect, 0.3, 0.3);
+            ctx.DrawText(ft, new Point(rect.X + 0.4, rect.Y + 0.1));
         }
     }
 

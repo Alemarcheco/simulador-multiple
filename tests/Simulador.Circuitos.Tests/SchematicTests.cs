@@ -176,6 +176,7 @@ public class ExampleTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [InlineData(2)]
     public void Examples_are_fully_connected(int index)
     {
         var catalog = new ComponentCatalog();
