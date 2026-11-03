@@ -46,6 +46,11 @@ public sealed class ComponentCatalog
         // Si el nombre no tiene librería o la librería cambió, busca solo por nombre.
         _symbols.Values.FirstOrDefault(s => s.Name.Equals(fullName.Split(':').Last(), StringComparison.OrdinalIgnoreCase));
 
+    public FootprintDefinition? FindFootprint(string fullName) =>
+        string.IsNullOrWhiteSpace(fullName) ? null :
+        _footprints.GetValueOrDefault(fullName) ??
+        _footprints.Values.FirstOrDefault(f => f.Name.Equals(fullName.Split(':').Last(), StringComparison.OrdinalIgnoreCase));
+
     public SpiceModel? FindModel(string name) => _models.GetValueOrDefault(name);
     public SpiceSubcircuit? FindSubcircuit(string name) => _subcircuits.GetValueOrDefault(name);
 
@@ -76,6 +81,10 @@ public sealed class ComponentCatalog
         var asm = typeof(ComponentCatalog).Assembly;
         Add(new Core.Libraries.KiCad.KiCadSymbolImporter().Import(ReadResource(asm, "Basicos.kicad_sym"), BuiltInLibrary));
         Add(new Core.Libraries.Spice.SpiceLibraryImporter().Import(ReadResource(asm, "Basicos.lib"), BuiltInLibrary));
+        var fpImporter = new Core.Libraries.KiCad.KiCadFootprintImporter();
+        const string prefix = "Simulador.Circuitos.Resources.";
+        foreach (var name in asm.GetManifestResourceNames().Where(n => n.EndsWith(".kicad_mod", StringComparison.Ordinal)))
+            Add(fpImporter.Import(ReadResource(asm, name[prefix.Length..]), BuiltInLibrary));
     }
 
     private static string ReadResource(Assembly asm, string name)

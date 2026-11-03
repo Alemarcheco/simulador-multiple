@@ -1,9 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Layout;
 using Simulador.Circuitos.Catalog;
+using Simulador.Circuitos.Fabrication;
 using Simulador.Circuitos.Libraries;
+using Simulador.Circuitos.Pcb;
 using Simulador.Circuitos.Schematic;
+using Simulador.Circuitos.Simulation;
 using Simulador.Core.Modules;
 
 namespace Simulador.Circuitos;
@@ -23,22 +25,11 @@ public sealed class CircuitosModule : IModule
 
         var tabs = new TabControl { TabStripPlacement = Dock.Left, Padding = new Thickness(8) };
         tabs.Items.Add(new TabItem { Header = "Esquemático", Content = schematic });
-        tabs.Items.Add(new TabItem { Header = "Simulación", Content = Pending("Simulación con ngspice", "Fase 1b: análisis DC, AC y transitorio con instrumentos virtuales (voltímetro, amperímetro, osciloscopio, generador).") });
-        tabs.Items.Add(new TabItem { Header = "PCB", Content = Pending("Diseño de placa", "Fase 2: pasar del esquemático a la placa, colocar huellas, rutear pistas y comprobar reglas de diseño.") });
-        tabs.Items.Add(new TabItem { Header = "Fabricación", Content = Pending("Salidas de fabricación", "Fase 3: Gerber y taladros para fabricar, e impresión 1:1 en espejo para transferencia térmica.") });
+        tabs.Items.Add(new TabItem { Header = "Simulación", Content = new SimulationView(host, catalog, schematic.Canvas) });
+        var pcb = new PcbView(host, catalog, schematic.Canvas);
+        tabs.Items.Add(new TabItem { Header = "PCB", Content = pcb });
+        tabs.Items.Add(new TabItem { Header = "Fabricación", Content = new FabricationView(host, pcb.Canvas) });
         tabs.Items.Add(new TabItem { Header = "Librerías", Content = new LibraryView(host, catalog) });
         return tabs;
     }
-
-    private static Control Pending(string title, string text) => new StackPanel
-    {
-        Margin = new Thickness(24),
-        Spacing = 8,
-        Children =
-        {
-            new TextBlock { Text = title, FontSize = 22 },
-            new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Opacity = 0.8 },
-            new TextBlock { Text = "En construcción.", Opacity = 0.6, HorizontalAlignment = HorizontalAlignment.Left },
-        },
-    };
 }
