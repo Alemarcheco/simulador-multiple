@@ -14,12 +14,31 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Descargar ngspice (motor de simulación)
+        shell: pwsh
+        run: |
+          $url = "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/old-releases/45.2/ngspice-45.2_dll_64.7z"
+          curl.exe -L --fail --retry 4 --retry-delay 5 -o ngspice.7z $url
+          $hash = (Get-FileHash ngspice.7z -Algorithm SHA256).Hash
+          if ($hash -ne "FF110EBB04367EB37FF3C88C75AB3BEA1B2191C11EFCE78F264C2CA73034762B") { throw "El archivo de ngspice no es el esperado: $hash" }
+          7z x ngspice.7z -ongspice-pkg -y | Out-Null
+          $dll = Join-Path $pwd "ngspice-pkg\Spice64_dll\dll-vs\ngspice.dll"
+          if (-not (Test-Path $dll)) { throw "No se encontró ngspice.dll en el paquete" }
+          "NGSPICE_LIBRARY_PATH=$dll" >> $env:GITHUB_ENV
       - name: Compilar
         run: dotnet build -c Release
       - name: Pruebas
         run: dotnet test -c Release --no-build
       - name: Publicar ejecutable para Windows (x64)
         run: dotnet publish src/Simulador.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/SimuladorMultiple
+      - name: Añadir ngspice y el runtime de Visual C++ al ejecutable
+        shell: pwsh
+        run: |
+          Copy-Item $env:NGSPICE_LIBRARY_PATH publish/SimuladorMultiple/
+          foreach ($f in "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "vcomp140.dll") {
+            $src = Join-Path $env:WINDIR "System32\$f"
+            if (Test-Path $src) { Copy-Item $src publish/SimuladorMultiple/ }
+          }
       - name: Subir ejecutable
         uses: actions/upload-artifact@v4
         with:
