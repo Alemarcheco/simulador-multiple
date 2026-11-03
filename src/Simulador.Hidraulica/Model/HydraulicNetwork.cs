@@ -4,6 +4,8 @@ namespace Simulador.Hidraulica.Model;
 public sealed class HydraulicNetwork
 {
     public string Name { get; set; } = "Proceso hidráulico";
+    /// <summary>Explicación del diseño (se muestra al abrir un ejemplo).</summary>
+    public string Description { get; set; } = "";
     public Fluid Fluid { get; set; } = Fluid.Water;
     public List<HydraulicNode> Nodes { get; set; } = [];
     public List<HydraulicLink> Links { get; set; } = [];
