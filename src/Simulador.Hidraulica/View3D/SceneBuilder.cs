@@ -1,11 +1,9 @@
 using System.Numerics;
+using Simulador.Core.Rendering;
 using Simulador.Hidraulica.Model;
 using Simulador.Hidraulica.Solver;
 
 namespace Simulador.Hidraulica.View3D;
-
-/// <summary>Triángulo con color ARGB (alfa &lt; 255 = semitransparente, p. ej. el casco de un tanque).</summary>
-public readonly record struct Triangle(Vector3 A, Vector3 B, Vector3 C, uint Color);
 
 /// <summary>Texto anclado a un punto 3D (identificadores y lecturas).</summary>
 public readonly record struct Label3D(Vector3 Position, string Text, bool Highlight = false);

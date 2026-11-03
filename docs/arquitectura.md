@@ -28,6 +28,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.Modules` | `IModule`, `IModuleHost`, `ModuleLoader` | Circuitos y PCB |
 | `Simulador.Core.Signals` | `ISignalPort`, `IPowerPort`, `ISignalBus`, `ISimulationClock` | PLC y Arduino |
 | `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext`, `CoSimScheduler` (reloj común y planificador), `SimRunner` (ejecución a velocidad controlada), `PowerPort` | Entorno combinado |
+| `Simulador.Core.Rendering` | `OrbitCamera` (perspectiva u ortográfica, encuadre fijo al girar), `ZBufferRasterizer` (búfer de profundidad por software, transparencias, líneas, supermuestreo opcional) | Edificación e Hidráulica |
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
 | `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
@@ -68,7 +69,7 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
 - **Hecho (fase 1)**: niveles con cota y altura; muros con espesor, altura y material; puertas y ventanas alojadas en
   muros; losas y cubiertas; escaleras rectas con cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
   habitaciones con nombre, uso, área y perímetro; copiar planta encima (planta tipo); planta 2D editable con imán y
-  ortogonal; vista 3D con búfer de profundidad por software (`Rendering/`); plantillas (casa, casa de dos
+  ortogonal; vista 3D ortográfica con el rasterizador común de `Simulador.Core.Rendering` (`Rendering/BuildingRenderer.cs`); plantillas (casa, casa de dos
   plantas, hotel, nave industrial, casa con instalación eléctrica e hidráulica, edificio de apartamentos, oficina); colocar
   tomacorrientes, interruptores, luminarias, tableros, puntos de agua, desagües y tanques; rutas por el techo con
   longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una

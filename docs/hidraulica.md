@@ -28,7 +28,7 @@ simularlos en el tiempo (caudales, presiones y niveles).
 
 ## Vista 3D
 
-`View3D/` es un rasterizador por software con búfer de profundidad (cada píxel muestra la superficie más cercana), así
+`View3D/` usa el rasterizador común de `Simulador.Core.Rendering` (búfer de profundidad por software, sin supermuestreo para redibujar rápido durante la simulación) (cada píxel muestra la superficie más cercana), así
 que la imagen no se deforma al girar, como pasaría al ordenar triángulos. `SceneBuilder` genera la escena desde el
 modelo y el estado de la simulación; las tuberías van en horizontal a la cota de salida y suben o bajan en vertical al
 llegar a su destino.
