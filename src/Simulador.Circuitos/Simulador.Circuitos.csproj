@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Módulo "Circuitos y PCB": esquemáticos, simulación (ngspice), librerías, diseño de PCB y fabricación. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Circuitos</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\**\*" LogicalName="Simulador.Circuitos.Resources.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Circuitos.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+    <ProjectReference Include="..\Simulador.Core.Libraries\Simulador.Core.Libraries.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Importación de librerías de componentes (KiCad, SPICE) a un modelo neutro compartido por todos los módulos. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Core.Libraries</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+  </ItemGroup>
+</Project>
