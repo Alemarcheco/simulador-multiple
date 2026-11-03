@@ -48,6 +48,7 @@ public abstract class FunctionBlock
         ["F_TRIG"] = () => new FTrig(),
         ["SR"] = () => new Sr(),
         ["RS"] = () => new Rs(),
+        [SfcStepBlock.TypeName] = () => new SfcStepBlock(),
     };
 
     public static bool TryCreate(string typeName, out FunctionBlock fb)
@@ -232,4 +233,22 @@ public sealed class Sr() : FunctionBlock(("S1", PlcType.Bool, true), ("R", PlcTy
 public sealed class Rs() : FunctionBlock(("S", PlcType.Bool, true), ("R1", PlcType.Bool, true), ("Q1", PlcType.Bool, false))
 {
     public override void Execute(TimeSpan now) => B("Q1", !B("R1") && (B("S") || B("Q1")));
+}
+
+/// <summary>Estado de una etapa SFC/GRAFCET: X = activa, T = tiempo que lleva activa (se lee como Etapa.X / Etapa.T).</summary>
+public sealed class SfcStepBlock() : FunctionBlock(("X", PlcType.Bool, true), ("T", PlcType.Time, false))
+{
+    public const string TypeName = "SFC_STEP";
+    private TimeSpan? _since;
+
+    public override void Execute(TimeSpan now)
+    {
+        if (!B("X"))
+        {
+            _since = null;
+            return;
+        }
+        _since ??= now;
+        this["T"] = PlcValue.FromTime(now - _since.Value);
+    }
 }

@@ -45,10 +45,105 @@ public sealed class Parser
         "PROGRAM", "END_PROGRAM", "VAR", "VAR_INPUT", "VAR_OUTPUT", "VAR_IN_OUT", "VAR_GLOBAL", "END_VAR", "RETAIN",
         "CONSTANT", "AT", "IF", "THEN", "ELSIF", "ELSE", "END_IF", "CASE", "OF", "END_CASE", "FOR", "TO", "BY", "DO",
         "END_FOR", "WHILE", "END_WHILE", "REPEAT", "UNTIL", "END_REPEAT", "EXIT", "RETURN", "AND", "OR", "XOR", "NOT",
-        "MOD", "TRUE", "FALSE",
+        "MOD", "TRUE", "FALSE", "INITIAL_STEP", "STEP", "END_STEP", "TRANSITION", "FROM", "END_TRANSITION",
+        "ACTION", "END_ACTION",
     };
 
     private static bool IsKeyword(string s) => Keywords.Contains(s);
+
+    /// <summary>Analiza un diagrama SFC/GRAFCET escrito en la forma textual de IEC 61131-3.</summary>
+    public static Sfc.SfcChart ParseSfc(string source) => new Parser(source).Chart();
+
+    private Sfc.SfcChart Chart()
+    {
+        string name = "SFC";
+        bool hasHeader = Accept("PROGRAM");
+        if (hasHeader) name = ExpectIdent();
+        var vars = new List<VarDecl>();
+        while (Cur.Is("VAR") || Cur.Is("VAR_INPUT") || Cur.Is("VAR_OUTPUT") || Cur.Is("VAR_IN_OUT") || Cur.Is("VAR_GLOBAL"))
+            vars.AddRange(VarBlock());
+
+        var steps = new List<Sfc.SfcStep>();
+        var transitions = new List<Sfc.SfcTransition>();
+        var actions = new List<Sfc.SfcAction>();
+        while (Cur.Kind != TokenKind.End && !Cur.Is("END_PROGRAM"))
+        {
+            int line = Cur.Line;
+            if (Cur.Is("INITIAL_STEP") || Cur.Is("STEP"))
+            {
+                bool initial = Take().Is("INITIAL_STEP");
+                string stepName = ExpectIdent();
+                Expect(":");
+                var assocs = new List<Sfc.SfcActionAssoc>();
+                while (!Accept("END_STEP"))
+                {
+                    if (Cur.Kind == TokenKind.End) throw Error($"Falta END_STEP en la etapa '{stepName}'.");
+                    // La acción puede ser una acción con código, una variable o una dirección (%QX0.0).
+                    string action = Cur.Kind == TokenKind.Address ? Take().Text : ExpectIdent();
+                    string qualifier = "N";
+                    TimeSpan? time = null;
+                    if (Accept("("))
+                    {
+                        qualifier = ExpectIdent().ToUpperInvariant();
+                        if (Accept(","))
+                        {
+                            var t = Cur;
+                            if (t.Kind != TokenKind.Time) throw Error("Se esperaba un tiempo (T#…) en la acción.");
+                            Take();
+                            time = Lexer.ParseTime(t.Text, t);
+                        }
+                        Expect(")");
+                    }
+                    if (qualifier is not ("N" or "S" or "R" or "P" or "D" or "L"))
+                        throw Error($"Calificador '{qualifier}' no válido (usa N, S, R, P, D o L).");
+                    if (qualifier is "D" or "L" && time is null)
+                        throw Error($"El calificador {qualifier} necesita un tiempo: {action}({qualifier}, T#5s).");
+                    Expect(";");
+                    assocs.Add(new Sfc.SfcActionAssoc(action, qualifier, time));
+                }
+                steps.Add(new Sfc.SfcStep(stepName, initial, assocs) { Line = line });
+            }
+            else if (Accept("TRANSITION"))
+            {
+                string? trName = Cur.Kind == TokenKind.Ident && !IsKeyword(Cur.Text) ? Take().Text : null;
+                Expect("FROM");
+                var from = StepList();
+                Expect("TO");
+                var to = StepList();
+                Expect(":=");
+                int startTok = _p;
+                var cond = Expression();
+                string text = string.Join(" ", _t.Skip(startTok).Take(_p - startTok).Select(x => x.Kind == TokenKind.Time ? "T#" + x.Text : x.Text));
+                Expect(";");
+                Expect("END_TRANSITION");
+                transitions.Add(new Sfc.SfcTransition(trName, from, to, cond, text) { Line = line });
+            }
+            else if (Accept("ACTION"))
+            {
+                string actionName = ExpectIdent();
+                Expect(":");
+                var body = Statements("END_ACTION");
+                Expect("END_ACTION");
+                actions.Add(new Sfc.SfcAction(actionName, body));
+            }
+            else throw Error($"Se esperaba INITIAL_STEP, STEP, TRANSITION o ACTION y se encontró {Cur}.");
+        }
+        if (hasHeader) Expect("END_PROGRAM");
+        if (Cur.Kind != TokenKind.End) throw Error($"Texto inesperado {Cur} al final del programa.");
+        return new Sfc.SfcChart(name, vars, steps, transitions, actions);
+    }
+
+    private List<string> StepList()
+    {
+        var list = new List<string>();
+        if (Accept("("))
+        {
+            do list.Add(ExpectIdent()); while (Accept(","));
+            Expect(")");
+        }
+        else list.Add(ExpectIdent());
+        return list;
+    }
 
     private ProgramUnit Program()
     {

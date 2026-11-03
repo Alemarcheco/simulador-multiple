@@ -86,6 +86,12 @@ public sealed class PlcCpu : ISimComponent
 
     public void LoadLadder(LadderProgram program) => Load(LadderCompiler.Compile(program));
 
+    /// <summary>Compila y carga un programa en lista de instrucciones (IL / AWL).</summary>
+    public void LoadInstructionList(string source) => Load(Il.IlCompiler.Compile(source, Profile));
+
+    /// <summary>Compila y carga un SFC / GRAFCET escrito en la forma textual de IEC 61131-3.</summary>
+    public void LoadSfc(string source) => Load(Sfc.SfcCompiler.Compile(Parser.ParseSfc(source)));
+
     public void Load(ProgramUnit program)
     {
         var interpreter = new Interpreter(program, Profile, _image);

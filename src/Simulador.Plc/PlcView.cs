@@ -32,12 +32,17 @@ internal sealed class PlcView : UserControl
     private readonly ComboBox _profileBox;
     private readonly TabControl _languages;
     private readonly TextBox _stEditor;
+    private readonly TextBox _ilEditor;
+    private readonly TextBox _sfcEditor;
+    private readonly ContentControl _sfcHost = new();
+    private SfcView? _sfcView;
     private readonly ComboBox _ladderExamples;
     private readonly LadderEditor _ladder;
     private readonly NumericUpDown _cycle;
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _watch = new() { FontFamily = Mono, FontSize = 12 };
     private readonly ContentControl _ioHost = new();
+    private readonly ContentControl _deviceHost = new();
     private readonly List<Action> _ioRefresh = [];
     private readonly DispatcherTimer _timer;
     private readonly Stopwatch _wall = new();
@@ -76,27 +81,17 @@ internal sealed class PlcView : UserControl
         }
 
         // --- Texto estructurado ---
-        _stEditor = new TextBox
-        {
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            FontFamily = Mono,
-            FontSize = 13,
-            TextWrapping = TextWrapping.NoWrap,
-            Text = Examples.StructuredText[0].Source,
-        };
-        var stExamples = new ComboBox { ItemsSource = Examples.StructuredText.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
-        stExamples.SelectionChanged += (_, _) =>
-        {
-            if (stExamples.SelectedIndex >= 0) _stEditor.Text = Examples.StructuredText[stExamples.SelectedIndex].Source;
-        };
-        var stPanel = new DockPanel();
-        var stTop = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
-        stTop.Children.Add(Label("Ejemplo:"));
-        stTop.Children.Add(stExamples);
-        DockPanel.SetDock(stTop, Dock.Top);
-        stPanel.Children.Add(stTop);
-        stPanel.Children.Add(_stEditor);
+        var stPanel = TextLanguagePanel(Examples.StructuredText.Select(e => (e.Name, e.Source)).ToList(), out _stEditor);
+        var ilPanel = TextLanguagePanel(Examples.InstructionList.Select(e => (e.Name, e.Source)).ToList(), out _ilEditor);
+        var sfcText = TextLanguagePanel(Examples.Sfc.Select(e => (e.Name, e.Source)).ToList(), out _sfcEditor);
+        _sfcEditor.TextChanged += (_, _) => DrawSfc();
+        var sfcGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,*") };
+        sfcGrid.Children.Add(sfcText);
+        var sfcSplit = new GridSplitter { Width = 4, Background = Brushes.Transparent };
+        Grid.SetColumn(sfcSplit, 1);
+        sfcGrid.Children.Add(sfcSplit);
+        Grid.SetColumn(_sfcHost, 2);
+        sfcGrid.Children.Add(_sfcHost);
 
         // --- Ladder ---
         _ladder = new LadderEditor(ReadSafe, Display,
@@ -122,13 +117,17 @@ internal sealed class PlcView : UserControl
         ldPanel.Children.Add(_ladder);
 
         _languages = new TabControl();
-        _languages.Items.Add(new TabItem { Header = "Texto estructurado (ST)", Content = stPanel });
-        _languages.Items.Add(new TabItem { Header = "Ladder (LD)", Content = ldPanel });
+        _languages.Items.Add(new TabItem { Header = "Texto estructurado (ST)", Content = stPanel, Tag = "st" });
+        _languages.Items.Add(new TabItem { Header = "Ladder (LD)", Content = ldPanel, Tag = "ld" });
+        _languages.Items.Add(new TabItem { Header = "Lista de instrucciones (IL)", Content = ilPanel, Tag = "il" });
+        _languages.Items.Add(new TabItem { Header = "SFC / GRAFCET", Content = sfcGrid, Tag = "sfc" });
         _languages.Items.Add(new TabItem { Header = "Próximamente", Content = Upcoming() });
 
         // --- Panel derecho: E/S y observación ---
         var right = new StackPanel { Spacing = 10, Margin = new Thickness(8) };
-        right.Children.Add(new TextBlock { Text = "Panel de E/S", FontSize = 18 });
+        right.Children.Add(new TextBlock { Text = "Equipo", FontSize = 18 });
+        right.Children.Add(_deviceHost);
+        right.Children.Add(new TextBlock { Text = "Panel de E/S", FontSize = 18, Margin = new Thickness(0, 8, 0, 0) });
         right.Children.Add(_ioHost);
         right.Children.Add(new TextBlock { Text = "Tabla de observación", FontSize = 18, Margin = new Thickness(0, 8, 0, 0) });
         right.Children.Add(_watch);
@@ -154,6 +153,7 @@ internal sealed class PlcView : UserControl
 
         BuildIoPanel();
         ShowLadderExample();
+        DrawSfc();
         UpdateStatus();
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(20), DispatcherPriority.Background, (_, _) => OnTimer());
@@ -163,14 +163,60 @@ internal sealed class PlcView : UserControl
 
     private static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center };
 
+    /// <summary>Redibuja el diagrama SFC a partir del texto (si el texto aún no es válido, muestra el error).</summary>
+    private void DrawSfc()
+    {
+        try
+        {
+            _sfcView = new SfcView(Parser.ParseSfc(_sfcEditor.Text ?? ""), ReadSafe, Display);
+            _sfcHost.Content = _sfcView;
+        }
+        catch (PlcCompileException ex)
+        {
+            _sfcView = null;
+            _sfcHost.Content = new TextBlock { Text = ex.Message, Margin = new Thickness(16), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
+        }
+    }
+
+    private string? Language => (_languages.SelectedItem as TabItem)?.Tag as string;
+
+    private static readonly FontFamily EditorFont = new("Cascadia Mono, Consolas, Menlo, monospace");
+
+    /// <summary>Editor de texto con selector de ejemplos (para ST e IL).</summary>
+    private static Control TextLanguagePanel(IReadOnlyList<(string Name, string Source)> examples, out TextBox editor)
+    {
+        var box = new TextBox
+        {
+            AcceptsReturn = true,
+            AcceptsTab = true,
+            FontFamily = EditorFont,
+            FontSize = 13,
+            TextWrapping = TextWrapping.NoWrap,
+            Text = examples[0].Source,
+        };
+        var combo = new ComboBox { ItemsSource = examples.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (combo.SelectedIndex >= 0) box.Text = examples[combo.SelectedIndex].Source;
+        };
+        var panel = new DockPanel();
+        var top = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
+        top.Children.Add(Label("Ejemplo:"));
+        top.Children.Add(combo);
+        DockPanel.SetDock(top, Dock.Top);
+        panel.Children.Add(top);
+        panel.Children.Add(box);
+        editor = box;
+        return panel;
+    }
+
     private static Control Upcoming() => new TextBlock
     {
         Margin = new Thickness(16),
         TextWrapping = TextWrapping.Wrap,
         Text = "Siguientes fases:\n\n" +
-               "• Editor gráfico de Ladder y bloques de función (FBD)\n" +
-               "• SFC y GRAFCET para procesos secuenciales\n" +
-               "• Lista de instrucciones (IL/AWL)\n" +
+               "• Bloques de función (FBD)\n" +
+
                "• Arduino Uno/Nano/Mega en C/C++ y bloques tipo Scratch\n" +
                "• ESP32, Raspberry Pi Pico y MicroPython\n" +
                "• Conexión de las E/S con los esquemas del módulo eléctrico",
@@ -278,16 +324,19 @@ internal sealed class PlcView : UserControl
     {
         try
         {
-            if (_languages.SelectedIndex == 1)
-                _cpu.LoadLadder(_ladder.Document.ToProgram());
-            else
-                _cpu.LoadStructuredText(_stEditor.Text ?? "");
+            switch (Language)
+            {
+                case "ld": _cpu.LoadLadder(_ladder.Document.ToProgram()); break;
+                case "il": _cpu.LoadInstructionList(_ilEditor.Text ?? ""); break;
+                case "sfc": _cpu.LoadSfc(_sfcEditor.Text ?? ""); break;
+                default: _cpu.LoadStructuredText(_stEditor.Text ?? ""); break;
+            }
             _host.SetStatus($"Programa cargado en {_cpu.Profile.DisplayName}.");
         }
         catch (PlcCompileException ex)
         {
             // En Ladder la "línea" es el número de segmento.
-            string msg = _languages.SelectedIndex == 1
+            string msg = Language == "ld"
                 ? ex.Message.Replace($"Línea {ex.Line}, columna {ex.Column}", $"Segmento {ex.Line}")
                 : ex.Message;
             _host.SetStatus("Error de compilación: " + msg);
@@ -328,6 +377,7 @@ internal sealed class PlcView : UserControl
 
         foreach (var r in _ioRefresh) r();
         _ladder.Refresh();
+        _sfcView?.Refresh();
         UpdateWatch();
         UpdateStatus();
     }
@@ -367,6 +417,7 @@ internal sealed class PlcView : UserControl
     private void BuildIoPanel()
     {
         _ioRefresh.Clear();
+        var toggles = new Dictionary<ISignalPort, ToggleButton>();
         var panel = new StackPanel { Spacing = 4 };
         double nominal = _cpu.Profile.InputNominalVolts;
 
@@ -381,6 +432,7 @@ internal sealed class PlcView : UserControl
             push.AddHandler(PointerReleasedEvent, (_, _) => { held = false; Apply(); }, RoutingStrategies.Tunnel, handledEventsToo: true);
             push.AddHandler(PointerCaptureLostEvent, (_, _) => { held = false; Apply(); }, RoutingStrategies.Bubble, handledEventsToo: true);
             var toggle = new ToggleButton { Content = "Fijo", Padding = new Thickness(8, 2) };
+            toggles[port] = toggle;
             toggle.IsCheckedChanged += (_, _) => { latched = toggle.IsChecked == true; Apply(); };
 
             var lamp = new Ellipse { Width = 12, Height = 12, Fill = LampOff };
@@ -427,6 +479,13 @@ internal sealed class PlcView : UserControl
         }
 
         _ioHost.Content = panel;
+
+        var device = new PlcDeviceView(_cpu, port =>
+        {
+            if (toggles.TryGetValue(port, out var t)) t.IsChecked = t.IsChecked != true;
+        });
+        _ioRefresh.Add(device.Refresh);
+        _deviceHost.Content = device;
     }
 
     private IoAddress Find(ISignalPort port)
