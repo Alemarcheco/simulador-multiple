@@ -10,4 +10,7 @@
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
     <ProjectReference Include="..\Simulador.Plc.Runtime\Simulador.Plc.Runtime.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Plc.Tests" />
+  </ItemGroup>
 </Project>
