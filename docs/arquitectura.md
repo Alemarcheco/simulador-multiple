@@ -27,7 +27,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 |---|---|---|
 | `Simulador.Core.Modules` | `IModule`, `IModuleHost`, `ModuleLoader` | Circuitos y PCB |
 | `Simulador.Core.Signals` | `ISignalPort`, `IPowerPort`, `ISignalBus`, `ISimulationClock` | PLC y Arduino |
-| `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext` | Entorno combinado |
+| `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext`, `CoSimScheduler` (reloj común y planificador), `SimRunner` (ejecución a velocidad controlada), `PowerPort` | Entorno combinado |
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
 | `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
@@ -47,6 +47,17 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
    Huellas básicas incluidas en `Resources/Basicos.pretty` con pads grandes. Pendiente: planos de masa, dos caras con vías.
 5. **Fabricación** (`Fabrication/`): PDF 1:1 para transferencia térmica (el cobre inferior sin espejo, las capas superiores en espejo; regla de 50 mm para comprobar la escala), Gerber RS-274X X2 y taladros Excellon en un .zip. `Artwork` genera las formas de cada capa, que comparten las tres salidas.
 6. **Más adelante**: autorruteo, vista 3D, simulación de microcontroladores.
+
+## Co-simulación: cómo avanza el tiempo
+
+`CoSimScheduler` implementa `ISimulationClock`. En cada paso maestro (1 ms):
+
+1. Si hay un evento pedido con `RequestEventAt` antes del final del paso, el paso se acorta para caer justo en él y en ese instante avanzan todos los componentes.
+2. Si no, avanza cada componente cuyo turno toca (`StepMultiple`), con `dt` = tiempo desde su último paso.
+3. Orden: fase (`Inputs`, `Logic`, `Physics`, `Outputs`) y, dentro de la fase, orden de alta.
+4. Tras avanzar un componente, sus `IPowerPort` enlazados se copian al otro lado: el que impone esfuerzo copia el esfuerzo y el que impone flujo copia el flujo.
+
+Mientras los componentes avanzan, `Now` es todavía el inicio del paso. `SimRunner` lo ejecuta en un hilo propio a 0,1×, 1×, 10× o lo más rápido posible, con pausa y paso a paso, y publica `SimFrame` (instantáneas de todos los componentes) para que la vista anime sin tocar la simulación. El ejemplo completo PLC → contactor → motor → bomba → tanque está en `tests/Simulador.Core.Tests/TankFillingExampleTests.cs`.
 
 ## Módulo Edificación (`Simulador.Civil`, Order 15)
 
