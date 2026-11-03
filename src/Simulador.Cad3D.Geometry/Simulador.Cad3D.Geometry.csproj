@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Núcleo geométrico del módulo 3D, sin interfaz gráfica: documento paramétrico, motor de sólidos, exportación STL/3MF. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Cad3D.Geometry</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Cad3D.Tests" />
+  </ItemGroup>
+</Project>
