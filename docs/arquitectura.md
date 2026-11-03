@@ -93,3 +93,11 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
 3. **Bocetos 2D** con restricciones y cotas, revolución, patrones y simetrías.
 4. **Integración**: caja desde la placa del módulo de circuitos con un clic; exportar equipos animables `.sm3d`
    para el banco de pruebas (contrato `Simulador.Core.Model3D`).
+
+## Banco de pruebas (`Simulador.Banco`)
+
+Pestaña que junta piezas de varios módulos en una sola simulación con el reloj común (`CoSimScheduler` + `SimRunner`):
+
+- **Montajes** (`Scenarios/`): llenado de tanque (PLC real en texto estructurado → contactor con térmico → motor → bomba y red hidráulica real del módulo Hidráulica → tanque con transmisor de nivel), turbogenerador en isla con regulador PI y turbocompresor con depósito de aire regulado por el PLC.
+- **Equipos genéricos** (`Generic/`): red trifásica, contactor con relé térmico, motor asíncrono (Kloss), generador síncrono en isla, carga eléctrica, turbina (vapor, gas o hidráulica) con limitador y disparo por sobrevelocidad, compresor, depósito de aire, transmisores de señal y regulador PI. Son modelos sencillos con parámetros de placa; cuando cada módulo publique su `ISimComponentFactory` se usan los suyos.
+- **Vista** (`Ui/`): animación 2D, marcha/pausa/paso/velocidad, mandos y fallos, valores, lista de conexiones (bornes, cables, ejes, tuberías), programa del PLC y tendencias. Los cambios desde la interfaz pasan por `SimRunner.Post`, que los ejecuta en el hilo de simulación.
