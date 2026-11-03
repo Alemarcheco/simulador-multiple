@@ -30,8 +30,20 @@ las protecciones.
 | Motores | Motor de inducción trifásico de 3 bornes (estrella o triángulo interno) y de 6 bornes |
 | Medida | Voltímetro, amperímetro, borne de conexión |
 
-Ejemplos incluidos (menú **Ejemplos**): arranque directo con autorretención, inversión de giro con enclavamiento,
-estrella-triángulo, luz conmutada desde tres puntos, telerruptor y minutero de escalera.
+Cada componente de la librería muestra su símbolo en miniatura; al pasar el ratón por encima aparece abajo una vista
+ampliada con los bornes numerados, la descripción y las referencias de catálogo disponibles, para verlo antes de colocarlo.
+
+Ejemplos incluidos (menú **Ejemplos**):
+
+- Arranque directo con autorretención.
+- Inversión de giro con enclavamiento.
+- Arranque estrella-triángulo.
+- Luz conmutada desde tres puntos.
+- Telerruptor y minutero de escalera.
+- Bomba con flotador y selector Manual-0-Automático.
+- Cintas transportadoras en cascada (la segunda arranca con retardo).
+- Puerta de garaje con finales de carrera.
+- Cuadro de vivienda con diferencial y fuga a tierra.
 
 ## Cómo simula
 

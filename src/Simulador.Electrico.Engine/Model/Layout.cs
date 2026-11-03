@@ -63,20 +63,25 @@ public static class Layout
     /// Trazado ortogonal que evita pasar por encima de otros símbolos: prueba en Z (vertical u horizontal)
     /// y en L, y se queda con el que cruza menos recuadros; a igualdad, el más corto.
     /// </summary>
-    public static IReadOnlyList<GridPoint> Route(GridPoint a, GridPoint b, IReadOnlyList<Box> obstacles)
+    public static IReadOnlyList<GridPoint> Route(GridPoint a, GridPoint b, IReadOnlyList<Box> obstacles,
+        IReadOnlyList<(GridPoint p, GridPoint q)>? foreignSegments = null)
     {
         var best = Candidates(a, b)[0];
         var bestScore = double.MaxValue;
         foreach (var c in Candidates(a, b))
         {
             var hits = 0;
+            var overlaps = 0;
             var length = 0.0;
             for (var i = 0; i + 1 < c.Count; i++)
             {
                 length += Math.Abs(c[i].X - c[i + 1].X) + Math.Abs(c[i].Y - c[i + 1].Y);
                 foreach (var o in obstacles) if (SegmentCrosses(c[i], c[i + 1], o)) hits++;
+                if (foreignSegments is not null)
+                    foreach (var (p, q) in foreignSegments) if (Overlaps(c[i], c[i + 1], p, q)) overlaps++;
             }
-            var score = hits * 1000 + length + (c.Count - 2) * 0.5;
+            // Pisar el cable de otra red engaña (parece que están unidos): se evita casi tanto como cruzar un símbolo.
+            var score = hits * 1000 + overlaps * 800 + length + (c.Count - 2) * 0.5;
             if (score < bestScore) { bestScore = score; best = c; }
         }
         return best;
@@ -105,5 +110,18 @@ public static class Layout
         var sx0 = Math.Min(p.X, q.X); var sx1 = Math.Max(p.X, q.X);
         var sy0 = Math.Min(p.Y, q.Y); var sy1 = Math.Max(p.Y, q.Y);
         return sx1 > x0 && sx0 < x1 && sy1 > y0 && sy0 < y1;
+    }
+
+    /// <summary>¿Dos tramos ortogonales van uno encima del otro en más de un punto?</summary>
+    public static bool Overlaps(GridPoint a, GridPoint b, GridPoint c, GridPoint d)
+    {
+        const double eps = 1e-6;
+        bool aH = Math.Abs(a.Y - b.Y) < eps, cH = Math.Abs(c.Y - d.Y) < eps;
+        bool aV = Math.Abs(a.X - b.X) < eps, cV = Math.Abs(c.X - d.X) < eps;
+        if (aH && cH && Math.Abs(a.Y - c.Y) < eps)
+            return Math.Min(Math.Max(a.X, b.X), Math.Max(c.X, d.X)) - Math.Max(Math.Min(a.X, b.X), Math.Min(c.X, d.X)) > eps;
+        if (aV && cV && Math.Abs(a.X - c.X) < eps)
+            return Math.Min(Math.Max(a.Y, b.Y), Math.Max(c.Y, d.Y)) - Math.Max(Math.Min(a.Y, b.Y), Math.Min(c.Y, d.Y)) > eps;
+        return false;
     }
 }

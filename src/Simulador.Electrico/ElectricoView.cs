@@ -24,6 +24,7 @@ internal sealed class ElectricoView : DockPanel
     private readonly ListBox _events = new() { FontSize = 12 };
     private readonly TextBox _search = new() { Watermark = "Buscar componente…" };
     private readonly TreeView _palette = new();
+    private readonly Decorator _preview = new() { MinHeight = 120 };
     private readonly ToggleButton _run = new() { Content = "▶ Simular" };
     private readonly ComboBox _speed = new() { Width = 140 };
     private readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8, MinWidth = 90 };
@@ -142,10 +143,15 @@ internal sealed class ElectricoView : DockPanel
         _search.TextChanged += (_, _) => FillPalette();
         _palette.SelectionChanged += (_, _) =>
         {
-            if (_palette.SelectedItem is TreeViewItem { Tag: string typeId } && _sim is null) _canvas.Placing = typeId;
+            if (_palette.SelectedItem is TreeViewItem { Tag: string typeId })
+            {
+                ShowPreview(_catalog.Get(typeId));
+                if (_sim is null) _canvas.Placing = typeId;
+            }
         };
         FillPalette();
-        var panel = new DockPanel { Width = 250 };
+        ShowPreview(null);
+        var panel = new DockPanel { Width = 260 };
         var top = new StackPanel
         {
             Spacing = 6,
@@ -158,6 +164,15 @@ internal sealed class ElectricoView : DockPanel
         };
         SetDock(top, Dock.Top);
         panel.Children.Add(top);
+        var preview = new Border
+        {
+            Child = _preview,
+            BorderBrush = Brushes.Gray,
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(8),
+        };
+        SetDock(preview, Dock.Bottom);
+        panel.Children.Add(preview);
         panel.Children.Add(_palette);
         var border = new Border { Child = panel, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0, 0, 1, 0) };
         SetDock(border, Dock.Left);
@@ -179,12 +194,67 @@ internal sealed class ElectricoView : DockPanel
             foreach (var t in matches)
             {
                 var n = _presets.ForType(t.Id).Count();
-                var item = new TreeViewItem { Header = n > 0 ? $"{t.Name}  ({n} ref.)" : t.Name, Tag = t.Id };
-                ToolTip.SetTip(item, t.Description);
+                var header = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8,
+                    Children =
+                    {
+                        new SymbolPreview(t, 46),
+                        new TextBlock
+                        {
+                            Text = n > 0 ? $"{t.Name}  ({n} ref.)" : t.Name,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextWrapping = TextWrapping.Wrap,
+                            MaxWidth = 150,
+                        },
+                    },
+                };
+                var item = new TreeViewItem { Header = header, Tag = t.Id };
+                var type = t;
+                item.PointerEntered += (_, _) => ShowPreview(type);
                 node.Items.Add(item);
             }
             _palette.Items.Add(node);
         }
+    }
+
+    /// <summary>Vista ampliada del componente bajo el ratón o elegido, para verlo antes de colocarlo.</summary>
+    private void ShowPreview(ElementType? t)
+    {
+        t ??= _palette.SelectedItem is TreeViewItem { Tag: string id } ? _catalog.Get(id) : null;
+        if (t is null)
+        {
+            _preview.Child = new TextBlock
+            {
+                Text = "Pasa el ratón por un componente para ver su símbolo y para qué sirve.",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.7,
+                FontSize = 12,
+            };
+            return;
+        }
+        var refs = _presets.ForType(t.Id).ToList();
+        var stack = new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock { Text = t.Name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
+                new SymbolPreview(t, 124, showTerminals: true) { HorizontalAlignment = HorizontalAlignment.Center },
+                new TextBlock { Text = $"Designación: {t.TagPrefix}1, {t.TagPrefix}2…", FontSize = 12, Opacity = 0.75 },
+                new TextBlock { Text = t.Description, TextWrapping = TextWrapping.Wrap, FontSize = 12 },
+            },
+        };
+        if (refs.Count > 0)
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"Referencias de catálogo: {string.Join(", ", refs.Take(4).Select(r => r.Display))}{(refs.Count > 4 ? "…" : "")}",
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 11,
+                Opacity = 0.75,
+            });
+        _preview.Child = stack;
     }
 
     private void UpdateTitle()
