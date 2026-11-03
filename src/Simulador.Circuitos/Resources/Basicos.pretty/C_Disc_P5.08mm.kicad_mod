@@ -1,0 +1,7 @@
+(footprint "C_Disc_P5.08mm" (layer "F.Cu")
+  (descr "Condensador cerámico de disco, separación 5,08 mm")
+  (tags "condensador disco THT")
+  (attr through_hole)
+  (fp_rect (start -1.4 -1.6) (end 6.48 1.6) (stroke (width 0.15) (type solid)) (fill none) (layer "F.SilkS"))
+  (pad "1" thru_hole circle (at 0 0) (size 2.0 2.0) (drill 0.8) (layers "*.Cu" "*.Mask"))
+  (pad "2" thru_hole circle (at 5.08 0) (size 2.0 2.0) (drill 0.8) (layers "*.Cu" "*.Mask")))
