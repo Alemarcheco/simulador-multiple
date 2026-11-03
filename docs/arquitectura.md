@@ -38,9 +38,11 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 ## Módulo Circuitos y PCB (plan)
 
 1. **Librerías** (hecho): importar símbolos y huellas de KiCad y modelos SPICE de fabricantes.
-2. **Esquemático**: colocar símbolos, cablear, etiquetas de red, anotación y comprobación eléctrica.
-3. **Simulación**: netlist hacia ngspice (biblioteca compartida `ngspice.dll`), análisis DC/AC/transitorio,
-   instrumentos virtuales.
-4. **PCB**: importar la netlist, colocar huellas, ratsnest, ruteo manual, planos de masa y comprobación de reglas.
-5. **Fabricación**: Gerber RS-274X, taladros Excellon, e impresión 1:1 en espejo (PDF) para transferencia térmica.
+2. **Esquemático** (hecho): colocar símbolos, cablear, etiquetas de red, girar/espejo, deshacer, guardar (.esquema) y netlist SPICE. Pendiente: comprobación de reglas eléctricas.
+3. **Simulación** (hecho): netlist hacia ngspice (biblioteca compartida `ngspice.dll`, `Simulation/NgSpice.cs`),
+   punto de trabajo con tensiones sobre el esquema, transitorio (osciloscopio) y respuesta en frecuencia (Bode).
+4. **PCB** (hecho): actualizar desde el esquema (huellas y redes), colocar y girar, ratsnest, ruteo manual con
+   esquinas a 45°, reglas para placa casera (pista 0,8 mm, separación 0,5 mm) y DRC. Archivo `.placa` (JSON).
+   Huellas básicas incluidas en `Resources/Basicos.pretty` con pads grandes. Pendiente: planos de masa, dos caras con vías.
+5. **Fabricación** (`Fabrication/`): PDF 1:1 para transferencia térmica (el cobre inferior sin espejo, las capas superiores en espejo; regla de 50 mm para comprobar la escala), Gerber RS-274X X2 y taladros Excellon en un .zip. `Artwork` genera las formas de cada capa, que comparten las tres salidas.
 6. **Más adelante**: autorruteo, vista 3D, simulación de microcontroladores.
