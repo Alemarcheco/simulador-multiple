@@ -18,5 +18,9 @@
     <!-- Módulos: añade aquí la referencia a tu proyecto Simulador.<Nombre> para que se copie junto al ejecutable. -->
     <ProjectReference Include="..\Simulador.Circuitos\Simulador.Circuitos.csproj" />
     <ProjectReference Include="..\Simulador.Plc\Simulador.Plc.csproj" />
+    <ProjectReference Include="..\Simulador.Civil\Simulador.Civil.csproj" />
+    <ProjectReference Include="..\Simulador.Hidraulica\Simulador.Hidraulica.csproj" />
+    <ProjectReference Include="..\Simulador.Cad3D\Simulador.Cad3D.csproj" />
+    <ProjectReference Include="..\Simulador.Electrico\Simulador.Electrico.csproj" />
   </ItemGroup>
 </Project>

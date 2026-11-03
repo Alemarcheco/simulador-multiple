@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Motor del simulador de instalaciones eléctricas y automatismos. Sin interfaz gráfica para poder probarlo y co-simular. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Electrico.Engine</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+  </ItemGroup>
+</Project>

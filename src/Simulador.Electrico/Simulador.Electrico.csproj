@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Módulo "Instalaciones eléctricas": editor de esquemas de mando y potencia con simulación en tiempo real. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Electrico</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+    <ProjectReference Include="..\Simulador.Electrico.Engine\Simulador.Electrico.Engine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Catalogos\*.csv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
