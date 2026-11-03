@@ -13,6 +13,7 @@ using Avalonia.Threading;
 using Simulador.Core.Modules;
 using Simulador.Core.Signals;
 using Simulador.Plc.Runtime;
+using Simulador.Plc.Runtime.Fbd;
 using Simulador.Plc.Runtime.Ladder;
 using Simulador.Plc.Runtime.Profiles;
 using Simulador.Plc.Runtime.St;
@@ -38,6 +39,8 @@ internal sealed class PlcView : UserControl
     private SfcView? _sfcView;
     private readonly ComboBox _ladderExamples;
     private readonly LadderEditor _ladder;
+    private readonly ComboBox _fbdExamples;
+    private readonly FbdEditor _fbd;
     private readonly NumericUpDown _cycle;
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _watch = new() { FontFamily = Mono, FontSize = 12 };
@@ -116,9 +119,33 @@ internal sealed class PlcView : UserControl
         ldPanel.Children.Add(ldTop);
         ldPanel.Children.Add(_ladder);
 
+        // --- FBD ---
+        _fbd = new FbdEditor(ReadSafe, Display,
+            () => _cpu.Profile.Format(_cpu.Profile.InputAddress(0)),
+            () => _cpu.Profile.Format(_cpu.Profile.OutputAddress(0)));
+        _fbdExamples = new ComboBox { ItemsSource = Examples.Fbd.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 220 };
+        _fbdExamples.SelectionChanged += (_, _) => ShowFbdExample();
+        var newFbd = new Button { Content = "Nuevo" };
+        newFbd.Click += (_, _) => { _fbd.Program = new FbdProgram(); _fbdExamples.SelectedIndex = -1; };
+        var openFbd = new Button { Content = "Abrir…" };
+        openFbd.Click += async (_, _) => await OpenFbdAsync();
+        var saveFbd = new Button { Content = "Guardar…" };
+        saveFbd.Click += async (_, _) => await SaveFbdAsync();
+        var fbdPanel = new DockPanel();
+        var fbdTop = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
+        fbdTop.Children.Add(Label("Ejemplo:"));
+        fbdTop.Children.Add(_fbdExamples);
+        fbdTop.Children.Add(newFbd);
+        fbdTop.Children.Add(openFbd);
+        fbdTop.Children.Add(saveFbd);
+        DockPanel.SetDock(fbdTop, Dock.Top);
+        fbdPanel.Children.Add(fbdTop);
+        fbdPanel.Children.Add(_fbd);
+
         _languages = new TabControl();
         _languages.Items.Add(new TabItem { Header = "Texto estructurado (ST)", Content = stPanel, Tag = "st" });
         _languages.Items.Add(new TabItem { Header = "Ladder (LD)", Content = ldPanel, Tag = "ld" });
+        _languages.Items.Add(new TabItem { Header = "Bloques de función (FBD)", Content = fbdPanel, Tag = "fbd" });
         _languages.Items.Add(new TabItem { Header = "Lista de instrucciones (IL)", Content = ilPanel, Tag = "il" });
         _languages.Items.Add(new TabItem { Header = "SFC / GRAFCET", Content = sfcGrid, Tag = "sfc" });
         _languages.Items.Add(new TabItem { Header = "Próximamente", Content = Upcoming() });
@@ -153,6 +180,7 @@ internal sealed class PlcView : UserControl
 
         BuildIoPanel();
         ShowLadderExample();
+        ShowFbdExample();
         DrawSfc();
         UpdateStatus();
 
@@ -215,8 +243,6 @@ internal sealed class PlcView : UserControl
         Margin = new Thickness(16),
         TextWrapping = TextWrapping.Wrap,
         Text = "Siguientes fases:\n\n" +
-               "• Bloques de función (FBD)\n" +
-
                "• Arduino Uno/Nano/Mega en C/C++ y bloques tipo Scratch\n" +
                "• ESP32, Raspberry Pi Pico y MicroPython\n" +
                "• Conexión de las E/S con los esquemas del módulo eléctrico",
@@ -232,6 +258,63 @@ internal sealed class PlcView : UserControl
     {
         if (_ladderExamples.SelectedIndex < 0) return;
         _ladder.Document = LadderDocument.FromProgram(Examples.Ladder[_ladderExamples.SelectedIndex].Program);
+    }
+
+    private void ShowFbdExample()
+    {
+        if (_fbdExamples.SelectedIndex < 0) return;
+        _fbd.Program = Examples.Fbd[_fbdExamples.SelectedIndex].Create();
+    }
+
+    private static readonly FilePickerFileType FbdFileType = new("Programa FBD") { Patterns = ["*" + FbdCompiler.Extension] };
+
+    private async Task OpenFbdAsync()
+    {
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null) return;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Abrir programa FBD", FileTypeFilter = [FbdFileType] });
+        if (files.Count == 0) return;
+        try
+        {
+            await using var stream = await files[0].OpenReadAsync();
+            using var reader = new StreamReader(stream);
+            var program = FbdCompiler.Load(await reader.ReadToEndAsync());
+            _fbd.Program = program;
+            _fbdExamples.SelectedIndex = -1;
+            if (program.Profile is not null && PlcProfiles.All.FirstOrDefault(p => p.Id == program.Profile) is { } profile)
+                _profileBox.SelectedItem = profile;
+            _host.SetStatus($"Abierto {files[0].Name}.");
+        }
+        catch (Exception ex) when (ex is FormatException or IOException)
+        {
+            _host.SetStatus("No se pudo abrir: " + ex.Message);
+        }
+    }
+
+    private async Task SaveFbdAsync()
+    {
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null) return;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Guardar programa FBD",
+            SuggestedFileName = "programa" + FbdCompiler.Extension,
+            FileTypeChoices = [FbdFileType],
+        });
+        if (file is null) return;
+        try
+        {
+            _fbd.Program.Profile = _cpu.Profile.Id;
+            await using var stream = await file.OpenWriteAsync();
+            stream.SetLength(0);
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(FbdCompiler.Save(_fbd.Program));
+            _host.SetStatus($"Guardado {file.Name}.");
+        }
+        catch (IOException ex)
+        {
+            _host.SetStatus("No se pudo guardar: " + ex.Message);
+        }
     }
 
     private static readonly FilePickerFileType LadderFileType = new("Programa Ladder") { Patterns = ["*" + LadderFile.Extension] };
@@ -300,15 +383,19 @@ internal sealed class PlcView : UserControl
         var old = _cpu.Profile;
         var program = _cpu.Program;
         bool wasLadder = program?.Name == "Ladder";
+        bool wasFbd = program?.Name == "FBD";
 
         // Las direcciones del editor Ladder se traducen a la nomenclatura de la nueva marca (I0.0 → X0…).
-        _ladder.Document.TranslateOperands(op =>
-            !op.StartsWith('%') && old.TryParse(op, out var a) && p.TryParse(p.Format(a), out _) ? p.Format(a) : op);
+        string Translate(string op) =>
+            !op.StartsWith('%') && old.TryParse(op, out var a) && p.TryParse(p.Format(a), out _) ? p.Format(a) : op;
+        _ladder.Document.TranslateOperands(Translate);
+        _fbd.Program.TranslateOperands(Translate);
 
         _cpu = new PlcCpu("PLC1", p) { CycleTime = TimeSpan.FromMilliseconds((double)(_cycle.Value ?? 10)) };
         try
         {
             if (wasLadder) _cpu.LoadLadder(_ladder.Document.ToProgram());
+            else if (wasFbd) _cpu.LoadFbd(_fbd.Program);
             else if (program is not null) _cpu.Load(program);
         }
         catch (PlcCompileException ex)
@@ -317,6 +404,7 @@ internal sealed class PlcView : UserControl
         }
         BuildIoPanel();
         _ladder.Document = _ladder.Document; // redibuja con la nomenclatura de la nueva marca
+        _fbd.Program = _fbd.Program;
         UpdateStatus();
     }
 
@@ -327,6 +415,7 @@ internal sealed class PlcView : UserControl
             switch (Language)
             {
                 case "ld": _cpu.LoadLadder(_ladder.Document.ToProgram()); break;
+                case "fbd": _cpu.LoadFbd(_fbd.Program); break;
                 case "il": _cpu.LoadInstructionList(_ilEditor.Text ?? ""); break;
                 case "sfc": _cpu.LoadSfc(_sfcEditor.Text ?? ""); break;
                 default: _cpu.LoadStructuredText(_stEditor.Text ?? ""); break;
@@ -336,9 +425,12 @@ internal sealed class PlcView : UserControl
         catch (PlcCompileException ex)
         {
             // En Ladder la "línea" es el número de segmento.
-            string msg = Language == "ld"
-                ? ex.Message.Replace($"Línea {ex.Line}, columna {ex.Column}", $"Segmento {ex.Line}")
-                : ex.Message;
+            string msg = Language switch
+            {
+                "ld" => ex.Message.Replace($"Línea {ex.Line}, columna {ex.Column}", $"Segmento {ex.Line}"),
+                "fbd" => ex.Message.Replace($"Línea {ex.Line}, columna {ex.Column}", $"Red {ex.Line}"),
+                _ => ex.Message,
+            };
             _host.SetStatus("Error de compilación: " + msg);
             _status.Text = "Error de compilación: " + msg;
             return;
@@ -377,6 +469,7 @@ internal sealed class PlcView : UserControl
 
         foreach (var r in _ioRefresh) r();
         _ladder.Refresh();
+        _fbd.Refresh();
         _sfcView?.Refresh();
         UpdateWatch();
         UpdateStatus();
