@@ -31,6 +31,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
 | `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
+| `Simulador.Core.Model3D` | `AnimatedModel` (piezas móviles y conectores para la vista animada) | Diseño 3D |
 
 ## Unidades
 
@@ -75,3 +76,18 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   tanque, evacuación, ventilación), metrado y presupuesto, escaleras en L/U, importar DXF y planos escaneados como
   calco, exportar planos PDF/DXF.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
+
+## Módulo Diseño 3D (plan)
+
+Proyectos: `Simulador.Cad3D.Geometry` (sin interfaz: documento paramétrico, motor de sólidos, STL/3MF, plantillas)
+y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `tests/Simulador.Cad3D.Tests`.
+
+1. **Prototipo** (hecho): piezas con historial de operaciones (caja, caja redondeada, cilindro/cono, esfera,
+   extrusión de perfil) que suman, restan o intersecan; visor 3D por software; proyecto `.cad3d` (JSON);
+   exportación STL binario y 3MF (una pieza por objeto, con color); plantilla de caja con tapa y caja a medida
+   de una `BoardExport`. El motor actual (`MeshKernel`, árboles BSP en C#) da mallas cerradas.
+2. **Motor exacto**: `IGeometryKernel` con OpenCASCADE (envoltorio nativo) para redondeos, chaflanes, vaciados
+   e importación/exportación STEP; visor OpenGL.
+3. **Bocetos 2D** con restricciones y cotas, revolución, patrones y simetrías.
+4. **Integración**: caja desde la placa del módulo de circuitos con un clic; exportar equipos animables `.sm3d`
+   para el banco de pruebas (contrato `Simulador.Core.Model3D`).

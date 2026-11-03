@@ -20,5 +20,6 @@
     <ProjectReference Include="..\Simulador.Plc\Simulador.Plc.csproj" />
     <ProjectReference Include="..\Simulador.Civil\Simulador.Civil.csproj" />
     <ProjectReference Include="..\Simulador.Hidraulica\Simulador.Hidraulica.csproj" />
+    <ProjectReference Include="..\Simulador.Cad3D\Simulador.Cad3D.csproj" />
   </ItemGroup>
 </Project>

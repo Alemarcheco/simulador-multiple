@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Módulo "Diseño 3D": modelado de piezas para impresión 3D (encapsulados, piezas) con exportación STL/3MF. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Cad3D</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+    <ProjectReference Include="..\Simulador.Cad3D.Geometry\Simulador.Cad3D.Geometry.csproj" />
+  </ItemGroup>
+</Project>
