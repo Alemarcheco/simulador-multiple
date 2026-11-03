@@ -72,6 +72,11 @@ public sealed class EdificacionView : DockPanel
         var center = new TabControl();
         center.Items.Add(new TabItem { Header = "Planta 2D", Content = _plan });
         center.Items.Add(new TabItem { Header = "Vista 3D", Content = view3dPanel });
+        center.Items.Add(new TabItem
+        {
+            Header = "Asistente",
+            Content = new AdvisorView(doc, id => { center.SelectedIndex = 0; GoTo(id); }),
+        });
         Children.Add(center);
 
         AttachedToVisualTree += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(_plan.ZoomToFit, Avalonia.Threading.DispatcherPriority.Background);

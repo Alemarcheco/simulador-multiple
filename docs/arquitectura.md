@@ -73,9 +73,11 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   tomacorrientes, interruptores, luminarias, tableros, puntos de agua, desagües y tanques; rutas por el techo con
   longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una
   puerta, escaleras incómodas, habitaciones pequeñas); deshacer/rehacer; archivo `.edif.json`.
-- **Siguiente**: asistente de sugerencias por reglas configurables por país (tomas por habitación, dotación y
-  tanque, evacuación, ventilación), metrado y presupuesto, escaleras en L/U, importar DXF y planos escaneados como
-  calco, exportar planos PDF/DXF.
+- **Asistente** (`Model/Advisor.cs`, pestaña Asistente): reglas editables y guardadas con el proyecto (tomas por
+  perímetro y mínimos por uso, luminarias, interruptores, ventanas ≥ 1/8 del piso, agua por persona y tanque elevado,
+  presión mínima, distancia de evacuación); botón Aplicar que coloca lo que falta (tomas, luces, interruptores,
+  tanque, puntos de agua, tablero y rutas); materiales y presupuesto con precios editables y copia para Excel.
+- **Siguiente**: escaleras en L/U, importar DXF y planos escaneados como calco, exportar planos PDF/DXF.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D (plan)
