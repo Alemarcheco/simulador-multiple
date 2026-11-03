@@ -102,10 +102,10 @@ internal sealed class SchematicCanvas : Control
 
     private Wire? HitWire(Point p)
     {
+        var routes = RouteAll();
         foreach (var w in Schematic.Wires)
         {
-            var pts = WirePoints(w);
-            if (pts is null) continue;
+            if (!routes.TryGetValue(w.Id, out var pts)) continue;
             for (var i = 0; i + 1 < pts.Count; i++)
                 if (DistanceToSegment(p, ToPx(pts[i]), ToPx(pts[i + 1])) < 4) return w;
         }
@@ -128,16 +128,45 @@ internal sealed class SchematicCanvas : Control
         return Layout.TerminalPosition(e, term);
     }
 
-    private IReadOnlyList<Layout.GridPoint>? WirePoints(Wire w)
+    /// <summary>
+    /// Traza todos los conductores evitando símbolos y sin pisar cables de otra red
+    /// (los de la misma red sí pueden compartir tramo, porque están unidos).
+    /// </summary>
+    private Dictionary<Guid, IReadOnlyList<Layout.GridPoint>> RouteAll()
     {
-        var a = TerminalPos(w.A);
-        var b = TerminalPos(w.B);
-        if (a is null || b is null) return null;
         var obstacles = new List<Layout.Box>();
         foreach (var e in Schematic.Elements)
             if (_catalog.TryGet(e.Type, out var t) && t.Behavior != Behavior.Junction)
                 obstacles.Add(Layout.WorldBounds(e, t));
-        return Layout.Route(a.Value, b.Value, obstacles);
+
+        // Redes en edición: unión de bornes por conductores.
+        var parent = new Dictionary<string, string>();
+        string Find(string k)
+        {
+            if (!parent.TryGetValue(k, out var p)) { parent[k] = k; return k; }
+            return p == k ? k : parent[k] = Find(p);
+        }
+        foreach (var w in Schematic.Wires)
+        {
+            var ra = Find(w.A.Key);
+            var rb = Find(w.B.Key);
+            if (ra != rb) parent[ra] = rb;
+        }
+
+        var routed = new Dictionary<Guid, IReadOnlyList<Layout.GridPoint>>();
+        var segments = new List<(string net, Layout.GridPoint p, Layout.GridPoint q)>();
+        foreach (var w in Schematic.Wires)
+        {
+            var a = TerminalPos(w.A);
+            var b = TerminalPos(w.B);
+            if (a is null || b is null) continue;
+            var net = Find(w.A.Key);
+            var foreign = segments.Where(s => s.net != net).Select(s => (s.p, s.q)).ToList();
+            var pts = Layout.Route(a.Value, b.Value, obstacles, foreign);
+            routed[w.Id] = pts;
+            for (var i = 0; i + 1 < pts.Count; i++) segments.Add((net, pts[i], pts[i + 1]));
+        }
+        return routed;
     }
 
     // ------------------------------------------------------------------ dibujo
@@ -149,12 +178,12 @@ internal sealed class SchematicCanvas : Control
 
         // Conductores (en simulación, en rojo los que tienen tensión).
         var connections = new Dictionary<string, int>();
+        var routes = RouteAll();
         foreach (var w in Schematic.Wires)
         {
             connections[w.A.Key] = connections.GetValueOrDefault(w.A.Key) + 1;
             connections[w.B.Key] = connections.GetValueOrDefault(w.B.Key) + 1;
-            var pts = WirePoints(w);
-            if (pts is null) continue;
+            if (!routes.TryGetValue(w.Id, out var pts)) continue;
             var live = Sim is not null && Sim.TerminalVoltage(w.A.Element, w.A.Terminal) > 12;
             var pen = w == SelectedWire ? new Pen(Select, 2.4) : live ? new Pen(Live, 2) : Line;
             for (var i = 0; i + 1 < pts.Count; i++) dc.DrawLine(pen, ToPx(pts[i]), ToPx(pts[i + 1]));
