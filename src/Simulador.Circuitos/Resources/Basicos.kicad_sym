@@ -1,0 +1,154 @@
+(kicad_symbol_lib (version 20231120) (generator "simulador_multiple")
+  (symbol "R"
+    (property "Reference" "R" (at 2.54 0 90) (effects (font (size 1.27 1.27))))
+    (property "Value" "1k" (at -2.54 0 90) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:R_Axial_P10.16mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Resistencia" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n1} {n2} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "R_0_1"
+      (rectangle (start -1.016 -2.54) (end 1.016 2.54) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "R_1_1"
+      (pin passive line (at 0 3.81 270) (length 1.27) (name "~" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -3.81 90) (length 1.27) (name "~" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "C"
+    (property "Reference" "C" (at 2.54 0 90) (effects (font (size 1.27 1.27))))
+    (property "Value" "100n" (at -2.54 0 90) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:C_Disc_P5.08mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Condensador" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n1} {n2} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "C_0_1"
+      (polyline (pts (xy -2.032 0.762) (xy 2.032 0.762)) (stroke (width 0.508) (type default)) (fill (type none)))
+      (polyline (pts (xy -2.032 -0.762) (xy 2.032 -0.762)) (stroke (width 0.508) (type default)) (fill (type none))))
+    (symbol "C_1_1"
+      (pin passive line (at 0 3.81 270) (length 3.048) (name "~" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -3.81 90) (length 3.048) (name "~" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "L"
+    (property "Reference" "L" (at 2.54 0 90) (effects (font (size 1.27 1.27))))
+    (property "Value" "10m" (at -2.54 0 90) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:L_Axial_P10.16mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Bobina" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n1} {n2} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "L_0_1"
+      (arc (start 0 2.54) (mid 0.6323 1.905) (end 0 1.27) (stroke (width 0.254) (type default)) (fill (type none)))
+      (arc (start 0 1.27) (mid 0.6323 0.635) (end 0 0) (stroke (width 0.254) (type default)) (fill (type none)))
+      (arc (start 0 0) (mid 0.6323 -0.635) (end 0 -1.27) (stroke (width 0.254) (type default)) (fill (type none)))
+      (arc (start 0 -1.27) (mid 0.6323 -1.905) (end 0 -2.54) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "L_1_1"
+      (pin passive line (at 0 3.81 270) (length 1.27) (name "~" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -3.81 90) (length 1.27) (name "~" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "D"
+    (property "Reference" "D" (at 0 2.54 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "1N4148" (at 0 -2.54 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:D_DO-35_P7.62mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Diodo (1 = cátodo, 2 = ánodo)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n2} {n1} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "D_0_1"
+      (polyline (pts (xy -1.27 1.27) (xy -1.27 -1.27) (xy 1.27 0) (xy -1.27 1.27)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy 1.27 1.27) (xy 1.27 -1.27)) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "D_1_1"
+      (pin passive line (at 3.81 0 180) (length 2.54) (name "K" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at -3.81 0 0) (length 2.54) (name "A" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "LED"
+    (property "Reference" "D" (at 0 2.54 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "LED_ROJO" (at 0 -2.54 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:LED_D5.0mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Diodo LED (1 = cátodo, 2 = ánodo)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n2} {n1} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "LED_0_1"
+      (polyline (pts (xy -1.27 1.27) (xy -1.27 -1.27) (xy 1.27 0) (xy -1.27 1.27)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy 1.27 1.27) (xy 1.27 -1.27)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy 0 1.524) (xy 1.27 2.794)) (stroke (width 0.2) (type default)) (fill (type none)))
+      (polyline (pts (xy 1.016 1.778) (xy 2.286 3.048)) (stroke (width 0.2) (type default)) (fill (type none))))
+    (symbol "LED_1_1"
+      (pin passive line (at 3.81 0 180) (length 2.54) (name "K" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at -3.81 0 0) (length 2.54) (name "A" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "Q_NPN"
+    (property "Reference" "Q" (at 3.81 1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "2N2222" (at 3.81 -1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:TO-92_Inline" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Transistor NPN (1 = E, 2 = B, 3 = C, como el encapsulado TO-92)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n3} {n2} {n1} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "Q_NPN_0_1"
+      (polyline (pts (xy -1.27 1.905) (xy -1.27 -1.905)) (stroke (width 0.381) (type default)) (fill (type none)))
+      (polyline (pts (xy -1.27 0.635) (xy 1.27 2.54)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy -1.27 -0.635) (xy 1.27 -2.54)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy 1.27 -2.54) (xy 0.254 -2.286) (xy 0.762 -1.524) (xy 1.27 -2.54)) (stroke (width 0.2) (type default)) (fill (type outline)))
+      (circle (center 0 0) (radius 2.8194) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "Q_NPN_1_1"
+      (pin passive line (at 1.27 5.08 270) (length 2.54) (name "C" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
+      (pin input line (at -5.08 0 0) (length 3.81) (name "B" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 1.27 -5.08 90) (length 2.54) (name "E" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))))
+  (symbol "Q_PNP"
+    (property "Reference" "Q" (at 3.81 1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "2N3906" (at 3.81 -1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:TO-92_Inline" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Transistor PNP (1 = E, 2 = B, 3 = C, como el encapsulado TO-92)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n3} {n2} {n1} {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "Q_PNP_0_1"
+      (polyline (pts (xy -1.27 1.905) (xy -1.27 -1.905)) (stroke (width 0.381) (type default)) (fill (type none)))
+      (polyline (pts (xy -1.27 0.635) (xy 1.27 2.54)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy -1.27 -0.635) (xy 1.27 -2.54)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy -1.27 -0.635) (xy -0.254 -0.889) (xy -0.762 -1.651) (xy -1.27 -0.635)) (stroke (width 0.2) (type default)) (fill (type outline)))
+      (circle (center 0 0) (radius 2.8194) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "Q_PNP_1_1"
+      (pin passive line (at 1.27 -5.08 90) (length 2.54) (name "C" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
+      (pin input line (at -5.08 0 0) (length 3.81) (name "B" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 1.27 5.08 270) (length 2.54) (name "E" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))))
+  (symbol "VDC"
+    (property "Reference" "V" (at 3.81 1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "5" (at 3.81 -1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:Bornera_2_P5.08mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Fuente de tensión continua (voltios)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n1} {n2} DC {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "VDC_0_1"
+      (circle (center 0 0) (radius 2.54) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy -0.635 1.27) (xy 0.635 1.27)) (stroke (width 0.2) (type default)) (fill (type none)))
+      (polyline (pts (xy 0 1.905) (xy 0 0.635)) (stroke (width 0.2) (type default)) (fill (type none)))
+      (polyline (pts (xy -0.635 -1.27) (xy 0.635 -1.27)) (stroke (width 0.2) (type default)) (fill (type none))))
+    (symbol "VDC_1_1"
+      (pin passive line (at 0 5.08 270) (length 2.54) (name "+" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -5.08 90) (length 2.54) (name "-" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "VSIN"
+    (property "Reference" "V" (at 3.81 1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "SIN(0 1 1k)" (at 3.81 -1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:Bornera_2_P5.08mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Generador senoidal: SIN(offset amplitud frecuencia)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n1} {n2} {value} AC 1" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "VSIN_0_1"
+      (circle (center 0 0) (radius 2.54) (stroke (width 0.254) (type default)) (fill (type none)))
+      (arc (start -1.27 0) (mid -0.635 0.635) (end 0 0) (stroke (width 0.2) (type default)) (fill (type none)))
+      (arc (start 0 0) (mid 0.635 -0.635) (end 1.27 0) (stroke (width 0.2) (type default)) (fill (type none))))
+    (symbol "VSIN_1_1"
+      (pin passive line (at 0 5.08 270) (length 2.54) (name "+" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -5.08 90) (length 2.54) (name "-" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "IDC"
+    (property "Reference" "I" (at 3.81 1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "1m" (at 3.81 -1.27 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "Basicos:Bornera_2_P5.08mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Description" "Fuente de corriente continua (amperios, de 1 a 2 por dentro)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Sim.Template" "{ref} {n1} {n2} DC {value}" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "IDC_0_1"
+      (circle (center 0 0) (radius 2.54) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy 0 1.524) (xy 0 -1.524)) (stroke (width 0.2) (type default)) (fill (type none)))
+      (polyline (pts (xy -0.635 -0.762) (xy 0 -1.524) (xy 0.635 -0.762)) (stroke (width 0.2) (type default)) (fill (type none))))
+    (symbol "IDC_1_1"
+      (pin passive line (at 0 5.08 270) (length 2.54) (name "~" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+      (pin passive line (at 0 -5.08 90) (length 2.54) (name "~" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))))
+  (symbol "GND" (power)
+    (property "Reference" "#PWR" (at 0 -6.35 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Value" "GND" (at 0 -3.81 0) (effects (font (size 1.27 1.27))))
+    (property "Description" "Masa (nodo 0 de la simulación)" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "GND_0_1"
+      (polyline (pts (xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27)) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "GND_1_1"
+      (pin power_in line (at 0 0 270) (length 0) hide (name "GND" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))))
+  (symbol "VCC" (power)
+    (property "Reference" "#PWR" (at 0 3.81 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Value" "VCC" (at 0 3.556 0) (effects (font (size 1.27 1.27))))
+    (property "Description" "Alimentación: une todos los puntos con el mismo nombre" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (symbol "VCC_0_1"
+      (polyline (pts (xy 0 0) (xy 0 2.54)) (stroke (width 0.254) (type default)) (fill (type none)))
+      (polyline (pts (xy -1.27 2.54) (xy 1.27 2.54)) (stroke (width 0.254) (type default)) (fill (type none))))
+    (symbol "VCC_1_1"
+      (pin power_in line (at 0 0 90) (length 0) hide (name "VCC" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))))
+)
