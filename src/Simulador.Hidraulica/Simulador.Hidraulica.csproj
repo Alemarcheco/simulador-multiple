@@ -2,6 +2,7 @@
   <!-- Módulo "Hidráulica": diseño gráfico y simulación de procesos con tanques, tuberías, bombas y válvulas. -->
   <PropertyGroup>
     <RootNamespace>Simulador.Hidraulica</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />

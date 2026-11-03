@@ -42,6 +42,7 @@ public sealed class PropertyPanel : UserControl
         if (element is null)
         {
             Header(net.Name);
+            if (!string.IsNullOrWhiteSpace(net.Description)) Note(net.Description);
             if (sim is null)
             {
                 TextField("Nombre del proyecto", net.Name, v => net.Name = v);

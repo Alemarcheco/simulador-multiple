@@ -1,12 +1,29 @@
 namespace Simulador.Hidraulica.Model;
 
-/// <summary>Diseños de ejemplo para empezar.</summary>
+/// <summary>Un diseño de ejemplo que se puede abrir desde el menú "Ejemplos".</summary>
+public sealed record SampleInfo(string Name, string Summary, Func<HydraulicNetwork> Create);
+
+/// <summary>Diseños de ejemplo ya prediseñados para empezar o para aprender.</summary>
 public static class Samples
 {
+    public static IReadOnlyList<SampleInfo> All { get; } =
+    [
+        new("Bombeo a tanque elevado", "Bomba desde un pozo a un tanque a 12 m, con salida regulada por válvula de control.", PumpingToTank),
+        new("Trasvase por gravedad", "Un tanque alto vacía a otro bajo por gravedad; abre o cierra la válvula para ver el efecto.", GravityTransfer),
+        new("Dos bombas en paralelo", "Dos bombas con antirretorno impulsan al mismo tanque; enciende la segunda y compara el caudal.", ParallelPumps),
+        new("Red de distribución en malla", "Tanque elevado que alimenta una malla de cuatro tramos con consumos, como una urbanización o un riego.", DistributionLoop),
+        new("Control de nivel con electroválvula", "Llenado desde la red pública con electroválvula y transmisor de nivel, listo para mandarlo desde un PLC.", LevelControl),
+    ];
+
     /// <summary>Bombeo desde un pozo a un tanque elevado, con válvula de control a la salida hacia el consumo.</summary>
     public static HydraulicNetwork PumpingToTank()
     {
-        var net = new HydraulicNetwork { Name = "Bombeo a tanque elevado" };
+        var net = new HydraulicNetwork
+        {
+            Name = "Bombeo a tanque elevado",
+            Description = "La bomba B1 sube agua del pozo R1 al tanque T1, a 12 m de altura. El tanque descarga hacia R2 a través de " +
+                "la válvula de control V1. Durante la simulación, mueve V1 o cambia la velocidad de B1 para equilibrar el nivel.",
+        };
         net.Add(new Reservoir { Id = "R1", Elevation = 0, Level = 1, X = 80, Y = 360 });
         net.Add(new Junction { Id = "N1", Elevation = 0, X = 260, Y = 360 });
         net.Add(new Junction { Id = "N2", Elevation = 0, X = 420, Y = 360 });
@@ -27,6 +44,131 @@ public static class Samples
         net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 680, Y = 110 });
         net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N2", X = 420, Y = 300 });
         net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "V1", X = 860, Y = 250 });
+        return net;
+    }
+
+    /// <summary>Dos tanques a distinta altura unidos por una tubería con válvula manual.</summary>
+    public static HydraulicNetwork GravityTransfer()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Trasvase por gravedad",
+            Description = "El tanque T1 está 8 m por encima de T2 y se vacía hacia él por gravedad, sin bombas. El caudal baja a " +
+                "medida que baja el nivel de T1. Cierra V1 para parar el trasvase, o ábrela a medias para hacerlo más lento.",
+        };
+        net.Add(new Tank { Id = "T1", Elevation = 8, Diameter = 2, MaxLevel = 3, InitialLevel = 2.8, X = 160, Y = 160 });
+        net.Add(new Junction { Id = "N1", Elevation = 0, X = 160, Y = 420 });
+        net.Add(new Junction { Id = "N2", Elevation = 0, X = 460, Y = 420 });
+        net.Add(new Junction { Id = "N3", Elevation = 0, X = 620, Y = 420 });
+        net.Add(new Tank { Id = "T2", Elevation = 0, Diameter = 2.5, MaxLevel = 3, InitialLevel = 0.2, X = 860, Y = 340 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 9, Diameter = 0.05, MinorLoss = 0.5 }, "T1", "N1");
+        net.Connect(new Pipe { Id = "P2", Length = 15, Diameter = 0.05, MinorLoss = 0.9 }, "N1", "N2");
+        net.Connect(new Valve { Id = "V1", Kind = ValveKind.Manual, Diameter = 0.05, InitialOpening = 1 }, "N2", "N3");
+        net.Connect(new Pipe { Id = "P3", Length = 12, Diameter = 0.05, MinorLoss = 1.0 }, "N3", "T2", [new CanvasPoint(860, 420)]);
+
+        net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 260, Y = 100 });
+        net.Sensors.Add(new Sensor { Id = "LT2", Kind = SensorKind.Level, Target = "T2", X = 960, Y = 280 });
+        net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "V1", X = 540, Y = 360 });
+        return net;
+    }
+
+    /// <summary>Dos bombas iguales en paralelo con sus antirretornos, impulsando a un tanque elevado.</summary>
+    public static HydraulicNetwork ParallelPumps()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Dos bombas en paralelo",
+            Description = "B1 y B2 son iguales y aspiran del mismo depósito. Empieza solo con B1. Selecciona B2 y ponla en marcha: el " +
+                "caudal sube, pero no se duplica, porque la tubería común pierde más carga. Los antirretornos impiden que " +
+                "el agua vuelva por la bomba parada.",
+        };
+        net.Add(new Reservoir { Id = "R1", Elevation = 0, Level = 1.5, X = 80, Y = 340 });
+        net.Add(new Junction { Id = "N1", Elevation = 0, X = 240, Y = 340 });
+        net.Add(new Junction { Id = "N2", Elevation = 0, X = 240, Y = 240 });
+        net.Add(new Junction { Id = "N3", Elevation = 0, X = 240, Y = 440 });
+        net.Add(new Junction { Id = "N4", Elevation = 0, X = 420, Y = 240 });
+        net.Add(new Junction { Id = "N5", Elevation = 0, X = 420, Y = 440 });
+        net.Add(new Junction { Id = "N6", Elevation = 0, X = 560, Y = 240 });
+        net.Add(new Junction { Id = "N7", Elevation = 0, X = 560, Y = 440 });
+        net.Add(new Junction { Id = "N8", Elevation = 0, X = 680, Y = 340 });
+        net.Add(new Tank { Id = "T1", Elevation = 15, Diameter = 2.5, MaxLevel = 3, InitialLevel = 0.5, X = 960, Y = 160 });
+        net.Add(new Junction { Id = "N9", Elevation = 0, Demand = 0.004, X = 1120, Y = 340 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 4, Diameter = 0.08, MinorLoss = 0.5 }, "R1", "N1");
+        net.Connect(new Pipe { Id = "P2", Length = 2, Diameter = 0.065, MinorLoss = 0.9 }, "N1", "N2");
+        net.Connect(new Pipe { Id = "P3", Length = 2, Diameter = 0.065, MinorLoss = 0.9 }, "N1", "N3");
+        net.Connect(new Pump { Id = "B1", ShutoffHead = 34, RatedFlow = 0.006, RatedHead = 26 }, "N2", "N4");
+        net.Connect(new Pump { Id = "B2", ShutoffHead = 34, RatedFlow = 0.006, RatedHead = 26, InitiallyOn = false }, "N3", "N5");
+        net.Connect(new Valve { Id = "VR1", Kind = ValveKind.Check, Diameter = 0.05, OpenLoss = 2 }, "N4", "N6");
+        net.Connect(new Valve { Id = "VR2", Kind = ValveKind.Check, Diameter = 0.05, OpenLoss = 2 }, "N5", "N7");
+        net.Connect(new Pipe { Id = "P4", Length = 2, Diameter = 0.065, MinorLoss = 0.9 }, "N6", "N8", [new CanvasPoint(680, 240)]);
+        net.Connect(new Pipe { Id = "P5", Length = 2, Diameter = 0.065, MinorLoss = 0.9 }, "N7", "N8", [new CanvasPoint(680, 440)]);
+        net.Connect(new Pipe { Id = "P6", Length = 60, Diameter = 0.065, MinorLoss = 3 }, "N8", "T1", [new CanvasPoint(960, 340)]);
+        net.Connect(new Pipe { Id = "P7", Length = 30, Diameter = 0.065, MinorLoss = 1 }, "T1", "N9", [new CanvasPoint(1120, 160)]);
+
+        net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "P6", X = 820, Y = 290 });
+        net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N8", X = 700, Y = 290 });
+        net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 1060, Y = 100 });
+        return net;
+    }
+
+    /// <summary>Tanque elevado que alimenta una malla de cuatro nudos con consumos.</summary>
+    public static HydraulicNetwork DistributionLoop()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Red de distribución en malla",
+            Description = "El tanque T1, a 25 m, alimenta una malla cerrada que da servicio a cuatro puntos de consumo (N2 a N5). " +
+                "El agua llega a cada punto por dos caminos, y el cálculo reparte el caudal según las pérdidas de cada tramo. " +
+                "Cambia los consumos o los diámetros y mira cómo cambian las presiones: la más baja está en N4, el punto más alto y lejano.",
+        };
+        net.Add(new Tank { Id = "T1", Elevation = 25, Diameter = 5, MaxLevel = 4, InitialLevel = 3.5, X = 120, Y = 140 });
+        net.Add(new Junction { Id = "N1", Elevation = 2, X = 120, Y = 360 });
+        net.Add(new Junction { Id = "N2", Elevation = 3, Demand = 0.0025, X = 400, Y = 360 });
+        net.Add(new Junction { Id = "N3", Elevation = 4, Demand = 0.003, X = 760, Y = 360 });
+        net.Add(new Junction { Id = "N4", Elevation = 5, Demand = 0.002, X = 760, Y = 620 });
+        net.Add(new Junction { Id = "N5", Elevation = 3, Demand = 0.0035, X = 400, Y = 620 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 120, Diameter = 0.1, Roughness = 0.0015, MinorLoss = 1.5 }, "T1", "N1");
+        net.Connect(new Pipe { Id = "P2", Length = 150, Diameter = 0.08 }, "N1", "N2");
+        net.Connect(new Pipe { Id = "P3", Length = 200, Diameter = 0.063 }, "N2", "N3");
+        net.Connect(new Pipe { Id = "P4", Length = 150, Diameter = 0.05 }, "N3", "N4");
+        net.Connect(new Pipe { Id = "P5", Length = 200, Diameter = 0.063 }, "N4", "N5");
+        net.Connect(new Pipe { Id = "P6", Length = 150, Diameter = 0.063 }, "N5", "N2");
+        net.Connect(new Pipe { Id = "P7", Length = 300, Diameter = 0.063 }, "N1", "N5", [new CanvasPoint(120, 620)]);
+
+        net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N4", X = 840, Y = 680 });
+        net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 220, Y = 80 });
+        net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "P1", X = 180, Y = 260 });
+        return net;
+    }
+
+    /// <summary>Llenado de un depósito desde la red pública con electroválvula, pensado para el control con PLC.</summary>
+    public static HydraulicNetwork LevelControl()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Control de nivel con electroválvula",
+            Description = "La red pública (R1, a unos 3 bar) llena el depósito T1 a través de la electroválvula EV1, mientras el " +
+                "consumo de N2 lo vacía. Sin control, T1 acaba rebosando. Ábrela y ciérrala a mano viendo LT1, o en el banco " +
+                "combinado conecta LT1.Medida a una entrada analógica del PLC y una salida a EV1.Bobina (por ejemplo, abrir " +
+                "por debajo de 0,8 m y cerrar por encima de 1,6 m).",
+        };
+        net.Add(new Reservoir { Id = "R1", Elevation = 0, Level = 30, X = 80, Y = 260 });
+        net.Add(new Junction { Id = "N1", Elevation = 0, X = 300, Y = 260 });
+        net.Add(new Junction { Id = "N3", Elevation = 0, X = 440, Y = 260 });
+        net.Add(new Tank { Id = "T1", Elevation = 4, Diameter = 1.2, MaxLevel = 2, InitialLevel = 0.6, X = 620, Y = 180 });
+        net.Add(new Junction { Id = "N2", Elevation = 0, Demand = 0.0015, X = 880, Y = 360 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 25, Diameter = 0.032, MinorLoss = 1 }, "R1", "N1");
+        net.Connect(new Valve { Id = "EV1", Kind = ValveKind.Solenoid, Diameter = 0.025, OpenLoss = 3, InitialOpening = 1, StrokeTime = 0.5 }, "N1", "N3");
+        net.Connect(new Pipe { Id = "P2", Length = 8, Diameter = 0.032, MinorLoss = 1.5 }, "N3", "T1", [new CanvasPoint(620, 260)]);
+        net.Connect(new Pipe { Id = "P3", Length = 20, Diameter = 0.04, MinorLoss = 1 }, "T1", "N2", [new CanvasPoint(880, 180)]);
+
+        net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 720, Y = 120 });
+        net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "EV1", X = 370, Y = 200 });
+        net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N2", X = 960, Y = 300 });
         return net;
     }
 

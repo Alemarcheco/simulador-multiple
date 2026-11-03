@@ -9,6 +9,7 @@ using Simulador.Core.Modules;
 using Simulador.Hidraulica.Model;
 using Simulador.Hidraulica.Persistence;
 using Simulador.Hidraulica.Solver;
+using Simulador.Hidraulica.View3D;
 
 namespace Simulador.Hidraulica.Ui;
 
@@ -17,6 +18,8 @@ public sealed class HydraulicView : UserControl
 {
     private readonly IModuleHost _host;
     private readonly NetworkCanvas _canvas = new();
+    private readonly Hydraulic3DView _view3d = new();
+    private readonly TabControl _views = new() { Padding = new Thickness(0) };
     private readonly PropertyPanel _props = new();
     private readonly TrendChart _chart = new() { Height = 170 };
     private readonly TextBlock _messages = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.8, Margin = new Thickness(8, 4) };
@@ -46,7 +49,7 @@ public sealed class HydraulicView : UserControl
         toolbar.Children.Add(ToolbarButton("Abrir…", () => _ = Open()));
         toolbar.Children.Add(ToolbarButton("Guardar", () => _ = Save(false)));
         toolbar.Children.Add(ToolbarButton("Guardar como…", () => _ = Save(true)));
-        toolbar.Children.Add(ToolbarButton("Ejemplo", () => Load(Samples.PumpingToTank(), null)));
+        toolbar.Children.Add(ExamplesButton());
         toolbar.Children.Add(Separator());
         _run.Click += (_, _) => Run();
         _pause.Click += (_, _) => Pause();
@@ -61,10 +64,15 @@ public sealed class HydraulicView : UserControl
 
         BuildPalette();
 
-        _canvas.SelectionChanged += (_, e) => _props.Show(e, _net, _sim);
-        _canvas.DesignChanged += (_, _) => MarkDirty();
+        _canvas.SelectionChanged += (_, e) =>
+        {
+            _props.Show(e, _net, _sim);
+            _view3d.SelectedId = e switch { HydraulicNode n => n.Id, HydraulicLink l => l.Id, Sensor x => x.Id, _ => null };
+            _view3d.InvalidateVisual();
+        };
+        _canvas.DesignChanged += (_, _) => { MarkDirty(); _view3d.InvalidateVisual(); };
         _canvas.Hint += (_, text) => _host.SetStatus(text);
-        _props.DesignChanged += (_, _) => { MarkDirty(); _canvas.InvalidateVisual(); };
+        _props.DesignChanged += (_, _) => { MarkDirty(); _canvas.InvalidateVisual(); _view3d.InvalidateVisual(); };
         _props.Show(null, _net, null);
         _timer.Tick += (_, _) => Frame();
 
@@ -91,10 +99,13 @@ public sealed class HydraulicView : UserControl
         root.Children.Add(Dock(bottom, Avalonia.Controls.Dock.Bottom));
         root.Children.Add(Dock(left, Avalonia.Controls.Dock.Left));
         root.Children.Add(Dock(right, Avalonia.Controls.Dock.Right));
-        root.Children.Add(center);
+        _view3d.Network = _net;
+        _views.Items.Add(new TabItem { Header = "Esquema", Content = center });
+        _views.Items.Add(new TabItem { Header = "Vista 3D", Content = Build3DPanel() });
+        root.Children.Add(_views);
         Content = root;
         UpdateClock();
-        _messages.Text = "Diseña la red con la paleta de la izquierda y pulsa ▶ Simular. Se ha cargado un ejemplo de bombeo a un tanque elevado.";
+        _messages.Text = "Diseña la red con la paleta de la izquierda y pulsa ▶ Simular, o abre otro diseño desde «Ejemplos». " + _net.Description;
     }
 
     // ---------------------------------------------------------------- Paleta
@@ -184,6 +195,8 @@ public sealed class HydraulicView : UserControl
         _timer.Stop();
         _sim = null;
         _canvas.Simulation = null;
+        _view3d.Simulation = null;
+        _view3d.InvalidateVisual();
         SetDesignLocked(false);
         _run.Content = "▶ Simular";
         _run.IsEnabled = true;
@@ -197,6 +210,7 @@ public sealed class HydraulicView : UserControl
     {
         _canvas.DesignLocked = locked;
         _canvas.Simulation = _sim;
+        _view3d.Simulation = _sim;
         if (locked) SelectTool(Tool.Select);
         foreach (var (t, b) in _toolButtons) b.IsEnabled = !locked || t == Tool.Select;
         _props.Show(_canvas.Selected, _net, _sim);
@@ -224,6 +238,7 @@ public sealed class HydraulicView : UserControl
         }
 
         _canvas.Animate(real);
+        if (_views.SelectedIndex == 1) _view3d.Animate(real);
         _props.RefreshLive();
         UpdateClock();
         if (_sim.Warnings.Count > 0) _messages.Text = "Avisos: " + string.Join(" · ", _sim.Warnings.TakeLast(3));
@@ -250,6 +265,9 @@ public sealed class HydraulicView : UserControl
         _path = path;
         _dirty = false;
         _canvas.Network = net;
+        _view3d.Network = net;
+        _view3d.SelectedId = null;
+        _view3d.ResetFraming();
         _canvas.InvalidateMeasure();
         _props.Show(null, net, null);
         _chart.Clear();
@@ -330,6 +348,58 @@ public sealed class HydraulicView : UserControl
         if (r.IsValid && r.Warnings.Count == 0) { _messages.Text = "El diseño está listo para simular."; return; }
         var parts = r.Errors.Select(e => "✕ " + e).Concat(r.Warnings.Select(w => "⚠ " + w));
         _messages.Text = string.Join("   ", parts);
+    }
+
+    // ---------------------------------------------------------------- Ejemplos y vista 3D
+
+    private Button ExamplesButton()
+    {
+        var menu = new MenuFlyout();
+        foreach (var sample in Samples.All)
+        {
+            var item = new MenuItem
+            {
+                Header = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock { Text = sample.Name, FontWeight = FontWeight.SemiBold },
+                        new TextBlock { Text = sample.Summary, Opacity = 0.7, FontSize = 12, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
+                    },
+                },
+            };
+            item.Click += (_, _) =>
+            {
+                var net = sample.Create();
+                Load(net, null);
+                _messages.Text = net.Description;
+            };
+            menu.Items.Add(item);
+        }
+        return new Button { Content = "Ejemplos ▾", Margin = new Thickness(2), Flyout = menu };
+    }
+
+    private Control Build3DPanel()
+    {
+        var bar = new WrapPanel { Margin = new Thickness(6, 4) };
+        bar.Children.Add(ToolbarButton("Encuadrar", _view3d.FitAll));
+        bar.Children.Add(ToolbarButton("Perspectiva", () => _view3d.SetView(-60, 28)));
+        bar.Children.Add(ToolbarButton("Frente", () => _view3d.SetView(-90, 5)));
+        bar.Children.Add(ToolbarButton("Lateral", () => _view3d.SetView(0, 5)));
+        bar.Children.Add(ToolbarButton("Planta", () => _view3d.SetView(-90, 89)));
+        var labels = new CheckBox { Content = "Etiquetas", IsChecked = true, Margin = new Thickness(8, 0) };
+        labels.IsCheckedChanged += (_, _) => { _view3d.ShowLabels = labels.IsChecked == true; _view3d.InvalidateVisual(); };
+        bar.Children.Add(labels);
+        bar.Children.Add(new TextBlock
+        {
+            Text = "Las alturas (cotas) son las reales; la planta sigue la disposición del esquema.",
+            VerticalAlignment = VerticalAlignment.Center, Opacity = 0.6, Margin = new Thickness(8, 0),
+        });
+        var panel = new DockPanel();
+        panel.Children.Add(Dock(bar, Avalonia.Controls.Dock.Top));
+        panel.Children.Add(_view3d);
+        return panel;
     }
 
     // ---------------------------------------------------------------- Utilidades
