@@ -86,8 +86,9 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
    extrusión de perfil) que suman, restan o intersecan; visor 3D por software; proyecto `.cad3d` (JSON);
    exportación STL binario y 3MF (una pieza por objeto, con color); plantilla de caja con tapa y caja a medida
    de una `BoardExport`. El motor actual (`MeshKernel`, árboles BSP en C#) da mallas cerradas.
-2. **Motor exacto**: `IGeometryKernel` con OpenCASCADE (envoltorio nativo) para redondeos, chaflanes, vaciados
-   e importación/exportación STEP; visor OpenGL.
+2. **Motor exacto** (hecho): `OcctKernel` (`IExactKernel`) sobre OpenCASCADE mediante el envoltorio nativo
+   `native/simcad_occt`: geometría exacta, redondeos, chaflanes, vaciados, revoluciones e importación/exportación
+   STEP. Si falta la biblioteca nativa, la app usa `MeshKernel`. Pendiente: visor OpenGL.
 3. **Bocetos 2D** con restricciones y cotas, revolución, patrones y simetrías.
 4. **Integración**: caja desde la placa del módulo de circuitos con un clic; exportar equipos animables `.sm3d`
    para el banco de pruebas (contrato `Simulador.Core.Model3D`).
