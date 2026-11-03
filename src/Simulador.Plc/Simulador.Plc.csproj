@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Módulo "PLC y microcontroladores": editor de programas, panel de E/S virtual y monitorización en línea. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Plc</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+    <ProjectReference Include="..\Simulador.Plc.Runtime\Simulador.Plc.Runtime.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Motor de ejecución de PLC sin interfaz gráfica: ciclo de scan, lenguajes IEC 61131-3 y perfiles de marca. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Plc.Runtime</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Plc.Tests" />
+  </ItemGroup>
+</Project>
