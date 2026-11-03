@@ -6,3 +6,6 @@ obj/
 .idea/
 TestResults/
 publish/
+
+# Binarios nativos compilados (OpenCASCADE y envoltorio)
+native/bin/

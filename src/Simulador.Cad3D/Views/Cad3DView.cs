@@ -5,7 +5,6 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Simulador.Cad3D.Geometry;
-using Simulador.Cad3D.Geometry.Csg;
 using Simulador.Cad3D.Geometry.Export;
 using Simulador.Cad3D.Geometry.Model;
 using Simulador.Cad3D.Geometry.Templates;
@@ -18,7 +17,7 @@ namespace Simulador.Cad3D.Views;
 internal sealed class Cad3DView : DockPanel
 {
     private readonly IModuleHost _host;
-    private readonly IGeometryKernel _kernel = new MeshKernel();
+    private readonly IGeometryKernel _kernel;
     private readonly DocumentEvaluator _evaluator;
     private readonly Viewport3D _viewport = new();
     private readonly PropertyEditor _properties = new();
@@ -35,6 +34,7 @@ internal sealed class Cad3DView : DockPanel
     public Cad3DView(IModuleHost host)
     {
         _host = host;
+        _kernel = KernelFactory.CreateBest(msg => host.SetStatus($"Diseño 3D: {msg}"));
         _evaluator = new DocumentEvaluator(_kernel);
         _rebuildTimer.Tick += (_, _) => { _rebuildTimer.Stop(); _ = RebuildAsync(); };
         _properties.Changed += ScheduleRebuild;
@@ -61,7 +61,7 @@ internal sealed class Cad3DView : DockPanel
         _parts.SelectionChanged += (_, _) => { if (!_refreshing) OnPartSelected(); };
         _features.SelectionChanged += (_, _) => { if (!_refreshing) OnFeatureSelected(); };
 
-        LoadDocument(Sample(), null);
+        LoadDocument(Sample(_kernel is IExactKernel), null);
     }
 
     // ---------- Construcción de la interfaz ----------
@@ -95,6 +95,8 @@ internal sealed class Cad3DView : DockPanel
                 new Separator { Width = 12 },
                 B("Exportar STL…", ExportStlAsync, "Todas las piezas visibles en un único STL"),
                 B("Exportar 3MF…", Export3mfAsync, "Una pieza por objeto, con nombre y color"),
+                B("Exportar STEP…", ExportStepAsync, "Geometría exacta para otros programas CAD (necesita OpenCASCADE)"),
+                B("Importar STEP…", ImportStepAsync, "Añade un modelo STEP a la pieza seleccionada (p. ej. modelos 3D de KiCad)"),
                 new Separator { Width = 12 },
                 S("Encuadrar", _viewport.FitAll),
                 S("Iso", () => _viewport.SetView(-55, 30)),
@@ -128,6 +130,10 @@ internal sealed class Cad3DView : DockPanel
                 Small("Esfera", () => AddFeature(new SphereFeature { Name = "Esfera" }), "Añadir esfera"),
                 Small("Extrusión", () => AddFeature(new ExtrudeFeature { Name = "Extrusión" }), "Perfil 2D libre extruido"),
                 Small("Agujero", () => AddFeature(new CylinderFeature { Name = "Agujero", Mode = CombineMode.Hueco, Diameter = 3, Height = 30, Position = new Vec3(0, 0, -5), Segments = 32 }), "Cilindro que resta material"),
+                Small("Revolución", () => AddFeature(new RevolveFeature { Name = "Revolución" }), "Perfil girado alrededor de Z (necesita OpenCASCADE)"),
+                Small("Redondeo", () => AddFeature(new FilletFeature { Name = "Redondeo" }), "Redondea aristas de lo anterior (necesita OpenCASCADE)"),
+                Small("Chaflán", () => AddFeature(new ChamferFeature { Name = "Chaflán" }), "Achaflana aristas de lo anterior (necesita OpenCASCADE)"),
+                Small("Vaciado", () => AddFeature(new ShellFeature { Name = "Vaciado" }), "Vacía lo anterior dejando la parte de arriba abierta (necesita OpenCASCADE)"),
             },
         };
 
@@ -170,7 +176,7 @@ internal sealed class Cad3DView : DockPanel
 
     // ---------- Documento ----------
 
-    private static CadDocument Sample()
+    private static CadDocument Sample(bool exact)
     {
         var doc = EnclosureTemplate.Create(new EnclosureParameters
         {
@@ -178,6 +184,11 @@ internal sealed class Cad3DView : DockPanel
             Standoffs = new[] { new Standoff(5, 5), new Standoff(65, 5), new Standoff(5, 40), new Standoff(65, 40) },
             Cutouts = new[] { new WallCutout("Hueco USB", Wall.Frontal, 29, 8, 12, 7) },
         }, "Ejemplo: caja electrónica");
+        if (exact)
+        {
+            doc.Parts[0].Features.Insert(1, new FilletFeature { Name = "Redondeo base", Radius = 1.5, Edges = EdgeSelection.Inferiores });
+            doc.Parts[1].Features.Insert(1, new FilletFeature { Name = "Redondeo tapa", Radius = 1, Edges = EdgeSelection.Inferiores });
+        }
         return doc;
     }
 
@@ -211,7 +222,7 @@ internal sealed class Cad3DView : DockPanel
 
     private static string Describe(Feature f)
     {
-        string mode = f.Mode switch { CombineMode.Hueco => "−", CombineMode.Interseccion => "∩", _ => "+" };
+        string mode = f is ModifierFeature ? "◇" : f.Mode switch { CombineMode.Hueco => "−", CombineMode.Interseccion => "∩", _ => "+" };
         string name = string.IsNullOrWhiteSpace(f.Name) ? f.KindName : f.Name;
         return f.Enabled ? $"{mode} {name}" : $"{mode} {name} (desactivada)";
     }
@@ -345,7 +356,7 @@ internal sealed class Cad3DView : DockPanel
             items.Add(new RenderItem(mesh, color));
         }
         // La operación seleccionada se resalta en transparente (así se ven también los huecos).
-        if (CurrentFeature is { } f)
+        if (CurrentFeature is { } f and not ModifierFeature)
         {
             try
             {
@@ -420,6 +431,39 @@ internal sealed class Cad3DView : DockPanel
         if (file?.TryGetLocalPath() is not { } path) return;
         StlWriter.Save(path, parts.Select(p => _meshes[p]!));
         _host.SetStatus($"Exportado {Path.GetFileName(path)}");
+    }
+
+    private async Task ExportStepAsync()
+    {
+        if (_kernel is not IExactKernel exact) throw new InvalidOperationException("Exportar STEP necesita el motor OpenCASCADE.");
+        var parts = ExportableParts();
+        if (Storage is not { } sp) return;
+        var file = await sp.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Exportar STEP",
+            SuggestedFileName = _doc.Name + ".step",
+            DefaultExtension = ".step",
+            FileTypeChoices = [new FilePickerFileType("STEP") { Patterns = ["*.step", "*.stp"] }],
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        var solids = new List<(string, ISolid)>();
+        foreach (var p in parts)
+            if (_evaluator.BuildSolid(p.DeepClone()) is { } s) solids.Add((p.Name, s));
+        exact.ExportStep(path, solids);
+        _host.SetStatus($"Exportado {Path.GetFileName(path)}");
+    }
+
+    private async Task ImportStepAsync()
+    {
+        if (_kernel is not IExactKernel) throw new InvalidOperationException("Importar STEP necesita el motor OpenCASCADE.");
+        if (Storage is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Importar modelo STEP",
+            FileTypeFilter = [new FilePickerFileType("STEP") { Patterns = ["*.step", "*.stp"] }],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        AddFeature(new StepImportFeature { Name = Path.GetFileNameWithoutExtension(path), FilePath = path });
     }
 
     private async Task Export3mfAsync()

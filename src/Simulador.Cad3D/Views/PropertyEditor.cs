@@ -51,9 +51,21 @@ internal sealed class PropertyEditor : ScrollViewer
         Header(f.KindName);
         Text("Nombre", f.Name, v => { f.Name = v; Renamed?.Invoke(); });
 
-        var mode = new ComboBox { ItemsSource = new[] { "Sólido (añade)", "Hueco (resta)", "Intersección" }, SelectedIndex = (int)f.Mode, HorizontalAlignment = HorizontalAlignment.Stretch };
-        mode.SelectionChanged += (_, _) => { f.Mode = (CombineMode)Math.Max(0, mode.SelectedIndex); Renamed?.Invoke(); Changed?.Invoke(); };
-        Row("Modo", mode);
+        bool modifier = f is ModifierFeature;
+        if (!modifier)
+        {
+            var mode = new ComboBox { ItemsSource = new[] { "Sólido (añade)", "Hueco (resta)", "Intersección" }, SelectedIndex = (int)f.Mode, HorizontalAlignment = HorizontalAlignment.Stretch };
+            mode.SelectionChanged += (_, _) => { f.Mode = (CombineMode)Math.Max(0, mode.SelectedIndex); Renamed?.Invoke(); Changed?.Invoke(); };
+            Row("Modo", mode);
+        }
+        else
+        {
+            _stack.Children.Add(new TextBlock
+            {
+                Text = "Se aplica a todo lo construido antes en esta pieza. Necesita el motor exacto (OpenCASCADE).",
+                Opacity = 0.6, FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
+        }
         Check("Activa", f.Enabled, v => { f.Enabled = v; Renamed?.Invoke(); Changed?.Invoke(); });
 
         Header("Medidas (mm)");
@@ -69,28 +81,47 @@ internal sealed class PropertyEditor : ScrollViewer
             });
         }
 
-        if (f is ExtrudeFeature ex)
+        foreach (var prop in f.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.PropertyType == typeof(EdgeSelection)))
         {
-            var box = new TextBox
-            {
-                Text = string.Join("; ", ex.Profile.Select(p => FormattableString.Invariant($"{p.X:0.###},{p.Y:0.###}"))),
-                AcceptsReturn = false,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            };
-            var error = new TextBlock { Foreground = Avalonia.Media.Brushes.OrangeRed, FontSize = 12 };
-            box.LostFocus += (_, _) =>
-            {
-                if (TryParseProfile(box.Text ?? "", out var pts)) { ex.Profile = pts; error.Text = ""; Changed?.Invoke(); }
-                else error.Text = "Formato: x,y; x,y; x,y (al menos 3 puntos).";
-            };
-            Row("Perfil (x,y; x,y; …)", box);
-            _stack.Children.Add(error);
+            var combo = new ComboBox { ItemsSource = Enum.GetNames<EdgeSelection>(), SelectedIndex = (int)(EdgeSelection)prop.GetValue(f)!, HorizontalAlignment = HorizontalAlignment.Stretch };
+            combo.SelectionChanged += (_, _) => { prop.SetValue(f, (EdgeSelection)Math.Max(0, combo.SelectedIndex)); Changed?.Invoke(); };
+            Row("Aristas", combo);
         }
 
+        if (f is ExtrudeFeature ex)
+            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, pts => ex.Profile = pts);
+        if (f is RevolveFeature rev)
+            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, pts => rev.Profile = pts);
+        if (f is StepImportFeature step)
+        {
+            var path = new TextBox { Text = step.FilePath, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            path.LostFocus += (_, _) => { step.FilePath = path.Text ?? ""; Changed?.Invoke(); };
+            Row("Archivo STEP", path);
+        }
+
+        if (modifier) return;
         Header("Posición (mm)");
         VecEditor(f.Position, v => { f.Position = v; Changed?.Invoke(); }, 1);
         Header("Rotación (grados)");
         VecEditor(f.Rotation, v => { f.Rotation = v; Changed?.Invoke(); }, 15);
+    }
+
+    private void ProfileEditor(string label, List<Vec2> profile, Action<List<Vec2>> set)
+    {
+        var box = new TextBox
+        {
+            Text = string.Join("; ", profile.Select(p => FormattableString.Invariant($"{p.X:0.###},{p.Y:0.###}"))),
+            AcceptsReturn = false,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+        };
+        var error = new TextBlock { Foreground = Avalonia.Media.Brushes.OrangeRed, FontSize = 12 };
+        box.LostFocus += (_, _) =>
+        {
+            if (TryParseProfile(box.Text ?? "", out var pts)) { set(pts); error.Text = ""; Changed?.Invoke(); }
+            else error.Text = "Formato: x,y; x,y; x,y (al menos 3 puntos).";
+        };
+        Row(label, box);
+        _stack.Children.Add(error);
     }
 
     private void VecEditor(Vec3 initial, Action<Vec3> set, double step)

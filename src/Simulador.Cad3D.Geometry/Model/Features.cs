@@ -31,6 +31,11 @@ public sealed class ParamAttribute : Attribute
 [JsonDerivedType(typeof(CylinderFeature), "cilindro")]
 [JsonDerivedType(typeof(SphereFeature), "esfera")]
 [JsonDerivedType(typeof(ExtrudeFeature), "extrusion")]
+[JsonDerivedType(typeof(RevolveFeature), "revolucion")]
+[JsonDerivedType(typeof(StepImportFeature), "step")]
+[JsonDerivedType(typeof(FilletFeature), "redondeo")]
+[JsonDerivedType(typeof(ChamferFeature), "chaflan")]
+[JsonDerivedType(typeof(ShellFeature), "vaciado")]
 public abstract class Feature
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];

@@ -47,7 +47,7 @@ public sealed class Viewport3D : Control
         var min = meshes.Select(m => m.Bounds().Min).Aggregate(Vec3.Min);
         var max = meshes.Select(m => m.Bounds().Max).Aggregate(Vec3.Max);
         _target = (min + max) / 2;
-        _distance = Math.Max(20, (max - min).Length * 1.6);
+        _distance = Math.Max(20, (max - min).Length * 2.0);
         InvalidateVisual();
     }
 

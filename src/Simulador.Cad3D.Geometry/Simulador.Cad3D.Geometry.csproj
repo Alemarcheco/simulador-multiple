@@ -6,6 +6,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
   </ItemGroup>
+  <!-- Biblioteca nativa de OpenCASCADE (native/simcad_occt), si se ha compilado e instalado en native/bin. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\native\bin')">
+    <None Include="$(MSBuildThisFileDirectory)..\..\native\bin\*.dll;$(MSBuildThisFileDirectory)..\..\native\bin\*.so*;$(MSBuildThisFileDirectory)..\..\native\bin\*.dylib"
+          Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Simulador.Cad3D.Tests" />
   </ItemGroup>
