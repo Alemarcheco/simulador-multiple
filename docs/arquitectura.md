@@ -44,5 +44,5 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 4. **PCB** (hecho): actualizar desde el esquema (huellas y redes), colocar y girar, ratsnest, ruteo manual con
    esquinas a 45°, reglas para placa casera (pista 0,8 mm, separación 0,5 mm) y DRC. Archivo `.placa` (JSON).
    Huellas básicas incluidas en `Resources/Basicos.pretty` con pads grandes. Pendiente: planos de masa, dos caras con vías.
-5. **Fabricación**: Gerber RS-274X, taladros Excellon, e impresión 1:1 en espejo (PDF) para transferencia térmica.
+5. **Fabricación** (`Fabrication/`): PDF 1:1 para transferencia térmica (el cobre inferior sin espejo, las capas superiores en espejo; regla de 50 mm para comprobar la escala), Gerber RS-274X X2 y taladros Excellon en un .zip. `Artwork` genera las formas de cada capa, que comparten las tres salidas.
 6. **Más adelante**: autorruteo, vista 3D, simulación de microcontroladores.
