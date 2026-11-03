@@ -9,6 +9,7 @@ Hecha con C# (.NET 8) y [Avalonia](https://avaloniaui.net/). La simulación de c
 | Pestaña | Proyecto | Estado |
 |---|---|---|
 | ⚡ Circuitos y PCB | `src/Simulador.Circuitos` | Librerías, esquemáticos, simulación (ngspice) y diseño de PCB y salidas de fabricación (PDF para transferencia térmica, Gerber y taladros) |
+| 🔌 Instalaciones eléctricas | `src/Simulador.Electrico` | Editor y simulación de mando y potencia: contactores, relés, temporizadores, protecciones, motores e iluminación. Ver [docs/modulo-electrico.md](docs/modulo-electrico.md) |
 
 ## Descargar y ejecutar
 
@@ -40,8 +41,12 @@ src/
                              a un modelo neutro que puede usar cualquier simulador.
   Simulador.App/             Ventana principal: descubre los módulos y crea una pestaña por cada uno.
   Simulador.Circuitos/       Módulo de circuitos electrónicos y PCB.
+  Simulador.Electrico.Engine/ Motor del simulador eléctrico (sin interfaz): librería de componentes, red por fasores,
+                             bobinas, temporizadores, protecciones y motor de inducción.
+  Simulador.Electrico/       Pestaña de instalaciones eléctricas: editor de esquemas y simulación en tiempo real.
 tests/
   Simulador.Core.Tests/      Pruebas de los contratos e importadores.
+  Simulador.Electrico.Tests/ Pruebas del simulador eléctrico sobre los esquemas de ejemplo.
 docs/
   arquitectura.md            Cómo está organizado y cómo añadir un simulador nuevo.
 ```

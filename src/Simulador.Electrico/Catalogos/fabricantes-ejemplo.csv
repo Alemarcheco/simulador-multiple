@@ -1,0 +1,31 @@
+# Catálogo de ejemplo con referencias habituales. Valores de placa típicos tomados de los catálogos públicos:
+# compruébalos siempre en la hoja de datos del fabricante antes de usarlos en un proyecto real.
+# Formato: Fabricante;Referencia;Tipo;Descripción;Parámetros (clave=valor separados por espacios)
+Fabricante;Referencia;Tipo;Descripción;Parámetros
+Schneider Electric;LC1D09P7;bobina_contactor;TeSys D 9 A AC-3 (4 kW 400 V), bobina 230 V AC;V=230 ac=1 S=7
+Schneider Electric;LC1D09P7;contactos_principales;TeSys D 9 A AC-3 (4 kW 400 V);In=9
+Schneider Electric;LC1D12P7;contactos_principales;TeSys D 12 A AC-3 (5,5 kW 400 V);In=12
+Schneider Electric;LC1D18P7;contactos_principales;TeSys D 18 A AC-3 (7,5 kW 400 V);In=18
+Schneider Electric;LC1D25P7;contactos_principales;TeSys D 25 A AC-3 (11 kW 400 V);In=25
+Schneider Electric;LC1D09BD;bobina_contactor;TeSys D 9 A, bobina 24 V DC;V=24 ac=0 S=6
+Schneider Electric;GV2ME10;guardamotor;TeSys GV2 4-6,3 A;Ir=6.3 Im=13
+Schneider Electric;GV2ME14;guardamotor;TeSys GV2 6-10 A;Ir=9 Im=13
+Schneider Electric;GV2ME16;guardamotor;TeSys GV2 9-14 A;Ir=13 Im=13
+Schneider Electric;LRD14;rele_termico;TeSys LRD 7-10 A clase 10A;Ir=9 clase=0
+Schneider Electric;LRD16;rele_termico;TeSys LRD 9-13 A clase 10A;Ir=12 clase=0
+Schneider Electric;iC60N C16 3P;magnetotermico_3p;Acti9 iC60N 16 A curva C;In=16 curva=1
+Schneider Electric;iC60N C10 1P+N;magnetotermico_2p;Acti9 iC60N 10 A curva C;In=10 curva=1
+Siemens;3RT2016-1AP01;contactos_principales;SIRIUS S00 9 A AC-3 (4 kW 400 V);In=9
+Siemens;3RT2016-1AP01;bobina_contactor;SIRIUS S00, bobina 230 V AC 50 Hz;V=230 ac=1 S=7
+Siemens;3RT2017-1AP01;contactos_principales;SIRIUS S00 12 A AC-3 (5,5 kW 400 V);In=12
+Siemens;3RT2018-1AP01;contactos_principales;SIRIUS S00 16 A AC-3 (7,5 kW 400 V);In=16
+Siemens;3RV2011-1JA10;guardamotor;SIRIUS 3RV2 7-10 A;Ir=9 Im=13
+Siemens;3RU2116-1JB0;rele_termico;SIRIUS 3RU2 7-10 A clase 10;Ir=9 clase=0
+Siemens;5SL6316-7;magnetotermico_3p;5SL 16 A curva C;In=16 curva=1
+ABB;AF09-30-10-13;contactos_principales;AF09 9 A AC-3 (4 kW 400 V);In=9
+ABB;AF09-30-10-13;bobina_contactor;AF09 bobina 100-250 V AC/DC;V=230 ac=1 S=2.2
+ABB;MS132-10;guardamotor;MS132 6,3-10 A;Ir=9 Im=13
+ABB;F202 AC-40/0,03;diferencial_2p;Diferencial 40 A 30 mA tipo AC;In=40 Idn=30
+Genérico;IE3 4 kW 4P;motor_3f;Motor IE3 4 kW 230/400 V 1450 rpm (valores típicos);Pn=4 Uw=230 rpm=1450 cos=0.82 eta=0.88 kI=7
+Genérico;IE3 7,5 kW 4P;motor_3f_6b;Motor IE3 7,5 kW 400/690 V 1460 rpm (valores típicos);Pn=7.5 Uw=400 rpm=1460 cos=0.84 eta=0.9 kI=7.2
+Genérico;IE3 1,5 kW 4P;motor_3f;Motor IE3 1,5 kW 230/400 V 1440 rpm (valores típicos);Pn=1.5 Uw=230 rpm=1440 cos=0.8 eta=0.85 kI=6.5
