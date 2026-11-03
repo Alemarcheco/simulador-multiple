@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
-using Simulador.Core.Libraries;
+using Simulador.Circuitos.Catalog;
 using Simulador.Core.Libraries.Model;
 using Simulador.Core.Modules;
 
@@ -12,15 +12,16 @@ namespace Simulador.Circuitos.Libraries;
 internal sealed class LibraryView : DockPanel
 {
     private readonly IModuleHost _host;
-    private readonly LibraryImporterRegistry _registry = LibraryImporterRegistry.CreateDefault();
-    private readonly LibraryImportResult _catalog = new();
+    private readonly ComponentCatalog _catalog;
     private readonly ListBox _list = new();
     private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 };
     private readonly TextBox _filter = new() { Watermark = "Buscar…", Width = 220 };
 
-    public LibraryView(IModuleHost host)
+    public LibraryView(IModuleHost host, ComponentCatalog catalog)
     {
         _host = host;
+        _catalog = catalog;
+        _catalog.Changed += (_, _) => Refresh();
         var importFiles = new Button { Content = "Importar archivos…" };
         importFiles.Click += async (_, _) => await ImportFilesAsync();
         var importFolder = new Button { Content = "Importar carpeta…" };
@@ -62,7 +63,7 @@ internal sealed class LibraryView : DockPanel
             [
                 new FilePickerFileType("Librerías admitidas")
                 {
-                    Patterns = _registry.Importers.SelectMany(i => i.Extensions).Select(e => "*" + e).ToList(),
+                    Patterns = _catalog.Registry.Importers.SelectMany(i => i.Extensions).Select(e => "*" + e).ToList(),
                 },
                 FilePickerFileTypes.All,
             ],
@@ -81,9 +82,7 @@ internal sealed class LibraryView : DockPanel
     {
         var added = new LibraryImportResult();
         foreach (var path in paths)
-            added.Merge(_registry.ImportPath(path));
-        _catalog.Merge(added);
-        Refresh();
+            added.Merge(_catalog.Import(path));
         _host.SetStatus(
             $"Importados {added.Symbols.Count} símbolos, {added.Footprints.Count} huellas, " +
             $"{added.SpiceModels.Count + added.SpiceSubcircuits.Count} modelos SPICE" +
@@ -106,9 +105,9 @@ internal sealed class LibraryView : DockPanel
             .Select(s => $"Subcircuito {s.Name}   (pines: {string.Join(' ', s.Pins)})"));
         _list.ItemsSource = rows;
 
-        _summary.Text = _catalog.IsEmpty
-            ? "Aún no hay librerías importadas."
-            : $"{_catalog.Symbols.Count} símbolos · {_catalog.Footprints.Count} huellas · " +
-              $"{_catalog.SpiceModels.Count + _catalog.SpiceSubcircuits.Count} modelos SPICE";
+        _summary.Text =
+            $"{_catalog.Symbols.Count()} símbolos · {_catalog.Footprints.Count()} huellas · " +
+            $"{_catalog.SpiceModels.Count() + _catalog.SpiceSubcircuits.Count()} modelos SPICE · " +
+            $"{_catalog.ImportedPaths.Count} librerías importadas (se recuerdan al reiniciar)";
     }
 }
