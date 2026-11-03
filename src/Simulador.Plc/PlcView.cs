@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Controls.Shapes;
 using Avalonia.Threading;
 using Simulador.Core.Modules;
@@ -32,7 +33,7 @@ internal sealed class PlcView : UserControl
     private readonly TabControl _languages;
     private readonly TextBox _stEditor;
     private readonly ComboBox _ladderExamples;
-    private readonly ContentControl _ladderHost = new();
+    private readonly LadderEditor _ladder;
     private readonly NumericUpDown _cycle;
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _watch = new() { FontFamily = Mono, FontSize = 12 };
@@ -42,7 +43,6 @@ internal sealed class PlcView : UserControl
     private readonly Stopwatch _wall = new();
 
     private PlcCpu _cpu;
-    private LadderView? _ladderView;
     private TimeSpan _simTime;
     private TimeSpan _wallAtStart;
 
@@ -99,16 +99,27 @@ internal sealed class PlcView : UserControl
         stPanel.Children.Add(_stEditor);
 
         // --- Ladder ---
-        _ladderExamples = new ComboBox { ItemsSource = Examples.Ladder.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
-        _ladderExamples.SelectionChanged += (_, _) => ShowLadder();
+        _ladder = new LadderEditor(ReadSafe, Display,
+            () => _cpu.Profile.Format(_cpu.Profile.InputAddress(0)),
+            () => _cpu.Profile.Format(_cpu.Profile.OutputAddress(0)));
+        _ladderExamples = new ComboBox { ItemsSource = Examples.Ladder.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 220 };
+        _ladderExamples.SelectionChanged += (_, _) => ShowLadderExample();
+        var newLadder = new Button { Content = "Nuevo" };
+        newLadder.Click += (_, _) => { _ladder.Document = new LadderDocument(); _ladderExamples.SelectedIndex = -1; };
+        var openLadder = new Button { Content = "Abrir…" };
+        openLadder.Click += async (_, _) => await OpenLadderAsync();
+        var saveLadder = new Button { Content = "Guardar…" };
+        saveLadder.Click += async (_, _) => await SaveLadderAsync();
         var ldPanel = new DockPanel();
         var ldTop = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
         ldTop.Children.Add(Label("Ejemplo:"));
         ldTop.Children.Add(_ladderExamples);
-        ldTop.Children.Add(new TextBlock { Text = "(el editor gráfico llega en la siguiente fase)", Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
+        ldTop.Children.Add(newLadder);
+        ldTop.Children.Add(openLadder);
+        ldTop.Children.Add(saveLadder);
         DockPanel.SetDock(ldTop, Dock.Top);
         ldPanel.Children.Add(ldTop);
-        ldPanel.Children.Add(_ladderHost);
+        ldPanel.Children.Add(_ladder);
 
         _languages = new TabControl();
         _languages.Items.Add(new TabItem { Header = "Texto estructurado (ST)", Content = stPanel });
@@ -142,7 +153,7 @@ internal sealed class PlcView : UserControl
         Content = root;
 
         BuildIoPanel();
-        ShowLadder();
+        ShowLadderExample();
         UpdateStatus();
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(20), DispatcherPriority.Background, (_, _) => OnTimer());
@@ -171,11 +182,64 @@ internal sealed class PlcView : UserControl
         return operand;
     }
 
-    private void ShowLadder()
+    private void ShowLadderExample()
     {
-        int i = Math.Max(0, _ladderExamples.SelectedIndex);
-        _ladderView = new LadderView(Examples.Ladder[i].Program, ReadSafe, Display);
-        _ladderHost.Content = _ladderView;
+        if (_ladderExamples.SelectedIndex < 0) return;
+        _ladder.Document = LadderDocument.FromProgram(Examples.Ladder[_ladderExamples.SelectedIndex].Program);
+    }
+
+    private static readonly FilePickerFileType LadderFileType = new("Programa Ladder") { Patterns = ["*" + LadderFile.Extension] };
+
+    private async Task OpenLadderAsync()
+    {
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null) return;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Abrir programa Ladder",
+            FileTypeFilter = [LadderFileType],
+        });
+        if (files.Count == 0) return;
+        try
+        {
+            await using var stream = await files[0].OpenReadAsync();
+            using var reader = new StreamReader(stream);
+            var doc = LadderFile.Load(await reader.ReadToEndAsync());
+            _ladder.Document = LadderDocument.FromProgram(doc.Program);
+            _ladderExamples.SelectedIndex = -1;
+            if (doc.ProfileId is not null && PlcProfiles.All.FirstOrDefault(p => p.Id == doc.ProfileId) is { } profile)
+                _profileBox.SelectedItem = profile;
+            _host.SetStatus($"Abierto {files[0].Name}.");
+        }
+        catch (Exception ex) when (ex is FormatException or IOException)
+        {
+            _host.SetStatus("No se pudo abrir: " + ex.Message);
+        }
+    }
+
+    private async Task SaveLadderAsync()
+    {
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage is null) return;
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Guardar programa Ladder",
+            SuggestedFileName = "programa" + LadderFile.Extension,
+            FileTypeChoices = [LadderFileType],
+        });
+        if (file is null) return;
+        try
+        {
+            await using var stream = await file.OpenWriteAsync();
+            stream.SetLength(0);
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(LadderFile.Save(_ladder.Document.ToProgram(), _cpu.Profile.Id));
+            _host.SetStatus($"Guardado {file.Name}.");
+        }
+        catch (IOException ex)
+        {
+            _host.SetStatus("No se pudo guardar: " + ex.Message);
+        }
     }
 
     private object? ReadSafe(string operand)
@@ -187,15 +251,26 @@ internal sealed class PlcView : UserControl
     private void ChangeProfile()
     {
         if (_profileBox.SelectedItem is not PlcProfile p || p == _cpu.Profile) return;
+        var old = _cpu.Profile;
         var program = _cpu.Program;
+        bool wasLadder = program?.Name == "Ladder";
+
+        // Las direcciones del editor Ladder se traducen a la nomenclatura de la nueva marca (I0.0 → X0…).
+        _ladder.Document.TranslateOperands(op =>
+            !op.StartsWith('%') && old.TryParse(op, out var a) && p.TryParse(p.Format(a), out _) ? p.Format(a) : op);
+
         _cpu = new PlcCpu("PLC1", p) { CycleTime = TimeSpan.FromMilliseconds((double)(_cycle.Value ?? 10)) };
-        if (program is not null)
+        try
         {
-            try { _cpu.Load(program); }
-            catch (PlcCompileException ex) { _host.SetStatus(ex.Message); }
+            if (wasLadder) _cpu.LoadLadder(_ladder.Document.ToProgram());
+            else if (program is not null) _cpu.Load(program);
+        }
+        catch (PlcCompileException ex)
+        {
+            _host.SetStatus($"El programa no es válido para {p.DisplayName}: {ex.Message}");
         }
         BuildIoPanel();
-        ShowLadder();
+        _ladder.Document = _ladder.Document; // redibuja con la nomenclatura de la nueva marca
         UpdateStatus();
     }
 
@@ -204,15 +279,19 @@ internal sealed class PlcView : UserControl
         try
         {
             if (_languages.SelectedIndex == 1)
-                _cpu.LoadLadder(Examples.Ladder[Math.Max(0, _ladderExamples.SelectedIndex)].Program);
+                _cpu.LoadLadder(_ladder.Document.ToProgram());
             else
                 _cpu.LoadStructuredText(_stEditor.Text ?? "");
             _host.SetStatus($"Programa cargado en {_cpu.Profile.DisplayName}.");
         }
         catch (PlcCompileException ex)
         {
-            _host.SetStatus("Error de compilación: " + ex.Message);
-            _status.Text = "Error de compilación: " + ex.Message;
+            // En Ladder la "línea" es el número de segmento.
+            string msg = _languages.SelectedIndex == 1
+                ? ex.Message.Replace($"Línea {ex.Line}, columna {ex.Column}", $"Segmento {ex.Line}")
+                : ex.Message;
+            _host.SetStatus("Error de compilación: " + msg);
+            _status.Text = "Error de compilación: " + msg;
             return;
         }
         UpdateStatus();
@@ -248,7 +327,7 @@ internal sealed class PlcView : UserControl
         if (n >= 100) _wallAtStart = _wall.Elapsed - _simTime; // si el PC no da abasto, la simulación va más lenta en vez de saltar
 
         foreach (var r in _ioRefresh) r();
-        _ladderView?.Refresh();
+        _ladder.Refresh();
         UpdateWatch();
         UpdateStatus();
     }
