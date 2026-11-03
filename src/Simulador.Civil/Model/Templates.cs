@@ -3,7 +3,7 @@ using Simulador.Core.Building;
 namespace Simulador.Civil.Model;
 
 /// <summary>Plantillas para empezar rápido: se cargan y luego se editan libremente.</summary>
-public static class BuildingTemplates
+public static partial class BuildingTemplates
 {
     public static IReadOnlyList<(string Name, Func<BuildingDocument> Create)> All { get; } =
     [
@@ -11,6 +11,9 @@ public static class BuildingTemplates
         ("Casa de dos plantas con escalera", CasaDosPlantas),
         ("Hotel (3 plantas tipo)", Hotel),
         ("Nave industrial con oficina", NaveIndustrial),
+        ("Casa con instalación eléctrica e hidráulica", CasaConInstalaciones),
+        ("Edificio de apartamentos (4 plantas)", EdificioApartamentos),
+        ("Oficina con sala de reuniones", Oficina),
     ];
 
     private static Point2 P(double x, double y) => new(x, y);
@@ -40,7 +43,13 @@ public static class BuildingTemplates
             BuildHouseFloor(e, n0.Id, withStair: true);
             e.AddSlab(n0.Id, [P(0, 0), P(10, 0), P(10, 8), P(0, 8)], 0.15, SlabKind.Floor);
             var n1 = e.AddLevel("Planta alta", 2.8, 3.0, "N1");
-            e.AddWallLoop(n1.Id, [P(0, 0), P(10, 0), P(10, 8), P(0, 8)], 0.20, 2.85);
+            var up = e.AddWallLoop(n1.Id, [P(0, 0), P(10, 0), P(10, 8), P(0, 8)], 0.20, 2.85);
+            e.AddWindow(up[0], 2.5, 1.5);
+            e.AddWindow(up[0], 7.5, 1.5);
+            e.AddWindow(up[1], 2.0, 1.2);
+            e.AddWindow(up[1], 6.0, 1.2);
+            e.AddWindow(up[2], 2.5, 1.5);
+            e.AddWindow(up[3], 4.0, 1.2);
             var mid = e.AddWall(n1.Id, P(5, 0), P(5, 8), 0.15, 2.85);
             e.AddWall(n1.Id, P(5, 4), P(10, 4), 0.15, 2.85);
             e.AddDoor(mid, 5.5);
@@ -109,6 +118,8 @@ public static class BuildingTemplates
             e.AddWall(n0.Id, P(24, 12), P(0, 12), 0.25, 3.3);
             e.AddWall(n0.Id, P(0, 12), P(0, 0), 0.25, 3.3);
             e.AddDoor(front, 8.0, 1.8, 2.4);
+            e.AddWindow(front, 3.0, 2.5, 1.6, 0.8);
+            e.AddWindow(front, 13.0, 2.5, 1.6, 0.8);
             var service = e.AddWall(n0.Id, P(16, 0), P(16, 12), 0.15, 3.3);
             e.AddDoor(service, 3.0, 0.9);
             e.AddDoor(service, 9.0, 0.9);
@@ -120,7 +131,9 @@ public static class BuildingTemplates
             e.AddSlab(n0.Id, [P(0, 0), P(24, 0), P(24, 12), P(0, 12)], 0.2);
 
             var n1 = e.AddLevel("Planta 1", 3.5, 3.0, "N1");
-            e.AddWallLoop(n1.Id, [P(0, 0), P(24, 0), P(24, 12), P(0, 12)], 0.25, 2.8);
+            var facade = e.AddWallLoop(n1.Id, [P(0, 0), P(24, 0), P(24, 12), P(0, 12)], 0.25, 2.8);
+            e.AddWindow(facade[1], 6.0, 1.2);
+            e.AddWindow(facade[3], 6.0, 1.2);
             var c1 = e.AddWall(n1.Id, P(0, 4.6), P(24, 4.6), 0.15, 2.8);
             var c2 = e.AddWall(n1.Id, P(0, 7.4), P(24, 7.4), 0.15, 2.8);
             for (int i = 1; i < 4; i++)
@@ -130,6 +143,8 @@ public static class BuildingTemplates
             }
             for (int i = 0; i < 4; i++)
             {
+                e.AddWindow(facade[0], i * 6 + 3.5, 1.6, 1.4, 0.9);
+                e.AddWindow(facade[2], 24 - (i * 6 + 3.5), 1.6, 1.4, 0.9);
                 e.AddDoor(c1, i * 6 + 1.0, 0.8);
                 e.AddDoor(c2, 24 - (i * 6 + 1.0), 0.8);
                 e.TagSpace(n1.Id, P(i * 6 + 3, 2.3), $"Habitación 1{i + 1:00}", "habitacion_hotel");

@@ -128,9 +128,11 @@ public sealed class BuildingDocument : IBuildingModel
         }
 
         /// <summary>Muros cerrados a lo largo de un polígono.</summary>
-        public void AddWallLoop(string levelId, IReadOnlyList<Point2> pts, double thickness = 0.15, double height = 2.8)
+        public IReadOnlyList<Wall> AddWallLoop(string levelId, IReadOnlyList<Point2> pts, double thickness = 0.15, double height = 2.8)
         {
-            for (int i = 0; i < pts.Count; i++) AddWall(levelId, pts[i], pts[(i + 1) % pts.Count], thickness, height);
+            var walls = new List<Wall>();
+            for (int i = 0; i < pts.Count; i++) walls.Add(AddWall(levelId, pts[i], pts[(i + 1) % pts.Count], thickness, height));
+            return walls;
         }
 
         public Opening AddDoor(Wall wall, double offset, double width = 0.8, double height = 2.1)

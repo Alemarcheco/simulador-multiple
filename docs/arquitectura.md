@@ -68,7 +68,8 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
 - **Hecho (fase 1)**: niveles con cota y altura; muros con espesor, altura y material; puertas y ventanas alojadas en
   muros; losas y cubiertas; escaleras rectas con cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
   habitaciones con nombre, uso, área y perímetro; copiar planta encima (planta tipo); planta 2D editable con imán y
-  ortogonal; vista 3D sombreada; plantillas (casa, casa de dos plantas, hotel, nave industrial); colocar
+  ortogonal; vista 3D con búfer de profundidad por software (`Rendering/`); plantillas (casa, casa de dos
+  plantas, hotel, nave industrial, casa con instalación eléctrica e hidráulica, edificio de apartamentos, oficina); colocar
   tomacorrientes, interruptores, luminarias, tableros, puntos de agua, desagües y tanques; rutas por el techo con
   longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una
   puerta, escaleras incómodas, habitaciones pequeñas); deshacer/rehacer; archivo `.edif.json`.
