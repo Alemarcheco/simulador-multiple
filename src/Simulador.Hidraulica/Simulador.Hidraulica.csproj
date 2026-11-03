@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Módulo "Hidráulica": diseño gráfico y simulación de procesos con tanques, tuberías, bombas y válvulas. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Hidraulica</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Hidraulica.Tests" />
+  </ItemGroup>
+</Project>
