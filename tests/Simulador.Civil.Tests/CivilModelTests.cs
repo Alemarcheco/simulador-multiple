@@ -88,6 +88,9 @@ public class BuildingDocumentTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
     public void Templates_have_no_errors(int index)
     {
         var doc = BuildingTemplates.All[index].Create();
@@ -204,5 +207,34 @@ public class BuildingDocumentTests
             e.AddRoute(new Route(e.NewId("R"), "electrico", "tubo", from.Id, to.Id, RouteBuilder.ViaCeiling(doc, from, to)));
         });
         return (from, to);
+    }
+}
+
+public class ExampleTemplateTests
+{
+    [Fact]
+    public void House_with_installations_has_wired_outlets_and_water()
+    {
+        var doc = BuildingTemplates.CasaConInstalaciones();
+        Assert.Equal(8, doc.Fixtures.Count(f => f.Kind == "tomacorriente"));
+        Assert.Equal(doc.Spaces.Count, doc.Fixtures.Count(f => f.Kind == "luminaria"));
+        Assert.Single(doc.Fixtures, f => f.Kind == "tanque");
+        Assert.Equal(3, doc.Routes.Count(r => r.ModuleId == "hidraulica"));
+        Assert.All(doc.Routes, r => Assert.True(r.Length > 0));
+        // Ningún elemento queda dentro de un hueco ni tapado por una puerta.
+        Assert.DoesNotContain(BuildingChecks.Run(doc), c => doc.Fixtures.Any(f => f.Id == c.ElementId));
+    }
+
+    [Fact]
+    public void Apartment_building_has_four_floors_and_entrance_only_on_ground()
+    {
+        var doc = BuildingTemplates.EdificioApartamentos();
+        Assert.Equal(4, doc.Levels.Count);
+        Assert.Equal(4 * 7, doc.Spaces.Count);
+        Assert.Equal(3, doc.Stairs.Count);
+        var ground = doc.Walls.Where(w => w.LevelId == "N0").Select(w => w.Id).ToHashSet();
+        Assert.Single(doc.Openings, o => o.Width == 1.2 && o.Kind == OpeningKind.Door);
+        Assert.Contains(doc.Openings, o => o.Width == 1.2 && o.Kind == OpeningKind.Door && ground.Contains(o.HostWallId));
+        Assert.DoesNotContain(BuildingChecks.Run(doc), c => c.Severity != CheckSeverity.Info && c.ElementId.StartsWith('E'));
     }
 }
