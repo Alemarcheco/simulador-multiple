@@ -1,0 +1,10 @@
+* Modelos básicos incluidos con Simulador múltiple (parámetros publicados por los fabricantes).
+.model 1N4148 D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n Bv=100 Ibv=100u)
+.model 1N4007 D(Is=7.02767n Rs=0.0341512 N=1.80803 Cjo=10p M=0.3 tt=100n Bv=1000 Ibv=5u)
+.model LED_ROJO D(Is=93.2p Rs=42m N=3.73 Cjo=2.97p M=0.333 tt=4.32u Bv=5 Ibv=10u)
+.model 2N2222 NPN(Is=14.34f Xti=3 Eg=1.11 Vaf=74.03 Bf=255.9 Ne=1.307 Ise=14.34f Ikf=.2847 Xtb=1.5 Br=6.092
++ Nc=2 Isc=0 Ikr=0 Rc=1 Cjc=7.306p Mjc=.3416 Vjc=.75 Fc=.5 Cje=22.01p Mje=.377 Vje=.75 Tr=46.91n Tf=411.1p
++ Itf=.6 Vtf=1.7 Xtf=3 Rb=10)
+.model 2N3906 PNP(Is=1.41f Xti=3 Eg=1.11 Vaf=18.7 Bf=180.7 Ne=1.5 Ise=0 Ikf=80m Xtb=1.5 Br=4.977 Nc=2
++ Isc=0 Ikr=0 Rc=2.5 Cjc=9.728p Mjc=.5776 Vjc=.75 Fc=.5 Cje=8.063p Mje=.3677 Vje=.75 Tr=33.42n Tf=179.3p
++ Itf=.4 Vtf=4 Xtf=6 Rb=10)
