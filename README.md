@@ -8,12 +8,14 @@ Hecha con C# (.NET 8) y [Avalonia](https://avaloniaui.net/). La simulación de c
 
 | Pestaña | Proyecto | Estado |
 |---|---|---|
-| ⚡ Circuitos y PCB | `src/Simulador.Circuitos` | Importación de librerías lista; esquemático, simulación y PCB en construcción |
+| ⚡ Circuitos y PCB | `src/Simulador.Circuitos` | Librerías, esquemáticos, simulación (ngspice) y diseño de PCB y salidas de fabricación (PDF para transferencia térmica, Gerber y taladros) |
 | 🔌 Instalaciones eléctricas | `src/Simulador.Electrico` | Editor y simulación de mando y potencia: contactores, relés, temporizadores, protecciones, motores e iluminación. Ver [docs/modulo-electrico.md](docs/modulo-electrico.md) |
 
 ## Descargar y ejecutar
 
 Cada cambio en GitHub compila la aplicación en Windows. En la pestaña **Actions** del repositorio, abre la última ejecución de "Compilar y probar" y descarga `SimuladorMultiple-win-x64`. Descomprímelo y ejecuta `SimuladorMultiple.exe` (no necesita instalar .NET).
+
+La versión descargable ya incluye `ngspice.dll` (motor de simulación [ngspice](https://ngspice.sourceforge.io/), licencia BSD modificada).
 
 ## Compilar en tu equipo
 
@@ -24,6 +26,10 @@ dotnet build
 dotnet test
 dotnet run --project src/Simulador.App
 ```
+
+Para simular desde una compilación propia, copia `ngspice.dll` (del paquete `ngspice-XX_dll_64.7z` de
+[ngspice](https://sourceforge.net/projects/ngspice/files/ng-spice-rework/), carpeta `Spice64_dll/dll-vs`) junto al
+ejecutable, o indica su ruta en la variable de entorno `NGSPICE_LIBRARY_PATH`. En Linux basta con `apt install libngspice0`.
 
 ## Estructura
 

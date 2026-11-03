@@ -1,0 +1,8 @@
+(footprint "D_DO-35_P7.62mm" (layer "F.Cu")
+  (descr "Diodo DO-35 (1N4148), separación 7,62 mm; pad cuadrado = cátodo")
+  (tags "diodo DO-35 THT")
+  (attr through_hole)
+  (fp_rect (start 1.6 -1.1) (end 6.02 1.1) (stroke (width 0.15) (type solid)) (fill none) (layer "F.SilkS"))
+  (fp_line (start 2.3 -1.1) (end 2.3 1.1) (stroke (width 0.3) (type solid)) (layer "F.SilkS"))
+  (pad "1" thru_hole rect (at 0 0) (size 2.0 2.0) (drill 0.8) (layers "*.Cu" "*.Mask"))
+  (pad "2" thru_hole circle (at 7.62 0) (size 2.0 2.0) (drill 0.8) (layers "*.Cu" "*.Mask")))
