@@ -35,9 +35,15 @@ public sealed class SimulationView : DockPanel
     private AnalysisKind _lastKind;
     private Dictionary<string, string> _netByVector = new(StringComparer.OrdinalIgnoreCase);
 
-    public SimulationView(IModuleHost host, ComponentCatalog catalog, SchematicCanvas schematic)
+    private readonly Action? _showSchematic;
+    private readonly Button _toSchematic = new() { Content = "⚡ Ver la corriente en el esquema", HorizontalAlignment = HorizontalAlignment.Stretch, IsVisible = false };
+    private SchematicDocument? _hintedDoc;
+
+    public SimulationView(IModuleHost host, ComponentCatalog catalog, SchematicCanvas schematic, Action? showSchematic = null)
     {
         _host = host;
+        _showSchematic = showSchematic;
+        _toSchematic.Click += (_, _) => _showSchematic?.Invoke();
         _catalog = catalog;
         _schematic = schematic;
 
@@ -65,6 +71,7 @@ public sealed class SimulationView : DockPanel
                 _op, _tran, _ac,
                 _tranFields, _acFields,
                 _run,
+                _toSchematic,
                 new TextBlock { Text = "Señales", FontSize = 16, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 10, 0, 0) },
                 new ScrollViewer { Content = _signals, MaxHeight = 320 },
             },
@@ -79,7 +86,21 @@ public sealed class SimulationView : DockPanel
 
         _output.Content = Hint("Dibuja un circuito en la pestaña Esquemático (con masa GND) y pulsa Simular.");
         UpdateFields();
-        _schematic.DocumentChanged += (_, _) => _schematic.SetOperatingPoint(null);
+        _schematic.DocumentChanged += (_, _) => { _schematic.SetOperatingPoint(null); _toSchematic.IsVisible = false; ApplyHint(); };
+        AttachedToVisualTree += (_, _) => ApplyHint();
+    }
+
+    /// <summary>Si el esquema (por ejemplo, un ejemplo) recomienda un transitorio, se rellenan los campos.</summary>
+    private void ApplyHint()
+    {
+        var doc = _schematic.Document;
+        if (ReferenceEquals(doc, _hintedDoc)) return;
+        _hintedDoc = doc;
+        var s = LiveRun.Suggest(doc);
+        if (s.Kind != AnalysisKind.Transient) return;
+        _tran.IsChecked = true;
+        _stop.Text = s.StopTime;
+        _step.Text = s.Step;
     }
 
     private static TextBlock Label(string t) => new() { Text = t, FontSize = 12, Opacity = 0.85 };
@@ -107,7 +128,7 @@ public sealed class SimulationView : DockPanel
     private async Task RunAsync()
     {
         var settings = Settings();
-        var netlist = SpiceNetlister.Build(_schematic.Document, _catalog, settings.ToSpice());
+        var netlist = SpiceNetlister.Build(_schematic.Document, _catalog, settings.ToSpice(), currentProbes: settings.Kind != AnalysisKind.Ac);
         _netByVector = netlist.Connectivity.Nets
             .Where(n => n.Name != Connectivity.GroundNet)
             .GroupBy(n => n.Name.ToLowerInvariant())
@@ -134,6 +155,9 @@ public sealed class SimulationView : DockPanel
                 return;
             }
             ShowResult();
+            var anim = settings.Kind == AnalysisKind.Ac ? null : FlowAnimation.From(_schematic.Document, netlist.Connectivity, result);
+            _schematic.SetAnimation(anim);
+            _toSchematic.IsVisible = anim is not null && _showSchematic is not null;
             _host.SetStatus(netlist.Warnings.Count > 0 ? "Simulado con avisos: " + netlist.Warnings[0] : "Simulación terminada.");
         }
         catch (NgSpiceNotFoundException ex)
@@ -163,7 +187,7 @@ public sealed class SimulationView : DockPanel
             rows.Children.Add(new TextBlock { Text = "Tensiones respecto a masa", FontSize = 16, FontWeight = FontWeight.SemiBold });
             foreach (var (net, v) in volts.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
                 rows.Children.Add(Row(net, EngineeringFormat.Format(v, "V", 4)));
-            var currents = _last.Real.Where(kv => kv.Key.EndsWith("#branch", StringComparison.OrdinalIgnoreCase)).ToList();
+            var currents = _last.Real.Where(kv => kv.Key.EndsWith("#branch", StringComparison.OrdinalIgnoreCase) && !kv.Key.StartsWith("vpp_", StringComparison.OrdinalIgnoreCase)).ToList();
             if (currents.Count > 0)
             {
                 rows.Children.Add(new TextBlock { Text = "Corrientes en fuentes", FontSize = 16, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 12, 0, 0) });

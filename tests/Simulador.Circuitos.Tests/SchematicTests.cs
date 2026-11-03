@@ -173,16 +173,24 @@ public class SchematicTests
 
 public class ExampleTests
 {
+    public static TheoryData<int> ExampleIndexes()
+    {
+        var data = new TheoryData<int>();
+        for (int i = 0; i < Examples.All.Count; i++) data.Add(i);
+        return data;
+    }
+
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
+    [MemberData(nameof(ExampleIndexes))]
     public void Examples_are_fully_connected(int index)
     {
         var catalog = new ComponentCatalog();
         var doc = Examples.All[index].Build(catalog);
         var netlist = SpiceNetlister.Build(doc, catalog, [".op"]);
         Assert.Empty(netlist.Warnings);
+        // Cada extremo de cable toca un pin, otro cable o una etiqueta (no hay cables sueltos).
+        var conn = Connectivity.Analyze(doc);
+        Assert.All(conn.Nets.Where(n => n.Name != Connectivity.GroundNet), n => Assert.True(n.Pins.Count >= 2, $"{Examples.All[index].Name}: la red {n.Name} tiene un solo pin"));
     }
 
     [Fact]
