@@ -30,6 +30,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext`, `CoSimScheduler` (reloj común y planificador), `SimRunner` (ejecución a velocidad controlada), `PowerPort` | Entorno combinado |
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
+| `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
 
 ## Unidades
 
@@ -57,3 +58,20 @@ Unidades SI en simulación. Geometría de símbolos, huellas y placas en milíme
 4. Tras avanzar un componente, sus `IPowerPort` enlazados se copian al otro lado: el que impone esfuerzo copia el esfuerzo y el que impone flujo copia el flujo.
 
 Mientras los componentes avanzan, `Now` es todavía el inicio del paso. `SimRunner` lo ejecuta en un hilo propio a 0,1×, 1×, 10× o lo más rápido posible, con pausa y paso a paso, y publica `SimFrame` (instantáneas de todos los componentes) para que la vista anime sin tocar la simulación. El ejemplo completo PLC → contactor → motor → bomba → tanque está en `tests/Simulador.Core.Tests/TankFillingExampleTests.cs`.
+
+## Módulo Edificación (`Simulador.Civil`, Order 15)
+
+Diseño civil básico (sin cálculo estructural) para ubicar sobre él las instalaciones de los demás módulos.
+Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos del proyecto).
+
+- **Hecho (fase 1)**: niveles con cota y altura; muros con espesor, altura y material; puertas y ventanas alojadas en
+  muros; losas y cubiertas; escaleras rectas con cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
+  habitaciones con nombre, uso, área y perímetro; copiar planta encima (planta tipo); planta 2D editable con imán y
+  ortogonal; vista 3D sombreada; plantillas (casa, casa de dos plantas, hotel, nave industrial); colocar
+  tomacorrientes, interruptores, luminarias, tableros, puntos de agua, desagües y tanques; rutas por el techo con
+  longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una
+  puerta, escaleras incómodas, habitaciones pequeñas); deshacer/rehacer; archivo `.edif.json`.
+- **Siguiente**: asistente de sugerencias por reglas configurables por país (tomas por habitación, dotación y
+  tanque, evacuación, ventilación), metrado y presupuesto, escaleras en L/U, importar DXF y planos escaneados como
+  calco, exportar planos PDF/DXF.
+- **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
