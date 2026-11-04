@@ -372,6 +372,13 @@ public sealed class PcbCanvas : Control
 
             foreach (var f in _doc.Footprints) DrawFootprint(ctx, f);
 
+            // Puentes de cable: línea discontinua por encima de los componentes.
+            foreach (var t in _doc.Tracks.Where(t => t.Layer == Layers.Jumper))
+            {
+                var c = ReferenceEquals(t, Selected) ? SelectColor : Color.Parse("#7FD3FF");
+                ctx.DrawLine(new Pen(new SolidColorBrush(c, 0.95), Math.Max(0.35, px * 2), dashStyle: new DashStyle([2, 1.5], 0), lineCap: PenLineCap.Round), P(t.A), P(t.B));
+            }
+
             var rats = new Pen(new SolidColorBrush(Colors.White, 0.75), Math.Max(px, 0.08));
             foreach (var r in _ratsnest) ctx.DrawLine(rats, P(r.A), P(r.B));
 
