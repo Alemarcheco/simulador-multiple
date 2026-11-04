@@ -5,6 +5,10 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <ShapeFix_Solid.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
@@ -119,6 +123,26 @@ TopoDS_Face polygon_face(const double* pts, int n, bool xz)
     BRepBuilderAPI_MakeFace face(poly.Wire(), Standard_True);
     if (!face.IsDone()) throw Standard_Failure("el perfil no forma una cara plana");
     return face.Face();
+}
+
+// Repara pequeñas holguras que dejan los redondeos (caras que no comparten exactamente la arista).
+TopoDS_Shape heal(const TopoDS_Shape& s)
+{
+    if (BRepCheck_Analyzer(s).IsValid()) return s;
+    BRepBuilderAPI_Sewing sew(1e-4);
+    sew.Add(s);
+    sew.Perform();
+    TopoDS_Shape sewn = sew.SewedShape();
+    if (sewn.IsNull()) return s;
+    // El cosido devuelve cáscaras: se vuelven a convertir en sólido para poder seguir haciendo booleanas.
+    BRepBuilderAPI_MakeSolid solid;
+    int shells = 0;
+    for (TopExp_Explorer ex(sewn, TopAbs_SHELL); ex.More(); ex.Next(), shells++) solid.Add(TopoDS::Shell(ex.Current()));
+    if (shells == 0 || !solid.IsDone()) return s;
+    ShapeFix_Solid fix(solid.Solid());
+    fix.Perform();
+    TopoDS_Shape result = fix.Solid();
+    return BRepCheck_Analyzer(result).IsValid() ? result : s;
 }
 
 // Selecciona aristas según el filtro.
@@ -253,7 +277,9 @@ SC_API sc_shape sc_fillet(sc_shape s, double radius, int filter)
         if (edges.empty()) { g_error = "no hay aristas que redondear"; return nullptr; }
         BRepFilletAPI_MakeFillet f(get(s));
         for (auto& e : edges) f.Add(radius, e);
-        return finish(f, "El redondeo (prueba con un radio menor)");
+        f.Build();
+        if (!f.IsDone()) { g_error = "El redondeo no se pudo calcular (prueba con un radio menor)"; return nullptr; }
+        return wrap(heal(f.Shape()));
     });
 }
 
@@ -264,7 +290,9 @@ SC_API sc_shape sc_chamfer(sc_shape s, double distance, int filter)
         if (edges.empty()) { g_error = "no hay aristas que achaflanar"; return nullptr; }
         BRepFilletAPI_MakeChamfer c(get(s));
         for (auto& e : edges) c.Add(distance, e);
-        return finish(c, "El chaflán (prueba con una distancia menor)");
+        c.Build();
+        if (!c.IsDone()) { g_error = "El chaflán no se pudo calcular (prueba con una distancia menor)"; return nullptr; }
+        return wrap(heal(c.Shape()));
     });
 }
 

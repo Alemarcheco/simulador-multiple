@@ -19,7 +19,9 @@ internal sealed class Cad3DView : DockPanel
     private readonly IModuleHost _host;
     private readonly IGeometryKernel _kernel;
     private readonly DocumentEvaluator _evaluator;
-    private readonly Viewport3D _viewport = new();
+    private readonly ViewportHost _viewport = new();
+    private string _rendererLabel = "iniciando…";
+    private bool _pendingFit;
     private readonly PropertyEditor _properties = new();
     private readonly ListBox _parts = new() { MinHeight = 80 };
     private readonly ListBox _features = new();
@@ -61,7 +63,8 @@ internal sealed class Cad3DView : DockPanel
         _parts.SelectionChanged += (_, _) => { if (!_refreshing) OnPartSelected(); };
         _features.SelectionChanged += (_, _) => { if (!_refreshing) OnFeatureSelected(); };
 
-        LoadDocument(Sample(_kernel is IExactKernel), null);
+        _viewport.RendererChanged += name => { _rendererLabel = name; _ = RebuildAsync(); };
+        LoadDocument(Examples.ElectronicsBox(_kernel is IExactKernel), null);
     }
 
     // ---------- Construcción de la interfaz ----------
@@ -91,7 +94,9 @@ internal sealed class Cad3DView : DockPanel
                 B("Abrir…", OpenAsync),
                 B("Guardar…", SaveAsync),
                 new Separator { Width = 12 },
+                ExamplesButton(),
                 B("Caja con tapa…", NewEnclosureAsync, "Encapsulado para electrónica: caja, tapa con reborde, postes y ventilación"),
+                B("Caja para placa…", BoxForBoardAsync, "Abre una placa (.placa) del módulo de circuitos y crea una caja a su medida"),
                 new Separator { Width = 12 },
                 B("Exportar STL…", ExportStlAsync, "Todas las piezas visibles en un único STL"),
                 B("Exportar 3MF…", Export3mfAsync, "Una pieza por objeto, con nombre y color"),
@@ -174,23 +179,26 @@ internal sealed class Cad3DView : DockPanel
 
     private static Control Docked(Control c, Dock dock) { SetDock(c, dock); return c; }
 
-    // ---------- Documento ----------
-
-    private static CadDocument Sample(bool exact)
+    private Control ExamplesButton()
     {
-        var doc = EnclosureTemplate.Create(new EnclosureParameters
+        var menu = new MenuFlyout();
+        foreach (var ex in Examples.All)
         {
-            InnerX = 70, InnerY = 45, InnerZ = 22, VentSlots = 5,
-            Standoffs = new[] { new Standoff(5, 5), new Standoff(65, 5), new Standoff(5, 40), new Standoff(65, 40) },
-            Cutouts = new[] { new WallCutout("Hueco USB", Wall.Frontal, 29, 8, 12, 7) },
-        }, "Ejemplo: caja electrónica");
-        if (exact)
-        {
-            doc.Parts[0].Features.Insert(1, new FilletFeature { Name = "Redondeo base", Radius = 1.5, Edges = EdgeSelection.Inferiores });
-            doc.Parts[1].Features.Insert(1, new FilletFeature { Name = "Redondeo tapa", Radius = 1, Edges = EdgeSelection.Inferiores });
+            var item = new MenuItem { Header = ex.Name };
+            ToolTip.SetTip(item, ex.Description);
+            item.Click += (_, _) =>
+            {
+                LoadDocument(ex.Create(_kernel is IExactKernel), null);
+                _host.SetStatus($"Ejemplo: {ex.Name}. {ex.Description}");
+            };
+            menu.Items.Add(item);
         }
-        return doc;
+        var b = new Button { Content = "Ejemplos ▾", Flyout = menu, Margin = new Thickness(0, 0, 6, 6) };
+        ToolTip.SetTip(b, "Piezas prediseñadas para abrir, cambiar e imprimir");
+        return b;
     }
+
+    // ---------- Documento ----------
 
     private void LoadDocument(CadDocument doc, string? path)
     {
@@ -322,6 +330,8 @@ internal sealed class Cad3DView : DockPanel
     private async Task RebuildAsync(bool fit = false)
     {
         int version = ++_version;
+        // Si otro cálculo reemplaza a este, el encuadre pendiente se hace en el siguiente.
+        _pendingFit |= fit;
         _info.Text = "Calculando…";
         var errors = new List<string>();
         var results = new Dictionary<Part, Mesh?>();
@@ -335,13 +345,13 @@ internal sealed class Cad3DView : DockPanel
         _meshes.Clear();
         foreach (var (k, v) in results) _meshes[k] = v;
         UpdateViewport();
-        if (fit) _viewport.FitAll();
+        if (_pendingFit) { _viewport.FitAll(); _pendingFit = false; }
 
         var visible = _doc.Parts.Where(p => p.Visible && _meshes.GetValueOrDefault(p) is not null).ToList();
         int tris = visible.Sum(p => _meshes[p]!.TriangleCount);
         double vol = visible.Sum(p => _meshes[p]!.Volume()) / 1000.0;
         bool watertight = visible.All(p => _meshes[p]!.CountOpenEdges() == 0);
-        _info.Text = $"Motor: {_kernel.Name} · {visible.Count} pieza(s) · {tris:N0} triángulos · volumen {vol:0.##} cm³ · " +
+        _info.Text = $"Motor: {_kernel.Name} · Visor: {_rendererLabel} · {visible.Count} pieza(s) · {tris:N0} triángulos · volumen {vol:0.##} cm³ · " +
                      (watertight ? "malla cerrada, lista para imprimir" : "atención: la malla tiene aberturas") +
                      (errors.Count > 0 ? " · Errores: " + string.Join(" | ", errors) : "");
     }
@@ -408,6 +418,22 @@ internal sealed class Cad3DView : DockPanel
         var p = await new EnclosureDialog().ShowDialog<EnclosureParameters?>(owner);
         if (p is null) return;
         LoadDocument(EnclosureTemplate.Create(p), null);
+    }
+
+    private async Task BoxForBoardAsync()
+    {
+        if (Storage is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Abrir placa para crear su caja",
+            FileTypeFilter = [new FilePickerFileType("Placa") { Patterns = ["*" + Simulador.Circuitos.Pcb.PcbDocument.FileExtension] }],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        var (doc, missing) = BoardEnclosure.FromPlacaFile(path, _host.GetDataDirectory("circuitos"));
+        LoadDocument(doc, null);
+        _host.SetStatus(missing.Count == 0
+            ? $"Caja creada para {Path.GetFileName(path)}. Revisa los huecos de los conectores antes de imprimir."
+            : $"Caja creada, pero faltan huellas en las librerías ({string.Join(", ", missing)}): sus taladros no se han tenido en cuenta.");
     }
 
     private List<Part> ExportableParts()

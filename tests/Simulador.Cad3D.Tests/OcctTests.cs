@@ -130,3 +130,33 @@ public class OcctTests
         Assert.NotNull(r.Mesh); // la caja se sigue viendo
     }
 }
+
+public class OcctExamplesTests
+{
+    public static IEnumerable<object[]> Names() => Examples.All.Select(e => new object[] { e.Name });
+
+    [OcctTheory]
+    [MemberData(nameof(Names))]
+    public void Ejemplo_con_redondeos_se_construye_en_OpenCASCADE(string name)
+    {
+        Assert.True(OcctKernel.TryCreate(out var k, out var why), why);
+        var eval = new DocumentEvaluator(k!);
+        foreach (var part in Examples.All.Single(e => e.Name == name).Create(true).Parts)
+        {
+            var r = eval.Evaluate(part);
+            Assert.Empty(r.Errors);
+            Assert.True(r.Mesh!.Volume() > 0);
+            Assert.Equal(0, r.Mesh.CountOpenEdges());
+        }
+    }
+}
+
+/// <summary>Como <see cref="OcctFactAttribute"/> pero para pruebas con datos.</summary>
+public sealed class OcctTheoryAttribute : TheoryAttribute
+{
+    public OcctTheoryAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("CAD3D_REQUIRE_OCCT") == "1") return;
+        if (!OcctKernel.TryCreate(out _, out var why)) Skip = $"OpenCASCADE no disponible: {why}";
+    }
+}

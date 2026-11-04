@@ -100,7 +100,8 @@ public sealed class OcctKernel : IExactKernel
             var triangles = new List<(Vec3, Vec3, Vec3)>(nt);
             for (int i = 0; i < nt; i++) triangles.Add((V(tris[3 * i]), V(tris[3 * i + 1]), V(tris[3 * i + 2])));
             // Las caras comparten los nodos de sus aristas: al unir vértices coincidentes la malla queda cerrada.
-            return Mesh.FromTriangles(triangles);
+            // Repara las uniones en T que a veces quedan entre caras vecinas (p. ej. donde termina un redondeo).
+            return Csg.MeshRepair.FixTJunctions(Mesh.FromTriangles(triangles, weldTolerance: 1e-4));
         }
         finally
         {

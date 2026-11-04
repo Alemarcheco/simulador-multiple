@@ -2,6 +2,8 @@
   <!-- Módulo "Diseño 3D": modelado de piezas para impresión 3D (encapsulados, piezas) con exportación STL/3MF. -->
   <PropertyGroup>
     <RootNamespace>Simulador.Cad3D</RootNamespace>
+    <!-- El visor OpenGL pasa matrices y vértices a la GPU con punteros. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
@@ -9,5 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
     <ProjectReference Include="..\Simulador.Cad3D.Geometry\Simulador.Cad3D.Geometry.csproj" />
+    <!-- Para leer placas (.placa) y crear cajas a medida. -->
+    <ProjectReference Include="..\Simulador.Circuitos\Simulador.Circuitos.csproj" />
   </ItemGroup>
 </Project>
