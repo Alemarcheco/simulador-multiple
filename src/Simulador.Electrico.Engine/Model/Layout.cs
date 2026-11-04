@@ -35,8 +35,14 @@ public static class Layout
         var maxX = t.Terminals.Max(p => p.X);
         var minY = t.Terminals.Min(p => p.Y);
         var maxY = t.Terminals.Max(p => p.Y);
+        if (t.Graphic is { } g) return new(Math.Min(g.X0, minX - 0.5), Math.Min(g.Y0, minY), Math.Max(g.X1, maxX + 0.5), Math.Max(g.Y1, maxY));
         return t.Behavior switch
         {
+            Behavior.Motor1 => new(-1, 0, 3, 5),
+            Behavior.Transformer1 => new(-0.6, 0, 2.6, 6),
+            Behavior.Transformer3 => new(-0.6, 0, 6.6, 6),
+            Behavior.Vfd => new(-0.8, 0, 8, 8),
+            Behavior.Plc => new(-0.8, 0, maxX + 0.8, 6),
             Behavior.Source3Ph or Behavior.SourceAc1 or Behavior.SourceDc => new(minX - 1, 0, Math.Max(maxX + 1, minX + 6), 2),
             Behavior.Motor3 => new(-1, 0, 5, 5),
             Behavior.Motor6 => new(-1, 0, 5, 6),

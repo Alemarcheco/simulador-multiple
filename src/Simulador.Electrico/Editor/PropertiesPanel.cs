@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Simulador.Electrico.Engine.Catalog;
 using Simulador.Electrico.Engine.Model;
 using Simulador.Electrico.Engine.Sim;
@@ -19,6 +20,10 @@ internal sealed class PropertiesPanel : ScrollViewer
     public event Action? Changed;
     /// <summary>Cambio de carga de motor durante la simulación (id, %).</summary>
     public event Action<Guid, double>? MotorLoadChanged;
+    /// <summary>Cambio de consigna de un variador durante la simulación (id, Hz).</summary>
+    public event Action<Guid, double>? VfdReferenceChanged;
+    /// <summary>Texto de estado del PLC durante la simulación (lo da la vista, que es quien tiene la CPU).</summary>
+    public Func<PlacedElement, string>? PlcStatus { get; set; }
 
     public PropertiesPanel(ElementCatalog catalog, Func<ManufacturerCatalog> presets)
     {
@@ -46,7 +51,24 @@ internal sealed class PropertiesPanel : ScrollViewer
         if (simulating)
         {
             _stack.Children.Add(Note($"Designación: {e.Tag}"));
-            if (t.Behavior is Behavior.Motor3 or Behavior.Motor6)
+            if (t.Behavior == Behavior.Vfd)
+            {
+                _stack.Children.Add(Caption("Consigna de frecuencia (Hz)"));
+                var slider = new Slider { Minimum = 0, Maximum = Math.Max(60, e.Param(t, "fn") * 1.2), Value = e.Param(t, "fref"), TickFrequency = 5 };
+                var value = new TextBlock { Text = $"{slider.Value:0.#} Hz" };
+                slider.PropertyChanged += (_, a) =>
+                {
+                    if (a.Property != Avalonia.Controls.Primitives.RangeBase.ValueProperty) return;
+                    value.Text = $"{slider.Value:0.#} Hz";
+                    VfdReferenceChanged?.Invoke(e.Id, slider.Value);
+                };
+                _stack.Children.Add(slider);
+                _stack.Children.Add(value);
+                _stack.Children.Add(Note("Si el variador está en fallo, haz clic sobre él para rearmarlo."));
+            }
+            if (t.Behavior == Behavior.Plc && PlcStatus is not null)
+                _stack.Children.Add(Note(PlcStatus(e)));
+            if (t.IsMotor)
             {
                 _stack.Children.Add(Caption("Carga del motor (% del par asignado)"));
                 var slider = new Slider { Minimum = 0, Maximum = 200, Value = e.Param(t, "carga"), TickFrequency = 10 };
@@ -121,10 +143,71 @@ internal sealed class PropertiesPanel : ScrollViewer
             label.TextChanged += (_, _) => { e.Texts["Rótulo"] = label.Text ?? ""; Changed?.Invoke(); };
             _stack.Children.Add(label);
         }
+        if (t.Behavior == Behavior.Plc) AddPlcProgram(e);
         _stack.Children.Add(Caption("Referencia de fabricante"));
         var reference = new TextBox { Text = e.Text("Referencia"), Watermark = "Opcional" };
         reference.TextChanged += (_, _) => { e.Texts["Referencia"] = reference.Text ?? ""; Changed?.Invoke(); };
         _stack.Children.Add(reference);
+    }
+
+    /// <summary>Programa del PLC: texto estructurado escrito aquí, o un Ladder guardado desde el módulo PLC.</summary>
+    private void AddPlcProgram(PlacedElement e)
+    {
+        var hasLadder = e.Text(PlcProgramKeys.Ladder).Length > 0;
+        _stack.Children.Add(Caption(hasLadder
+            ? $"Programa: Ladder «{e.Text(PlcProgramKeys.LadderName, "programa")}» (cargado del módulo PLC)"
+            : "Programa en texto estructurado (IEC 61131-3). Direcciones %IX0.0-%IX0.7 y %QX0.0-%QX0.7"));
+        if (hasLadder)
+        {
+            var remove = new Button { Content = "Quitar el Ladder y usar texto estructurado" };
+            remove.Click += (_, _) => { e.Texts.Remove(PlcProgramKeys.Ladder); e.Texts.Remove(PlcProgramKeys.LadderName); Changed?.Invoke(); Show(e, false); };
+            _stack.Children.Add(remove);
+        }
+        else
+        {
+            var program = new TextBox
+            {
+                Text = e.Text(PlcProgramKeys.StructuredText, PlcProgramKeys.Template),
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.NoWrap,
+                FontFamily = new FontFamily("Consolas, Menlo, monospace"),
+                FontSize = 11,
+                MinHeight = 180,
+                MaxHeight = 360,
+            };
+            program.TextChanged += (_, _) => { e.Texts[PlcProgramKeys.StructuredText] = program.Text ?? ""; Changed?.Invoke(); };
+            _stack.Children.Add(program);
+        }
+        var load = new Button { Content = "Cargar programa del módulo PLC…" };
+        ToolTip.SetTip(load, "Ladder (.ladder.json) o texto estructurado (.st, .txt) guardado desde la pestaña PLC");
+        load.Click += async (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
+            var files = await sp.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Cargar programa de PLC",
+                FileTypeFilter =
+                [
+                    new Avalonia.Platform.Storage.FilePickerFileType("Programa de PLC") { Patterns = ["*.ladder.json", "*.st", "*.txt"] },
+                    Avalonia.Platform.Storage.FilePickerFileTypes.All,
+                ],
+            });
+            if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+            var text = await File.ReadAllTextAsync(path);
+            if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                e.Texts[PlcProgramKeys.Ladder] = text;
+                e.Texts[PlcProgramKeys.LadderName] = Path.GetFileName(path);
+            }
+            else
+            {
+                e.Texts.Remove(PlcProgramKeys.Ladder);
+                e.Texts[PlcProgramKeys.StructuredText] = text;
+            }
+            Changed?.Invoke();
+            Show(e, false);
+        };
+        _stack.Children.Add(load);
     }
 
     private void Commit(TextBox box, PlacedElement e, ParamDef p)
@@ -143,4 +226,24 @@ internal sealed class PropertiesPanel : ScrollViewer
     private static TextBlock Title(string s) => new() { Text = s, FontSize = 16, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     private static TextBlock Caption(string s) => new() { Text = s, FontSize = 12, Opacity = 0.75, Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap };
     private static TextBlock Note(string s) => new() { Text = s, FontSize = 12, Opacity = 0.85, TextWrapping = TextWrapping.Wrap };
+}
+
+/// <summary>Claves de <see cref="PlacedElement.Texts"/> donde el PLC del esquema guarda su programa.</summary>
+internal static class PlcProgramKeys
+{
+    public const string StructuredText = "programa";
+    public const string Ladder = "ladder";
+    public const string LadderName = "ladderNombre";
+
+    public const string Template = """
+        PROGRAM Principal
+        VAR
+            Marcha AT %IX0.0 : BOOL;
+            Paro   AT %IX0.1 : BOOL;   (* pulsador NC *)
+            Motor  AT %QX0.0 : BOOL;
+        END_VAR
+
+        Motor := (Marcha OR Motor) AND Paro;
+        END_PROGRAM
+        """;
 }

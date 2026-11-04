@@ -14,7 +14,11 @@ las protecciones.
   todos los contactos `KM1`; el relé térmico `F2` abre su contacto `F2` (95-96); un pulsador doble son dos contactos `S1`.
 - **Simular** (▶): clic en pulsadores, interruptores, setas, finales de carrera y captadores. Clic en un magnetotérmico,
   guardamotor o diferencial para abrirlo o rearmarlo; Mayús+clic en un diferencial pulsa su botón de prueba. Clic en un
-  fusible fundido para reponerlo. Durante la simulación puedes cambiar la carga del motor seleccionado.
+  fusible fundido para reponerlo. Durante la simulación puedes cambiar la carga del motor seleccionado y la consigna
+  del variador.
+- **Corriente y tensiones** (botones de la barra, como en Falstad): los cables se colorean con su tensión instantánea
+  (verde positiva, rojo negativa, gris sin tensión) y unos puntos amarillos recorren los cables con la corriente. En
+  continua avanzan; en alterna van y vienen, ralentizados para poder seguirlos. Cuanto más rápidos, más corriente.
 - **Archivos**: los esquemas se guardan como `.selx` (JSON legible).
 
 ## Librería incluida
@@ -27,7 +31,10 @@ las protecciones.
 | Bobinas | Contactor, relé auxiliar, temporizador a la conexión y a la desconexión, intermitente, telerruptor |
 | Protecciones | Fusible gG/aM (1P y 3P), magnetotérmico 1P/2P/3P/4P curvas B/C/D, guardamotor, relé térmico clase 10/20/30, diferencial 2P/4P |
 | Receptores | Lámpara, piloto de color, timbre, resistencia/calefactor, electroválvula |
-| Motores | Motor de inducción trifásico de 3 bornes (estrella o triángulo interno) y de 6 bornes |
+| Motores | Motor de inducción trifásico de 3 bornes (estrella o triángulo interno) y de 6 bornes, motor monofásico de condensador permanente |
+| Transformadores y variadores | Transformador monofásico (mando o separación), transformador trifásico Dyn con neutro, variador de frecuencia con rampas, marcha a derechas/izquierdas (STF/STR) y consigna ajustable |
+| Automatización | PLC compacto de 24 V DC con 8 entradas y 8 salidas a relé, programado en texto estructurado o con un Ladder del módulo PLC |
+| Importados | Símbolos de QElectroTech (`.elmt`) |
 | Medida | Voltímetro, amperímetro, borne de conexión |
 
 Cada componente de la librería muestra su símbolo en miniatura; al pasar el ratón por encima aparece abajo una vista
@@ -44,6 +51,44 @@ Ejemplos incluidos (menú **Ejemplos**):
 - Cintas transportadoras en cascada (la segunda arranca con retardo).
 - Puerta de garaje con finales de carrera.
 - Cuadro de vivienda con diferencial y fuga a tierra.
+- Bomba monofásica con transformador de mando 230/24 V.
+- Variador de frecuencia: rampa y dos sentidos de giro.
+- Marcha-paro de motor con PLC.
+
+## PLC en el esquema
+
+El **PLC compacto** (`KF1`) lleva dentro la CPU del módulo PLC (perfil genérico IEC). Sus entradas I0.0-I0.7 miden la
+tensión real del borne respecto a M (se activan con 15 V o más; con más de 36 V se dañan), y sus salidas Q0.0-Q0.7 son
+relés con común 1L que cierran contactos de verdad en el circuito. Sin 24 V DC entre L+ y M, las salidas quedan abiertas.
+El programa se escribe en Propiedades (texto estructurado, direcciones `%IX0.0` y `%QX0.0`) o se carga un
+`.ladder.json` guardado en la pestaña PLC. Los LED verdes del símbolo son las entradas y los ámbar las salidas.
+
+## Variador de frecuencia
+
+Ley V/f con refuerzo a baja frecuencia, rampas de aceleración y deceleración, inversión de giro pasando por 0 Hz y
+fallos por sobrecorriente (más de 2,2 In durante 50 ms) o sobrecarga (más de 1,5 In durante 60 s); clic sobre él para
+rearmar. Lo que cuelga de U-V-W (térmico, contactor, motor) trabaja a la frecuencia del variador. Si la salida queda
+unida a la red, el simulador lo avisa.
+
+## Símbolos de QElectroTech
+
+**Importar símbolos QElectroTech…** lee archivos `.elmt` (la colección libre de QElectroTech tiene miles de aparatos de
+Schneider, Siemens, ABB, Legrand, Phoenix…). Se conserva su dibujo y sus bornes (redondeados a la rejilla), y se copian a
+la carpeta de datos para tenerlos la próxima vez. El comportamiento se deduce del propio archivo: las bobinas
+("maestro") excitan los contactos con su designación y los contactos ("esclavo") son NA, NC o temporizados. Si no lo
+indica, se deduce por el nombre (lámpara, pulsador, fusible, motor…). Lo que no se reconoce queda como dibujo con bornes.
+Un piloto verde junto al símbolo indica que el contacto está cerrado.
+
+## Banco de pruebas combinado
+
+`ElectricalComponentFactory` ofrece al banco de pruebas la "red eléctrica": un esquema `.selx` entero (o uno de los
+ejemplos) como un único componente (`ElectricalNetwork`). Hacia fuera expone:
+
+- `RED1.KM1.bobina` (DI, Bool): excita la bobina desde una salida de PLC del banco.
+- `RED1.KM1.13-14` (DO, 24 V): estado de cada contacto auxiliar, también el 95-96 o 97-98 del térmico.
+- `RED1.KF1.I0.0` / `RED1.KF1.Q0.0`: los bornes de los PLC dibujados en el esquema.
+- `RED1.M1.eje` (MechanicalRotational, impone flujo): el motor da la velocidad en rad/s y lee en Effort el par
+  resistente de la carga. La inercia de la carga se pasa con el parámetro `Inercia carga M1`.
 
 ## Cómo simula
 
@@ -85,12 +130,9 @@ Siemens;3RV2011-1JA10;guardamotor;SIRIUS 3RV2 7-10 A;Ir=9 Im=13
 
 ## Próximos pasos
 
-1. Importar símbolos de **QElectroTech** (`.elmt`, miles de símbolos libres) asociándolos a un comportamiento de la
-   librería, y de **DXF**.
-2. Bornes de E/S hacia el módulo PLC/Arduino (`ISignalPort`, contrato `bus-senales.md`): entradas que miden la tensión
-   real del borne y salidas a relé o transistor como contactos del circuito.
-3. Componente "red eléctrica" para el banco de pruebas combinado (`ISimComponent`, contrato `co-simulacion.md`), con los
-   ejes de los motores como `IPowerPort`.
-4. Más aparatos: motor monofásico con condensador, motor Dahlander, arrancador suave y variador de frecuencia básicos,
-   transformador de mando, relé de control de fases, interruptor horario, crepuscular, detector de movimiento.
-5. Vista de esquema multihoja con referencias cruzadas de contactos y exportación a PDF.
+1. Importar símbolos **DXF** y bloques de EPLAN.
+2. Más aparatos: motor Dahlander, arrancador suave, relé de control de fases, interruptor horario, crepuscular,
+   detector de movimiento, generador.
+3. Vista de esquema multihoja con referencias cruzadas de contactos y exportación a PDF.
+4. Corriente en lazos de cables: hoy, si los cables de una misma red forman un lazo, el cable que lo cierra no muestra
+   puntos.
