@@ -37,7 +37,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     private long _target;
     private TimeSpan? _epoch;
     private TimeSpan _lastAdvance;
-    private long _serialActivity = long.MinValue;
+    private long _serialActivity = -1_000_000_000;
 
     public ArduinoMcu(string id, ArduinoBoard board)
     {
@@ -109,6 +109,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         _toneEnd.Clear();
         lock (_serialLock) _serialIn.Clear();
         _now = 0;
+        _serialActivity = -1_000_000_000;
         _target = 0;
         _epoch = null;
         FaultMessage = null;
@@ -280,6 +281,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
             var p = mcu.CheckPin(pin, line);
             if (p.IsAnalogOnly && mode == 1)
                 throw new SketchRuntimeException($"{p.Name} de {mcu.Board.Name} solo es entrada analógica.", line);
+            p.Configured = true;
             p.Mode = mode switch
             {
                 1 => Runtime.PinMode.Output,

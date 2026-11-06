@@ -32,6 +32,8 @@ public sealed class PinPort : ISignalPort
     public bool IsAnalogOnly { get; }
 
     public PinMode Mode { get; internal set; }
+    /// <summary>true si el sketch ha llamado a pinMode() para este pin.</summary>
+    public bool Configured { get; internal set; }
     /// <summary>Tensión que pone el microcontrolador cuando el pin es salida (media si hay PWM).</summary>
     public double OutputVolts { get; internal set; }
     /// <summary>Ciclo de trabajo PWM (0-1) tras analogWrite, o null.</summary>
@@ -84,6 +86,7 @@ public sealed class PinPort : ISignalPort
     internal void ResetHardware()
     {
         Mode = PinMode.Input;
+        Configured = false;
         OutputVolts = 0;
         Duty = null;
         ToneHz = null;
