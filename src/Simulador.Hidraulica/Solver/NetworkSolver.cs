@@ -27,6 +27,7 @@ public sealed class NetworkSolver
     public SolveResult Solve(double[] fixedHeads, double[] demands, double[]? initialFlows = null)
     {
         int nNodes = _net.Nodes.Count, nLinks = _net.Links.Count;
+        var emitterK = EmitterCoefficients();
         var heads = new double[nNodes];
         var free = new List<int>();
         for (int i = 0; i < nNodes; i++)
@@ -73,7 +74,17 @@ public sealed class NetworkSolver
             // Sistema reducido: (A21 D⁻¹ A12) ΔH = C − A21 D⁻¹ E
             Array.Clear(a);
             Array.Clear(rhs);
-            for (int k = 0; k < m; k++) rhs[k] = -demands[free[k]];
+            for (int k = 0; k < m; k++)
+            {
+                rhs[k] = -demands[free[k]];
+                // Descarga libre (aspersor, orificio): q = Ke·√h, linealizada junto a h = 0.
+                if (emitterK[free[k]] > 0)
+                {
+                    var (qe, ge) = Emitter(emitterK[free[k]], heads[free[k]] - _net.Nodes[free[k]].Elevation);
+                    rhs[k] -= qe;
+                    a[k, k] += ge;
+                }
+            }
             for (int l = 0; l < nLinks; l++)
             {
                 // E = h(Q) − H_entrada + H_salida (debe ser 0)
@@ -106,7 +117,27 @@ public sealed class NetworkSolver
             converged = residual < Tolerance || sumDq < 1e-12;
         }
 
-        return new SolveResult(heads, q, iter, converged, residual);
+        var emitted = new double[nNodes];
+        for (int i = 0; i < nNodes; i++)
+            if (emitterK[i] > 0 && double.IsNaN(fixedHeads[i]))
+                emitted[i] = Emitter(emitterK[i], heads[i] - _net.Nodes[i].Elevation).Q;
+        return new SolveResult(heads, q, iter, converged, residual, emitted);
+    }
+
+    /// <summary>Coeficiente de la ley del orificio Ke (m³/s por √m) de cada nudo.</summary>
+    private double[] EmitterCoefficients()
+    {
+        double h1 = 1e5 / (_net.Fluid.Density * LinkLaws.Gravity); // 1 bar en metros de columna
+        return _net.Nodes.Select(n => n is Junction { DischargeAt1Bar: > 0 } j ? j.DischargeAt1Bar / Math.Sqrt(h1) : 0).ToArray();
+    }
+
+    private static (double Q, double Gradient) Emitter(double ke, double h)
+    {
+        const double hLin = 0.05;
+        if (h <= 0) return (0, ke * 1e-6);
+        if (h < hLin) return (ke * h / Math.Sqrt(hLin), ke / Math.Sqrt(hLin));
+        double r = Math.Sqrt(h);
+        return (ke * r, ke / (2 * r));
     }
 
     private static double InitialGuess(HydraulicLink link) => link switch
@@ -118,7 +149,8 @@ public sealed class NetworkSolver
     };
 }
 
-public sealed record SolveResult(double[] Heads, double[] Flows, int Iterations, bool Converged, double Residual);
+/// <param name="Emitted">Caudal que sale por las descargas libres de cada nudo (m³/s).</param>
+public sealed record SolveResult(double[] Heads, double[] Flows, int Iterations, bool Converged, double Residual, double[] Emitted);
 
 /// <summary>Eliminación gaussiana con pivoteo parcial (redes de hasta unos cientos de nudos).</summary>
 public static class LinearSolver

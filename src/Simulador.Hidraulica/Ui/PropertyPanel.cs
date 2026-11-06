@@ -86,11 +86,19 @@ public sealed class PropertyPanel : UserControl
                 NumberField("Diámetro", "m", () => t.Diameter, v => t.Diameter = v);
                 NumberField("Altura máxima", "m", () => t.MaxLevel, v => t.MaxLevel = v);
                 NumberField("Nivel inicial", "m", () => t.InitialLevel, v => t.InitialLevel = v);
+                CheckField("Cerrado y presurizado (calderín)", t.Closed, v => { t.Closed = v; Show(t, _net, _sim); });
+                if (t.Closed)
+                {
+                    NumberField("Presión inicial del aire", "bar", () => t.InitialGasPressure / 1e5, v => t.InitialGasPressure = v * 1e5);
+                    Note("El aire de arriba se comprime al entrar agua (pV = constante) y empuja el agua hacia la red: así funciona un calderín o tanque hidroneumático.");
+                }
                 Note($"Capacidad: {t.Capacity * 1000:0} L");
                 break;
             case Junction j:
                 NumberField("Cota", "m", () => j.Elevation, v => j.Elevation = v);
                 NumberField("Consumo", "L/s", () => j.Demand * 1000, v => j.Demand = v / 1000);
+                NumberField("Descarga a 1 bar", "L/s", () => j.DischargeAt1Bar * 1000, v => { j.DischargeAt1Bar = Math.Max(v, 0) / 1000; });
+                Note("Descarga libre (aspersor, boquilla, orificio, grifo abierto): el caudal depende de la presión, Q = Q₁·√(p / 1 bar). Déjalo en 0 para un nudo normal.");
                 break;
             case Pipe p:
                 NumberField("Longitud", "m", () => p.Length, v => p.Length = v);
@@ -98,6 +106,8 @@ public sealed class PropertyPanel : UserControl
                 NumberField("Rugosidad", "mm", () => p.Roughness, v => p.Roughness = v);
                 NumberField("Pérdidas locales (ΣK)", "", () => p.MinorLoss, v => p.MinorLoss = v);
                 TextField("Material", p.Material, v => { p.Material = v; return true; });
+                NumberField("Espesor de pared", "mm", () => p.WallThickness * 1000, v => p.WallThickness = Math.Max(v, 0.1) / 1000);
+                Note($"Velocidad de la onda de presión (golpe de ariete): {p.WaveSpeed(_net.Fluid):0} m/s.");
                 Note("Rugosidad típica: PVC/PE 0,0015 · cobre 0,0015 · acero 0,045 · galvanizado 0,15 · fundición 0,26 mm.");
                 break;
             case Pump b:
@@ -108,6 +118,23 @@ public sealed class PropertyPanel : UserControl
                 NumberField("Rendimiento", "%", () => b.Efficiency * 100, v => b.Efficiency = v / 100);
                 NumberField("Inercia del rodete", "kg·m²", () => b.Inertia, v => b.Inertia = v);
                 CheckField("Encendida al empezar", b.InitiallyOn, v => b.InitiallyOn = v);
+                CheckField("Con presostato", b.HasPressureSwitch, v =>
+                {
+                    b.PressureSwitchNode = v ? (_net.FindNode(b.To)?.Id ?? "") : "";
+                    Show(b, _net, _sim);
+                });
+                if (b.HasPressureSwitch)
+                {
+                    TextField("Presostato mide en el nudo", b.PressureSwitchNode, v =>
+                    {
+                        if (_net.FindNode(v.Trim()) is null) return false;
+                        b.PressureSwitchNode = v.Trim();
+                        return true;
+                    });
+                    NumberField("Presión de arranque", "bar", () => b.SwitchOnPressure / 1e5, v => b.SwitchOnPressure = v * 1e5);
+                    NumberField("Presión de paro", "bar", () => b.SwitchOffPressure / 1e5, v => b.SwitchOffPressure = v * 1e5);
+                    Note("La bomba arranca sola cuando la presión baja de la de arranque y para al llegar a la de paro.");
+                }
                 Note("Si la conectas a un motor en el banco combinado, el motor impone la velocidad y la bomba le devuelve el par.");
                 break;
             case Valve v:
@@ -117,6 +144,7 @@ public sealed class PropertyPanel : UserControl
                     NumberField("Apertura inicial", "%", () => v.InitialOpening * 100, x => v.InitialOpening = Math.Clamp(x / 100, 0, 1));
                 if (v.Kind is ValveKind.Control or ValveKind.Solenoid)
                     NumberField("Tiempo de recorrido", "s", () => v.StrokeTime, x => v.StrokeTime = Math.Max(x, 0));
+                if (v.Kind != ValveKind.Check) WaterHammerButton(v);
                 break;
             case Sensor s:
                 Label($"Mide: {s.Target}");
@@ -133,11 +161,16 @@ public sealed class PropertyPanel : UserControl
                 Live("Nivel", () => $"{t.Level:0.000} m ({t.Level / t.MaxLevel * 100:0} %)");
                 Live("Volumen", () => $"{t.Volume * 1000:0} L");
                 Live("Caudal neto", () => $"{sim.NetInflow(sim.NodeIndex(t.Id)) * 1000:0.00} L/s");
-                Live("Rebose", () => $"{sim.Overflow[sim.NodeIndex(t.Id)] * 1000:0.00} L/s");
+                if (t.Closed)
+                    Live("Presión del aire", () => $"{t.GasPressureAt(t.Level) / 1e5:0.00} bar");
+                else
+                    Live("Rebose", () => $"{sim.Overflow[sim.NodeIndex(t.Id)] * 1000:0.00} L/s");
                 break;
             case HydraulicNode n:
                 Live("Altura piezométrica", () => $"{sim.HeadAt(n.Id):0.00} m");
                 Live("Presión", () => $"{sim.PressureAt(n.Id) / 1e5:0.000} bar");
+                if (n is Junction { IsEmitter: true } e)
+                    Live("Descarga", () => $"{sim.EmittedAt(e.Id) * 1000:0.00} L/s ({sim.EmittedAt(e.Id) * 60000:0} L/min)");
                 break;
             case Pump b:
                 var toggle = new ToggleSwitch { OnContent = "En marcha", OffContent = "Parada", IsChecked = b.RelativeSpeed > 0.01 };
@@ -157,6 +190,8 @@ public sealed class PropertyPanel : UserControl
                 Live("Altura", () => $"{sim.PumpHead(b.Id):0.00} m");
                 Live("Potencia en el eje", () => $"{sim.PumpShaftPower(b.Id) / 1000:0.000} kW");
                 Live("Par", () => $"{sim.PumpTorque(b.Id):0.00} N·m");
+                if (b.HasPressureSwitch)
+                    Note($"Con presostato en {b.PressureSwitchNode}: arranca a {b.SwitchOnPressure / 1e5:0.0#} bar y para a {b.SwitchOffPressure / 1e5:0.0#} bar.");
                 break;
             case Valve v:
                 if (v.Kind != ValveKind.Check)
@@ -174,6 +209,7 @@ public sealed class PropertyPanel : UserControl
                 Live("Apertura real", () => $"{v.Opening * 100:0} %");
                 Live("Caudal", () => $"{sim.FlowIn(v.Id) * 1000:0.00} L/s");
                 Live("Pérdida de carga", () => $"{LossOf(v):0.00} m");
+                if (v.Kind != ValveKind.Check) WaterHammerButton(v);
                 break;
             case Pipe p:
                 Live("Caudal", () => $"{sim.FlowIn(p.Id) * 1000:0.00} L/s");
@@ -190,6 +226,17 @@ public sealed class PropertyPanel : UserControl
                 });
                 break;
         }
+    }
+
+    private void WaterHammerButton(Valve v)
+    {
+        var button = new Button { Content = "Analizar golpe de ariete…", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 6, 0, 0) };
+        button.Click += (_, _) =>
+        {
+            var window = new WaterHammerWindow(_net, _sim, v.Id);
+            if (TopLevel.GetTopLevel(this) is Window owner) window.Show(owner); else window.Show();
+        };
+        _root.Children.Add(button);
     }
 
     private double LossOf(HydraulicLink l)

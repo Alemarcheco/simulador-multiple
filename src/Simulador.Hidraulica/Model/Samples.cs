@@ -13,6 +13,9 @@ public static class Samples
         new("Dos bombas en paralelo", "Dos bombas con antirretorno impulsan al mismo tanque; enciende la segunda y compara el caudal.", ParallelPumps),
         new("Red de distribución en malla", "Tanque elevado que alimenta una malla de cuatro tramos con consumos, como una urbanización o un riego.", DistributionLoop),
         new("Control de nivel con electroválvula", "Llenado desde la red pública con electroválvula y transmisor de nivel, listo para mandarlo desde un PLC.", LevelControl),
+        new("Grupo de presión con calderín", "Bomba con presostato y tanque hidroneumático que mantiene la presión de una vivienda: la bomba arranca y para sola.", PressureGroup),
+        new("Riego por aspersión", "Bomba que alimenta cuatro aspersores a distinta altura; cada uno echa más o menos agua según la presión que le llega.", SprinklerIrrigation),
+        new("Golpe de ariete", "Conducción de acero de 600 m que termina en una válvula de cierre rápido; analiza la sobrepresión al cerrarla.", WaterHammerLine),
     ];
 
     /// <summary>Bombeo desde un pozo a un tanque elevado, con válvula de control a la salida hacia el consumo.</summary>
@@ -169,6 +172,93 @@ public static class Samples
         net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 720, Y = 120 });
         net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "EV1", X = 370, Y = 200 });
         net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N2", X = 960, Y = 300 });
+        return net;
+    }
+
+    /// <summary>Grupo de presión doméstico: bomba con presostato, calderín y consumos.</summary>
+    public static HydraulicNetwork PressureGroup()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Grupo de presión con calderín",
+            Description = "La bomba B1 aspira del aljibe R1 y llena el calderín T1, un tanque cerrado con aire. Al entrar agua, el aire " +
+                "se comprime y la presión sube. El presostato para la bomba a 4 bar y la vuelve a arrancar a 2,5 bar, mientras la " +
+                "vivienda (N3) consume. Mira en la gráfica cómo la bomba arranca y para sola, y prueba a cambiar el consumo de N3.",
+        };
+        net.Add(new Reservoir { Id = "R1", Elevation = 0, Level = 1, X = 80, Y = 360 });
+        net.Add(new Junction { Id = "N1", Elevation = 0, X = 240, Y = 360 });
+        net.Add(new Junction { Id = "N2", Elevation = 0, X = 400, Y = 360 });
+        net.Add(new Junction { Id = "N4", Elevation = 0, X = 540, Y = 360 });
+        net.Add(new Tank { Id = "T1", Elevation = 0, Diameter = 0.45, MaxLevel = 1.0, InitialLevel = 0.3, Closed = true, InitialGasPressure = 2.4e5, X = 540, Y = 220 });
+        net.Add(new Junction { Id = "N3", Elevation = 6, Demand = 0.0006, X = 900, Y = 260 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 3, Diameter = 0.04, MinorLoss = 1 }, "R1", "N1");
+        net.Connect(new Pump { Id = "B1", ShutoffHead = 55, RatedFlow = 0.0012, RatedHead = 40, PressureSwitchNode = "N4",
+            SwitchOnPressure = 2.5e5, SwitchOffPressure = 4.0e5, InitiallyOn = false }, "N1", "N2");
+        net.Connect(new Valve { Id = "VR1", Kind = ValveKind.Check, Diameter = 0.032, OpenLoss = 2 }, "N2", "N4");
+        net.Connect(new Pipe { Id = "P2", Length = 1, Diameter = 0.032 }, "N4", "T1");
+        net.Connect(new Pipe { Id = "P3", Length = 25, Diameter = 0.025, MinorLoss = 4, Material = "PE" }, "N4", "N3", [new CanvasPoint(900, 360)]);
+
+        net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N4", X = 620, Y = 420 });
+        net.Sensors.Add(new Sensor { Id = "LT1", Kind = SensorKind.Level, Target = "T1", X = 640, Y = 160 });
+        return net;
+    }
+
+    /// <summary>Cuatro aspersores a distinta cota alimentados por una bomba.</summary>
+    public static HydraulicNetwork SprinklerIrrigation()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Riego por aspersión",
+            Description = "B1 bombea desde la balsa R1 a un ramal con cuatro aspersores (A1 a A4) que dan 0,4 L/s a 1 bar. Están " +
+                "cada vez más altos y más lejos, así que les llega menos presión y echan menos agua. Para igualarlos, prueba a " +
+                "aumentar el diámetro del ramal o a cerrar un poco V1.",
+        };
+        net.Add(new Reservoir { Id = "R1", Elevation = 0, Level = 1, X = 80, Y = 380 });
+        net.Add(new Junction { Id = "N1", Elevation = 0, X = 220, Y = 380 });
+        net.Add(new Junction { Id = "N2", Elevation = 0, X = 360, Y = 380 });
+        net.Add(new Junction { Id = "N3", Elevation = 0, X = 460, Y = 380 });
+        net.Add(new Junction { Id = "A1", Elevation = 1, DischargeAt1Bar = 0.0004, X = 560, Y = 300 });
+        net.Add(new Junction { Id = "A2", Elevation = 3, DischargeAt1Bar = 0.0004, X = 700, Y = 300 });
+        net.Add(new Junction { Id = "A3", Elevation = 6, DischargeAt1Bar = 0.0004, X = 840, Y = 300 });
+        net.Add(new Junction { Id = "A4", Elevation = 9, DischargeAt1Bar = 0.0004, X = 980, Y = 300 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 4, Diameter = 0.05, MinorLoss = 1 }, "R1", "N1");
+        net.Connect(new Pump { Id = "B1", ShutoffHead = 45, RatedFlow = 0.0018, RatedHead = 32 }, "N1", "N2");
+        net.Connect(new Valve { Id = "V1", Kind = ValveKind.Manual, Diameter = 0.04, InitialOpening = 1 }, "N2", "N3");
+        net.Connect(new Pipe { Id = "P2", Length = 40, Diameter = 0.032, Material = "PE" }, "N3", "A1", [new CanvasPoint(560, 380)]);
+        net.Connect(new Pipe { Id = "P3", Length = 40, Diameter = 0.025, Material = "PE" }, "A1", "A2");
+        net.Connect(new Pipe { Id = "P4", Length = 40, Diameter = 0.025, Material = "PE" }, "A2", "A3");
+        net.Connect(new Pipe { Id = "P5", Length = 40, Diameter = 0.02, Material = "PE" }, "A3", "A4");
+
+        net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "B1", X = 290, Y = 320 });
+        net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "A4", X = 1040, Y = 230 });
+        return net;
+    }
+
+    /// <summary>Conducción por gravedad con válvula de cierre rápido para estudiar el golpe de ariete.</summary>
+    public static HydraulicNetwork WaterHammerLine()
+    {
+        var net = new HydraulicNetwork
+        {
+            Name = "Golpe de ariete",
+            Description = "El depósito R1, a 40 m, alimenta una conducción de acero de 600 m que termina en la válvula V1, que " +
+                "descarga a R2. Selecciona V1 y pulsa «Analizar golpe de ariete». Cerrándola en 0,5 s, la sobrepresión llega casi a la de " +
+                "Joukowsky. Prueba con 10 s o más: es más lento que el tiempo crítico 2L/a y la sobrepresión baja mucho.",
+        };
+        net.Add(new Reservoir { Id = "R1", Elevation = 40, Level = 2, X = 100, Y = 160 });
+        net.Add(new Junction { Id = "N1", Elevation = 20, X = 500, Y = 260 });
+        net.Add(new Junction { Id = "N2", Elevation = 0, X = 860, Y = 380 });
+        net.Add(new Junction { Id = "N3", Elevation = 0, X = 980, Y = 380 });
+        net.Add(new Reservoir { Id = "R2", Elevation = 0, Level = 0.5, X = 1120, Y = 380 });
+
+        net.Connect(new Pipe { Id = "P1", Length = 300, Diameter = 0.15, Roughness = 0.045, WallThickness = 0.005, Material = "Acero", MinorLoss = 0.5 }, "R1", "N1");
+        net.Connect(new Pipe { Id = "P2", Length = 300, Diameter = 0.15, Roughness = 0.045, WallThickness = 0.005, Material = "Acero" }, "N1", "N2");
+        net.Connect(new Valve { Id = "V1", Kind = ValveKind.Control, Diameter = 0.15, OpenLoss = 0.2, InitialOpening = 0.04, StrokeTime = 0.5 }, "N2", "N3");
+        net.Connect(new Pipe { Id = "P3", Length = 5, Diameter = 0.15, Material = "Acero" }, "N3", "R2");
+
+        net.Sensors.Add(new Sensor { Id = "PT1", Kind = SensorKind.Pressure, Target = "N2", X = 860, Y = 300 });
+        net.Sensors.Add(new Sensor { Id = "FT1", Kind = SensorKind.Flow, Target = "V1", X = 920, Y = 320 });
         return net;
     }
 

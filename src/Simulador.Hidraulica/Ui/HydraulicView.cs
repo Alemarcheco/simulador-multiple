@@ -118,7 +118,9 @@ public sealed class HydraulicView : UserControl
         Section("Depósitos");
         ToolButton(Tool.Reservoir, "🌊  Depósito fijo");
         ToolButton(Tool.Tank, "🛢  Tanque");
+        ToolButton(Tool.PressureTank, "⬭  Calderín");
         ToolButton(Tool.Junction, "•  Unión / consumo");
+        ToolButton(Tool.Sprinkler, "⛲  Aspersor / salida");
         Section("Conducciones");
         ToolButton(Tool.Pipe, "━  Tubería");
         ToolButton(Tool.Pump, "⟳  Bomba centrífuga");
