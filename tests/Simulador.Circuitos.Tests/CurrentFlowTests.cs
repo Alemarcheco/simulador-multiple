@@ -137,3 +137,70 @@ public class ExampleSimulationTests
         Assert.Equal(3e-3, EngineeringFormat.ParseSpice(s.StopTime)!.Value, 9);
     }
 }
+
+public class NewComponentTests
+{
+    private readonly ComponentCatalog _catalog = new();
+
+    private (FlowAnimation Anim, SimulationResult Result) Run(Func<ComponentCatalog, SchematicDocument> build)
+    {
+        var doc = build(_catalog);
+        var outcome = LiveRun.Run(doc, _catalog, LiveRun.Suggest(doc));
+        Assert.True(outcome.Result?.Ok, outcome.Message + "\n" + outcome.Netlist.Text + string.Join("\n", outcome.Result?.Log ?? []));
+        return (outcome.Animation!, outcome.Result!);
+    }
+
+    [Fact]
+    public void New_parts_have_symbols_models_and_footprints()
+    {
+        foreach (var (sym, model, fp) in new[] { ("NE555", "NE555", "DIP-8_W7.62mm"), ("OPAMP", "UA741", "DIP-8_W7.62mm"), ("REG_7805", "UA7805", "TO-220_Vertical"), ("RELE", "RELE_5V", "Rele_SRD") })
+        {
+            Assert.NotNull(_catalog.FindSymbol("Basicos:" + sym));
+            Assert.NotNull(_catalog.FindSubcircuit(model));
+            Assert.NotNull(_catalog.FindFootprint("Basicos:" + fp));
+        }
+    }
+
+    [Fact]
+    public void Blinker_555_oscillates_near_1_5_hz()
+    {
+        var (anim, _) = Run(Examples.Blinker555);
+        var v = anim.Voltages["SALIDA"];
+        // Cuenta los flancos de subida después del primer ciclo.
+        int rises = 0;
+        for (int k = 1; k < v.Length; k++)
+            if (anim.Times[k] > 0.5 && v[k - 1] < 4.5 && v[k] >= 4.5) rises++;
+        Assert.InRange(rises, 4, 7);
+        Assert.InRange(anim.LedCurrents["D1"].Max(), 0.008, 0.03);
+    }
+
+    [Fact]
+    public void Regulator_gives_five_volts()
+    {
+        var (anim, _) = Run(Examples.Regulator7805);
+        Assert.Equal(5, anim.Voltages["SALIDA_5V"][0], 1);
+        Assert.Equal(12, anim.Voltages["ENTRADA_12V"][0], 3);
+        // La corriente del LED sale de la entrada de 12 V.
+        Assert.InRange(anim.LedCurrents["D1"][0], 0.005, 0.015);
+    }
+
+    [Fact]
+    public void Opamp_amplifies_eleven_times()
+    {
+        var (anim, _) = Run(Examples.OpAmpNonInverting);
+        double Pp(double[] v) => v.Where((_, k) => anim.Times[k] > 0.001).Max() - v.Where((_, k) => anim.Times[k] > 0.001).Min();
+        Assert.InRange(Pp(anim.Voltages["SALIDA"]) / Pp(anim.Voltages["ENTRADA"]), 10.5, 11.5);
+    }
+
+    [Fact]
+    public void Relay_switches_the_leds()
+    {
+        var (anim, _) = Run(Examples.RelayDriver);
+        double At(string led, double t) => anim.LedCurrents[led][anim.IndexAt(t)];
+        // Con la señal a 5 V (0,2 s a 0,7 s) luce el LED del contacto NA; luego, el del NC.
+        Assert.True(At("D2", 0.5) > 0.004, $"NA a 0,5 s: {At("D2", 0.5)}");
+        Assert.True(At("D3", 0.5) < 0.0005);
+        Assert.True(At("D3", 0.9) > 0.004, $"NC a 0,9 s: {At("D3", 0.9)}");
+        Assert.True(At("D2", 0.9) < 0.0005);
+    }
+}

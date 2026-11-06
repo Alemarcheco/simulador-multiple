@@ -8,3 +8,63 @@
 .model 2N3906 PNP(Is=1.41f Xti=3 Eg=1.11 Vaf=18.7 Bf=180.7 Ne=1.5 Ise=0 Ikf=80m Xtb=1.5 Br=4.977 Nc=2
 + Isc=0 Ikr=0 Rc=2.5 Cjc=9.728p Mjc=.5776 Vjc=.75 Fc=.5 Cje=8.063p Mje=.3677 Vje=.75 Tr=33.42n Tf=179.3p
 + Itf=.4 Vtf=4 Xtf=6 Rb=10)
+
+* Temporizador 555 (modelo de comportamiento). Pines: GND TRIG OUT RESET CTRL THR DIS VCC
+.subckt NE555 gnd trig out reset ctrl thr dis vcc
+R1 vcc ctrl 5k
+R2 ctrl lo 5k
+R3 lo gnd 5k
+Rq vcc gnd 3k
+Bs s 0 V = v(trig) < v(lo) ? 1 : 0
+Br r 0 V = (v(thr) > v(ctrl)) || (v(reset,gnd) < 0.7) ? 1 : 0
+Bq q 0 V = (v(s) > 0.5) && (v(reset,gnd) >= 0.7) ? 1 : ((v(r) > 0.5) ? 0 : ((v(qd) > 0.5) ? 1 : 0))
+Rd q qd 100
+Cd qd 0 100p
+Bo oi 0 V = v(qd) > 0.5 ? max(v(vcc) - 1.7, v(gnd)) : v(gnd) + 0.1
+Vs oi o2 0
+Ro o2 out 10
+Bv vcc 0 I = max(i(Vs), 0)
+Bg 0 gnd I = max(-i(Vs), 0)
+Bk dk 0 V = v(qd) > 0.5 ? 0 : 1
+S1 dis gnd dk 0 SW555
+.model SW555 SW(VT=0.5 VH=0.1 RON=10 ROFF=100MEG)
+.ends NE555
+
+* Regulador de 5 V (modelo de comportamiento: necesita unos 2 V de margen). Pines: IN GND OUT
+.subckt UA7805 in gnd out
+Rq in gnd 2.4k
+Bo oi 0 V = v(gnd) + max(min(5, v(in,gnd) - 2), 0)
+Vs oi o2 0
+Ro o2 out 0.05
+Bi in gnd I = max(i(Vs), 0)
+Bg 0 gnd I = max(i(Vs), 0)
+.ends UA7805
+
+* Amplificador operacional tipo 741 (ganancia 200000, 1 MHz, salida a 1,5 V de las alimentaciones).
+* Pines en el orden del patillaje DIP-8: 2 IN-  3 IN+  4 V-  6 OUT  7 V+
+.subckt UA741 inn inp vn out vp
+Rin inp inn 2MEG
+Rq vp vn 14k
+Bg g 0 V = 2e5 * (v(inp) - v(inn))
+Rp g g2 1k
+Cp g2 0 31.8u
+Bo oi 0 V = max(min(v(g2), v(vp) - 1.5), v(vn) + 1.5)
+Vs oi o2 0
+Ro o2 out 75
+Bp vp 0 I = max(i(Vs), 0)
+Bn 0 vn I = max(-i(Vs), 0)
+.ends UA741
+
+* Relé de 5 V (bobina de 70 ohmios; se activa a partir de unos 35 mA). Pines: COM A1 A2 NC NO
+.subckt RELE_5V com a1 a2 nc no
+Rc a1 m 70
+Lc m m2 20m
+Vs m2 a2 0
+Bk k 0 V = abs(i(Vs)) > 0.035 ? 1 : 0
+Rk k kd 100
+Ck kd 0 1u
+Bn kn 0 V = 1 - v(kd)
+S1 com no kd 0 SWREL
+S2 com nc kn 0 SWREL
+.model SWREL SW(VT=0.5 VH=0.1 RON=0.05 ROFF=100MEG)
+.ends RELE_5V
