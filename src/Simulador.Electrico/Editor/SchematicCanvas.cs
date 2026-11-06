@@ -1,3 +1,4 @@
+using System.Numerics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -29,6 +30,11 @@ internal sealed class SchematicCanvas : Control
 
     public Schematic Schematic { get; private set; } = new();
     public Simulator? Sim { get; set; }
+
+    /// <summary>Puntos que recorren los cables con la corriente (como Falstad): en continua avanzan, en alterna van y vienen.</summary>
+    public bool ShowCurrent { get; set; } = true;
+    /// <summary>Color de los cables según su tensión instantánea: verde positiva, rojo negativa, gris sin tensión.</summary>
+    public bool ShowVoltage { get; set; } = true;
     public PlacedElement? Selected { get; private set; }
     public Wire? SelectedWire { get; private set; }
 
@@ -169,6 +175,158 @@ internal sealed class SchematicCanvas : Control
         return routed;
     }
 
+    // ------------------------------------------------------------------ animación de corriente y tensión
+
+    /// <summary>Frecuencia de la animación para 50 Hz: la alterna real se ve ralentizada para poder seguirla.</summary>
+    private const double AnimationHz = 0.6;
+    private const double DotSpacing = 22;
+
+    private Simulator? _animSim;
+    private readonly Dictionary<Guid, double> _dotOffset = [];
+    private readonly Dictionary<int, double> _netTheta = [];
+    private Dictionary<Guid, (Complex ac, double dc)> _wireCurrent = [];
+    private double _vpeak = 1;
+
+    /// <summary>Avanza la animación <paramref name="dt"/> segundos de reloj (lo llama la vista en cada fotograma).</summary>
+    public void Animate(double dt)
+    {
+        if (Sim is null) { _animSim = null; return; }
+        if (!ReferenceEquals(Sim, _animSim))
+        {
+            _animSim = Sim;
+            _dotOffset.Clear();
+            _netTheta.Clear();
+        }
+        _wireCurrent = ComputeWireCurrents();
+        var nets = new HashSet<int>();
+        double vmax = 1;
+        foreach (var w in Schematic.Wires)
+        {
+            var net = Sim.NetOf(w.A.Element, w.A.Terminal);
+            if (net < 0) continue;
+            if (nets.Add(net))
+            {
+                var f = Math.Abs(Sim.NetFrequency(net));
+                _netTheta[net] = _netTheta.GetValueOrDefault(net) + 2 * Math.PI * AnimationHz * f / 50 * dt;
+                var (vac, vdc) = Sim.NetVoltage(net);
+                vmax = Math.Max(vmax, Math.Abs(vdc) + Math.Sqrt(2) * vac.Magnitude);
+            }
+            var i = Instant(_wireCurrent.GetValueOrDefault(w.Id), _netTheta[net]);
+            var speed = Math.Sign(i) * 40 * Math.Log10(1 + Math.Abs(i) / 0.01);
+            _dotOffset[w.Id] = (_dotOffset.GetValueOrDefault(w.Id) + speed * dt) % (DotSpacing * 1000);
+        }
+        _vpeak = vmax;
+    }
+
+    private static double Instant((Complex ac, double dc) x, double theta) =>
+        x.dc + Math.Sqrt(2) * (x.ac * Complex.FromPolarCoordinates(1, theta)).Real;
+
+    /// <summary>
+    /// Corriente de cada conductor (positiva de A hacia B). En cada red, los cables forman un árbol entre bornes:
+    /// la corriente de un cable es la suma de lo que inyectan los bornes que quedan a un lado. Si hay lazos, los
+    /// cables que cierran el lazo se dejan a cero (la corriente real se repartiría).
+    /// </summary>
+    private Dictionary<Guid, (Complex ac, double dc)> ComputeWireCurrents()
+    {
+        var result = new Dictionary<Guid, (Complex, double)>();
+        if (Sim is null) return result;
+        var adj = new Dictionary<string, List<(Wire w, string other)>>();
+        foreach (var w in Schematic.Wires)
+        {
+            if (w.A.Key == w.B.Key) continue;
+            (adj.TryGetValue(w.A.Key, out var la) ? la : adj[w.A.Key] = []).Add((w, w.B.Key));
+            (adj.TryGetValue(w.B.Key, out var lb) ? lb : adj[w.B.Key] = []).Add((w, w.A.Key));
+        }
+        var refs = new Dictionary<string, TerminalRef>();
+        foreach (var w in Schematic.Wires) { refs[w.A.Key] = w.A; refs[w.B.Key] = w.B; }
+        var visited = new HashSet<string>();
+        foreach (var start in adj.Keys)
+        {
+            if (!visited.Add(start)) continue;
+            var order = new List<string> { start };
+            var parentWire = new Dictionary<string, (Wire w, string parent)>();
+            for (var k = 0; k < order.Count; k++)
+            {
+                foreach (var (w, other) in adj[order[k]])
+                {
+                    if (visited.Contains(other)) continue;
+                    visited.Add(other);
+                    parentWire[other] = (w, order[k]);
+                    order.Add(other);
+                }
+            }
+            var sub = new Dictionary<string, (Complex ac, double dc)>();
+            for (var k = order.Count - 1; k >= 0; k--)
+            {
+                var node = order[k];
+                var r = refs[node];
+                var (iac, idc) = Sim.TerminalCurrent(r.Element, r.Terminal);
+                var acc = sub.GetValueOrDefault(node);
+                // Lo que entra en el elemento sale de la red: la inyección en el árbol es la contraria.
+                acc = (acc.ac - iac, acc.dc - idc);
+                sub[node] = acc;
+                if (!parentWire.TryGetValue(node, out var pw)) continue;
+                var up = sub.GetValueOrDefault(pw.parent);
+                sub[pw.parent] = (up.ac + acc.ac, up.dc + acc.dc);
+                // acc fluye del nudo hijo al padre.
+                result[pw.w.Id] = pw.w.A.Key == node ? (acc.ac, acc.dc) : (-acc.ac, -acc.dc);
+            }
+        }
+        return result;
+    }
+
+    private IPen WirePen(Wire w, bool live)
+    {
+        if (Sim is null) return Line;
+        if (!ShowVoltage) return live ? new Pen(Live, 2) : Line;
+        var net = Sim.NetOf(w.A.Element, w.A.Terminal);
+        var (vac, vdc) = Sim.NetVoltage(net);
+        var v = Instant((vac, vdc), _netTheta.GetValueOrDefault(net));
+        var c = Math.Sign(v) * Math.Log10(1 + Math.Abs(v)) / Math.Log10(1 + Math.Max(_vpeak, 2));
+        return new Pen(new SolidColorBrush(VoltageColor(c)), 2.2);
+    }
+
+    private static readonly Color Zero = Color.Parse("#8A949E");
+    private static readonly Color Positive = Color.Parse("#1FAA3A");
+    private static readonly Color Negative = Color.Parse("#E0281E");
+
+    private static Color VoltageColor(double c)
+    {
+        var t = Math.Clamp(Math.Abs(c), 0, 1);
+        var to = c >= 0 ? Positive : Negative;
+        byte Mix(byte a, byte b) => (byte)Math.Round(a + (b - a) * t);
+        return Color.FromRgb(Mix(Zero.R, to.R), Mix(Zero.G, to.G), Mix(Zero.B, to.B));
+    }
+
+    private static readonly IBrush DotFill = new SolidColorBrush(Color.Parse("#FFD60A"));
+    private static readonly IPen DotEdge = new Pen(new SolidColorBrush(Color.Parse("#5C4A00")), 0.8);
+
+    private void DrawCurrentDots(DrawingContext dc, Wire w, IReadOnlyList<Layout.GridPoint> pts)
+    {
+        var x = _wireCurrent.GetValueOrDefault(w.Id);
+        var amplitude = Math.Abs(x.dc) + x.ac.Magnitude;
+        if (amplitude < 0.002) return;
+        var offset = _dotOffset.GetValueOrDefault(w.Id) % DotSpacing;
+        if (offset < 0) offset += DotSpacing;
+        var travelled = 0.0;
+        for (var i = 0; i + 1 < pts.Count; i++)
+        {
+            var a = ToPx(pts[i]);
+            var b = ToPx(pts[i + 1]);
+            var len = Math.Abs(b.X - a.X) + Math.Abs(b.Y - a.Y);
+            if (len < 1e-6) continue;
+            // Primer punto de este tramo en la sucesión offset + k·DotSpacing.
+            var first = offset - travelled;
+            first -= Math.Floor(first / DotSpacing) * DotSpacing;
+            for (var d = first; d <= len; d += DotSpacing)
+            {
+                var p = a + (b - a) * (d / len);
+                dc.DrawEllipse(DotFill, DotEdge, p, 2.3, 2.3);
+            }
+            travelled += len;
+        }
+    }
+
     // ------------------------------------------------------------------ dibujo
 
     public override void Render(DrawingContext dc)
@@ -185,9 +343,12 @@ internal sealed class SchematicCanvas : Control
             connections[w.B.Key] = connections.GetValueOrDefault(w.B.Key) + 1;
             if (!routes.TryGetValue(w.Id, out var pts)) continue;
             var live = Sim is not null && Sim.TerminalVoltage(w.A.Element, w.A.Terminal) > 12;
-            var pen = w == SelectedWire ? new Pen(Select, 2.4) : live ? new Pen(Live, 2) : Line;
+            var pen = w == SelectedWire ? new Pen(Select, 2.4) : WirePen(w, live);
             for (var i = 0; i + 1 < pts.Count; i++) dc.DrawLine(pen, ToPx(pts[i]), ToPx(pts[i + 1]));
         }
+        if (Sim is not null && ShowCurrent)
+            foreach (var w in Schematic.Wires)
+                if (routes.TryGetValue(w.Id, out var pts)) DrawCurrentDots(dc, w, pts);
 
         foreach (var e in Schematic.Elements)
         {
@@ -255,6 +416,8 @@ internal sealed class SchematicCanvas : Control
         var isSource = t.IsSource;
         var x = isSource ? b.X1 + 0.3 : b.X1 + 0.1;
         var y = isSource ? b.Y0 + 0.3 : b.Y0 + (b.Y1 - b.Y0) / 2 - 0.9;
+        // El variador tiene bornes de mando a la derecha: su rótulo va debajo de ellos.
+        if (t.Behavior == Behavior.Vfd && e.Rotation == 0) y = b.Y0 + 6.5;
         var tag = Text(string.IsNullOrWhiteSpace(e.Tag) ? "?" : e.Tag, 11, Ink, FontWeight.SemiBold);
         dc.DrawText(tag, ToPx(x, y));
         var lines = new List<(string text, IBrush brush)>();
@@ -266,12 +429,27 @@ internal sealed class SchematicCanvas : Control
         if (t.Behavior is Behavior.MotorBreaker or Behavior.ThermalRelay) lines.Add(($"Ir {e.Param(t, "Ir"):0.#} A", Muted));
         if (t.Behavior == Behavior.Fuse) lines.Add(($"{e.Param(t, "In"):0.#} A {(e.Param(t, "tipo") >= 0.5 ? "aM" : "gG")}", Muted));
         if (t.Behavior == Behavior.Rcd) lines.Add(($"{e.Param(t, "In"):0} A {e.Param(t, "Idn"):0} mA", Muted));
-        if (t.Behavior is Behavior.Motor3 or Behavior.Motor6) lines.Add(($"{e.Param(t, "Pn"):0.##} kW", Muted));
+        if (t.IsMotor) lines.Add(($"{e.Param(t, "Pn"):0.##} kW", Muted));
+        if (t.Behavior == Behavior.Transformer1) lines.Add(($"{e.Param(t, "V1"):0}/{e.Param(t, "V2"):0} V {e.Param(t, "S"):0} VA", Muted));
+        if (t.Behavior == Behavior.Transformer3) lines.Add(($"{e.Param(t, "V1"):0}/{e.Param(t, "V2"):0} V {e.Param(t, "S"):0.#} kVA", Muted));
+        if (t.Behavior == Behavior.Vfd && st is null) lines.Add(($"{e.Param(t, "Pn"):0.##} kW → {e.Param(t, "fref"):0.#} Hz", Muted));
         if (t.Behavior is Behavior.Lamp or Behavior.Pilot) lines.Add(($"{e.Param(t, "P"):0.#} W", Muted));
 
         if (st is not null)
         {
-            if (t.Behavior is Behavior.Motor3 or Behavior.Motor6)
+            if (t.Behavior == Behavior.Vfd)
+            {
+                lines.Add((st.Fault is not null ? "FALLO" : st.State, st.Fault is not null ? Fault : Select));
+                if (st.Current > 0.05) lines.Add((FormatAmps(st.Current), Select));
+            }
+            else if (t.Behavior is Behavior.Transformer1 or Behavior.Transformer3)
+            {
+                lines.Add(($"{st.Voltage:0.#} V", Select));
+                if (st.Current > 0.005) lines.Add((FormatAmps(st.Current), Select));
+            }
+            else if (t.Behavior == Behavior.Plc)
+                lines.Add((st.Powered ? "RUN" : "sin 24 V", st.Powered ? Select : Fault));
+            else if (t.IsMotor)
             {
                 lines.Add(($"{Math.Abs(st.Rpm):0} rpm {(st.Rpm > 5 ? "↻" : st.Rpm < -5 ? "↺" : "")}", Select));
                 lines.Add((FormatAmps(st.Current), Select));
@@ -282,7 +460,7 @@ internal sealed class SchematicCanvas : Control
             if (t.Behavior is Behavior.ThermalRelay or Behavior.MotorBreaker or Behavior.Breaker && st.Thermal > 0.05)
                 lines.Add(($"calor {Math.Min(st.Thermal / (t.Behavior == Behavior.Breaker ? 1.69 : 1.44), 9.99):P0}", st.Thermal > 1 ? Fault : Muted));
             if (t.Behavior == Behavior.Rcd && st.Residual > 0.0005) lines.Add(($"fuga {st.Residual * 1000:0} mA", Fault));
-            if (st.Tripped) lines.Add((t.Behavior switch
+            if (st.Tripped && t.Behavior != Behavior.Vfd) lines.Add((t.Behavior switch
             {
                 Behavior.Fuse => "FUNDIDO",
                 Behavior.Lamp or Behavior.Pilot => "FUNDIDA",

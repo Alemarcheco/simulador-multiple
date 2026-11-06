@@ -7,13 +7,22 @@ namespace Simulador.Electrico.Engine.Catalog;
 public sealed class ElementCatalog
 {
     private readonly Dictionary<string, ElementType> _types;
+    private readonly List<ElementType> _list;
 
-    public IReadOnlyList<ElementType> Types { get; }
+    public IReadOnlyList<ElementType> Types => _list;
 
     public ElementCatalog(IEnumerable<ElementType> types)
     {
-        Types = types.ToList();
-        _types = Types.ToDictionary(t => t.Id);
+        _list = types.ToList();
+        _types = _list.ToDictionary(t => t.Id);
+    }
+
+    /// <summary>Añade (o sustituye, si ya existe ese Id) un tipo importado de una librería externa.</summary>
+    public void Register(ElementType type)
+    {
+        if (_types.TryGetValue(type.Id, out var old)) _list[_list.IndexOf(old)] = type;
+        else _list.Add(type);
+        _types[type.Id] = type;
     }
 
     public ElementType Get(string id) =>
@@ -35,6 +44,13 @@ public sealed class ElementCatalog
     public const string CatLoads = "Receptores";
     public const string CatMotors = "Motores";
     public const string CatInstruments = "Medida y conexión";
+    public const string CatPower = "Transformadores y variadores";
+    public const string CatAutomation = "Automatización (PLC)";
+    public const string CatImported = "Importados (QElectroTech)";
+
+    /// <summary>Entradas y salidas del PLC compacto de la librería.</summary>
+    public const int PlcInputs = 8;
+    public const int PlcOutputs = 8;
 
     private static readonly string[] OnOff = ["No", "Sí"];
     private static readonly string[] AcDc = ["DC", "AC"];
@@ -44,6 +60,7 @@ public sealed class ElementCatalog
     private static readonly string[] Colors = ["Rojo", "Verde", "Ámbar", "Azul", "Blanco"];
     private static readonly string[] Connections = ["Estrella (Y)", "Triángulo (Δ)"];
     private static readonly string[] LoadTypes = ["Par constante (cinta, elevación)", "Par cuadrático (bomba, ventilador)"];
+    private static readonly string[] Directions = ["A derechas", "A izquierdas"];
 
     private static TerminalDef[] TwoTerm(string a = "1", string b = "2", string la = "1", string lb = "2") =>
         [new(a, 0, 0, la), new(b, 0, 4, lb)];
@@ -197,6 +214,51 @@ public sealed class ElementCatalog
             [new("U1", 0, 0, "U1"), new("V1", 2, 0, "V1"), new("W1", 4, 0, "W1"), new("U2", 0, 6, "U2"), new("V2", 2, 6, "V2"), new("W2", 4, 6, "W2")],
             [.. motorParams.Select(p => p.Key == "Uw" ? p with { Default = 400 } : p)],
             "Motor con los seis extremos de devanado accesibles (U1-U2, V1-V2, W1-W2) para conectarlo en estrella o triángulo desde fuera.");
+
+        yield return new("motor_1f", "Motor monofásico (condensador permanente)", CatMotors, Behavior.Motor1, "M",
+            [new("U1", 0, 0, "U1"), new("U2", 2, 0, "U2")],
+            [P("Pn", "Potencia", "kW", 0.75, 0.02, 5), P("V", "Tensión asignada", "V", 230, 24, 400),
+             P("rpm", "Velocidad asignada", "rpm", 1420, 100, 6000), P("cos", "Factor de potencia", "", 0.92, 0.3, 1),
+             P("eta", "Rendimiento", "", 0.72, 0.3, 1), P("kI", "Corriente de arranque", "× In", 4.5, 2, 10),
+             P("f", "Frecuencia asignada", "Hz", 50, 1, 400), P("J", "Inercia (motor + carga)", "kg·m²", 0.02, 0.0001, 100),
+             P("carga", "Carga", "% del par asignado", 80, 0, 200), O("tipoCarga", "Tipo de carga", 1, LoadTypes),
+             O("giro", "Sentido de giro", 0, Directions)],
+            "Motor de inducción monofásico con condensador de marcha (bombas, ventiladores, compresores domésticos). Se conecta entre fase y neutro.");
+
+        // ---------------- Transformadores y variadores ----------------
+        yield return new("trafo_1f", "Transformador monofásico", CatPower, Behavior.Transformer1, "T",
+            [new("1U1", 0, 0, "1U1"), new("1U2", 2, 0, "1U2"), new("2U1", 0, 6, "2U1"), new("2U2", 2, 6, "2U2")],
+            [P("S", "Potencia asignada", "VA", 250, 5, 1e6), P("V1", "Tensión primaria", "V", 400, 12, 36000),
+             P("V2", "Tensión secundaria", "V", 230, 6, 36000), P("ucc", "Tensión de cortocircuito", "%", 6, 0.5, 30),
+             P("i0", "Corriente de vacío", "%", 3, 0, 30)],
+            "Transformador de mando o de separación (p. ej. 400/230 V o 230/24 V). Primario arriba (1U1-1U2) y secundario abajo (2U1-2U2).");
+        yield return new("trafo_3f", "Transformador trifásico Dyn", CatPower, Behavior.Transformer3, "T",
+            [new("1U", 0, 0, "1U"), new("1V", 2, 0, "1V"), new("1W", 4, 0, "1W"),
+             new("2U", 0, 6, "2U"), new("2V", 2, 6, "2V"), new("2W", 4, 6, "2W"), new("2N", 6, 6, "2N")],
+            [P("S", "Potencia asignada", "kVA", 10, 0.1, 5000), P("V1", "Tensión primaria (entre fases)", "V", 400, 100, 36000),
+             P("V2", "Tensión secundaria (entre fases)", "V", 400, 100, 36000), P("ucc", "Tensión de cortocircuito", "%", 4, 0.5, 20),
+             P("i0", "Corriente de vacío", "%", 2, 0, 20)],
+            "Primario en triángulo y secundario en estrella con neutro accesible (2N). Crea una red nueva con su propio neutro.");
+        yield return new("variador", "Variador de frecuencia", CatPower, Behavior.Vfd, "U",
+            [new("L1", 0, 0, "L1"), new("L2", 2, 0, "L2"), new("L3", 4, 0, "L3"),
+             new("U", 0, 8, "U"), new("V", 2, 8, "V"), new("W", 4, 8, "W"),
+             new("STF", 8, 2, "STF"), new("STR", 8, 4, "STR"), new("SD", 8, 6, "SD")],
+            [P("Pn", "Potencia del variador", "kW", 4, 0.1, 500), P("In", "Corriente de salida asignada", "A", 9, 0.5, 1000),
+             P("Vin", "Tensión de red", "V", 400, 100, 690), P("fn", "Frecuencia base (motor)", "Hz", 50, 10, 400),
+             P("fref", "Consigna de frecuencia", "Hz", 50, 0, 400), P("tacc", "Rampa de aceleración", "s", 5, 0.1, 600),
+             P("tdec", "Rampa de deceleración", "s", 5, 0.1, 600)],
+            "Arranca el motor con rampa y regula su velocidad (ley V/f). Une STF con SD para girar a derechas y STR con SD a izquierdas, con un contacto o una salida de PLC. Clic para rearmar un fallo.");
+
+        // ---------------- Automatización ----------------
+        {
+            var plcTerms = new List<TerminalDef> { new("L+", 0, 0, "L+"), new("M", 2, 0, "M") };
+            for (var i = 0; i < PlcInputs; i++) plcTerms.Add(new($"I0.{i}", 4 + 2 * i, 0, $"I0.{i}"));
+            plcTerms.Add(new("1L", 0, 6, "1L"));
+            for (var i = 0; i < PlcOutputs; i++) plcTerms.Add(new($"Q0.{i}", 2 + 2 * i, 6, $"Q0.{i}"));
+            yield return new("plc_compacto", "PLC compacto 8E/8S relé", CatAutomation, Behavior.Plc, "KF", plcTerms,
+                [P("ciclo", "Tiempo de ciclo", "ms", 10, 1, 200)],
+                "Autómata de 24 V DC con 8 entradas (I0.0-I0.7, se activan con 24 V respecto a M) y 8 salidas a relé (1L común, Q0.0-Q0.7). Escribe su programa en texto estructurado en Propiedades o carga un Ladder del módulo PLC.");
+        }
 
         // ---------------- Medida y conexión ----------------
         yield return new("voltimetro", "Voltímetro", CatInstruments, Behavior.Voltmeter, "P", TwoTerm(), [],
