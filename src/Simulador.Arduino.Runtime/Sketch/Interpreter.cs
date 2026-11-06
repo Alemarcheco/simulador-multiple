@@ -36,6 +36,8 @@ internal sealed class Interpreter
 {
     /// <summary>Coste aproximado de una sentencia sencilla en un AVR a 16 MHz (0,5 µs).</summary>
     private const long StmtCost = 5;
+    private const long CallCost = 10;
+    private const long LoopOverhead = 30;
     private const int MaxDepth = 200;
 
     private enum Flow { Normal, Break, Continue, Return }
@@ -77,7 +79,12 @@ internal sealed class Interpreter
 
     public void CallSetup() => CallUser(_program.Functions["setup"], [], 0);
 
-    public void CallLoop() => CallUser(_program.Functions["loop"], [], 0);
+    /// <summary>Una vuelta de loop(). El bucle principal de Arduino añade unos microsegundos (serialEventRun…).</summary>
+    public void CallLoop()
+    {
+        _host.Spend(LoopOverhead);
+        CallUser(_program.Functions["loop"], [], 0);
+    }
 
     // ---- Variables ----
 
@@ -278,6 +285,7 @@ internal sealed class Interpreter
             throw new SketchRuntimeException($"{f.Name}() espera {f.Params.Count} argumento(s) y recibe {args.Count}.", line);
         if (_frames.Count > MaxDepth)
             throw new SketchRuntimeException($"Demasiadas llamadas anidadas a {f.Name}() (desbordamiento de pila).", line);
+        _host.Spend(CallCost);
         var frame = new Frame();
         for (int i = 0; i < args.Count; i++)
         {
@@ -645,7 +653,7 @@ internal sealed class Interpreter
                     _host.SerialWrite(text);
                     return Val.Int(text.Length);
                 }
-                case "available": return Val.Int(_host.SerialAvailable());
+                case "available": _host.Spend(20); return Val.Int(_host.SerialAvailable());
                 case "read": return Val.Int(_host.SerialRead());
                 case "peek": return Val.Int(_host.SerialPeek());
                 case "flush" or "end": return Val.Void;

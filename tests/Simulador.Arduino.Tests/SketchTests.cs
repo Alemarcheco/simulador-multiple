@@ -173,7 +173,7 @@ public class SketchTests
         mcu.Advance(Ms(0));
         int changes = 0;
         bool last = false;
-        for (int t = 1; t <= 1000; t++)
+        for (int t = 1; t <= 1010; t++)
         {
             mcu.Advance(Ms(t));
             if (mcu.Pin("D13").OutputHigh != last) { changes++; last = !last; }
