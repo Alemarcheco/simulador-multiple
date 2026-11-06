@@ -11,6 +11,8 @@ public static class Layers
 {
     public const string Top = "F.Cu";
     public const string Bottom = "B.Cu";
+    /// <summary>Puente de cable por la cara de componentes (placas de una cara): une dos pads pasantes en línea recta.</summary>
+    public const string Jumper = "Puente";
 }
 
 /// <summary>Componente colocado en la placa.</summary>

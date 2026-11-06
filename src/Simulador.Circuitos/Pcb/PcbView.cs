@@ -86,6 +86,10 @@ public sealed class PcbView : DockPanel
                 B("Ajustar", "Ver toda la placa (F)", _canvas.ZoomToFit),
                 Sep(),
                 B("✔ Comprobar (DRC)", "Comprobar separaciones, cortos y conexiones pendientes", RunDrc),
+                Sep(),
+                B("🧩 Colocar", "Coloca los componentes de forma compacta para que las pistas no se crucen (borra las pistas)", () => _ = AutomaticAsync(place: true, route: false)),
+                B("✨ Autorrutear", "Traza solas las pistas que faltan; si alguna no cabe, propone un puente de cable", () => _ = AutomaticAsync(place: false, route: true)),
+                B("▣ Ajustar placa", "Recorta la placa al tamaño justo de los componentes", FitBoard),
                 _counter,
             },
         };
@@ -107,6 +111,65 @@ public sealed class PcbView : DockPanel
         _host.SetStatus($"Placa actualizada: {report.Added} añadidos, {report.Updated} actualizados, {report.Removed} quitados." +
                         (report.Warnings.Count > 0 ? " Avisos: " + string.Join(" ", report.Warnings) : ""));
         ShowProperties(report.Warnings);
+    }
+
+    private bool _busy;
+
+    /// <summary>Coloca y/o rutea en segundo plano sobre una copia, y aplica el resultado de una vez (se puede deshacer).</summary>
+    private async Task AutomaticAsync(bool place, bool route)
+    {
+        if (_busy || _canvas.Document.Footprints.Count == 0)
+        {
+            if (!_busy) _host.SetStatus("Primero pasa los componentes con «Actualizar desde esquema».");
+            return;
+        }
+        _busy = true;
+        _host.SetStatus(place ? "Buscando la colocación más compacta…" : "Trazando pistas…");
+        try
+        {
+            var copy = PcbDocument.FromJson(_canvas.Document.ToJson());
+            copy.ResolveFootprints(_catalog.FindFootprint);
+            AutoRouteReport? report = null;
+            await Task.Run(() =>
+            {
+                if (place) AutoPlacer.Place(copy);
+                if (route) report = AutoRouter.Route(copy, allowJumpers: copy.SingleSided);
+            });
+
+            _canvas.Checkpoint();
+            var doc = _canvas.Document;
+            foreach (var f in doc.Footprints)
+                if (copy.Footprints.FirstOrDefault(c => c.Id == f.Id) is { } c) { f.Position = c.Position; f.Rotation = c.Rotation; }
+            doc.Tracks = copy.Tracks;
+            doc.BoardWidth = copy.BoardWidth;
+            doc.BoardHeight = copy.BoardHeight;
+            _canvas.Changed();
+            _canvas.ZoomToFit();
+
+            if (place) _host.SetStatus($"Componentes colocados en {doc.BoardWidth:0.#} × {doc.BoardHeight:0.#} mm. Ahora pulsa «Autorrutear».");
+            else if (report is not null)
+                _host.SetStatus(report.Failed > 0
+                    ? $"Rutadas {report.Routed} conexiones; {report.Failed} no caben ({string.Join(", ", report.FailedNets)}). Mueve o gira componentes y vuelve a probar."
+                    : report.Jumpers > 0
+                        ? $"Todo conectado con {report.Jumpers} puente(s) de cable (líneas azules discontinuas): suéldalos por arriba con un trozo de cable."
+                        : "Todo conectado ✓");
+            ShowProperties();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void FitBoard()
+    {
+        if (_canvas.Document.Footprints.Count == 0) return;
+        _canvas.Checkpoint();
+        double saved = AutoRouter.FitBoard(_canvas.Document);
+        _canvas.Changed();
+        _canvas.ZoomToFit();
+        _host.SetStatus($"Placa ajustada a {_canvas.Document.BoardWidth:0.#} × {_canvas.Document.BoardHeight:0.#} mm" + (saved > 0 ? $" ({saved / 100:0.#} cm² menos)." : "."));
+        ShowProperties();
     }
 
     private void RunDrc()

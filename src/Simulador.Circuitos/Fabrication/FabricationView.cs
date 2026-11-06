@@ -93,7 +93,8 @@ public sealed class FabricationView : DockPanel
         var drills = Artwork.Drills(doc);
         var sizes = drills.GroupBy(d => Math.Round(d.Diameter, 2)).OrderBy(g => g.Key).Select(g => $"{g.Count()} × {g.Key:0.0#} mm");
         _summary.Text = $"Placa {doc.BoardWidth:0.##} × {doc.BoardHeight:0.##} mm ({doc.BoardWidth * doc.BoardHeight / 100:0.#} cm²)\n" +
-                        $"{doc.Footprints.Count} componentes, {doc.Tracks.Count} tramos de pista\n" +
+                        $"{doc.Footprints.Count} componentes, {doc.Tracks.Count(t => t.Layer != Layers.Jumper)} tramos de pista\n" +
+                        (doc.Tracks.Any(t => t.Layer == Layers.Jumper) ? $"Puentes de cable a soldar por arriba: {doc.Tracks.Count(t => t.Layer == Layers.Jumper)}\n" : "") +
                         $"Taladros: {(drills.Count == 0 ? "ninguno" : string.Join(", ", sizes))}\n" +
                         $"Conexiones sin trazar: {_pcb.RatsnestLines.Count}";
         _preview.InvalidateVisual();
