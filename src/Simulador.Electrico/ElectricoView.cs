@@ -10,6 +10,9 @@ using Simulador.Electrico.Editor;
 using Simulador.Electrico.Engine.Catalog;
 using Simulador.Electrico.Engine.Model;
 using Simulador.Electrico.Engine.Sim;
+using Simulador.Plc.Runtime;
+using Simulador.Plc.Runtime.Ladder;
+using Simulador.Plc.Runtime.Profiles;
 
 namespace Simulador.Electrico;
 
@@ -26,6 +29,10 @@ internal sealed class ElectricoView : DockPanel
     private readonly TreeView _palette = new();
     private readonly Decorator _preview = new() { MinHeight = 120 };
     private readonly ToggleButton _run = new() { Content = "▶ Simular" };
+    private readonly ToggleButton _showCurrent = new() { Content = "• Corriente", IsChecked = true };
+    private readonly ToggleButton _showVoltage = new() { Content = "⚡ Tensiones", IsChecked = true };
+    private readonly Dictionary<Guid, PlcCpu> _plcs = [];
+    private readonly HashSet<Guid> _plcFaultShown = [];
     private readonly ComboBox _speed = new() { Width = 140 };
     private readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8, MinWidth = 90 };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
@@ -40,6 +47,7 @@ internal sealed class ElectricoView : DockPanel
     {
         _host = host;
         LoadCatalogs();
+        LoadImportedSymbols();
 
         _canvas = new SchematicCanvas(_catalog);
         _props = new PropertiesPanel(_catalog, () => _presets);
@@ -48,6 +56,8 @@ internal sealed class ElectricoView : DockPanel
         _canvas.Hint += t => _host.SetStatus(t);
         _props.Changed += () => { _dirty = true; _canvas.InvalidateVisual(); UpdateTitle(); };
         _props.MotorLoadChanged += (id, pct) => _sim?.SetMotorLoad(id, pct);
+        _props.VfdReferenceChanged += (id, hz) => _sim?.SetVfdReference(id, hz);
+        _props.PlcStatus = PlcStatusText;
         _timer.Tick += (_, _) => Tick();
 
         Children.Add(BuildToolbar());
@@ -109,11 +119,15 @@ internal sealed class ElectricoView : DockPanel
         ToolTip.SetTip(_speed, "Velocidad de la simulación");
 
         _run.IsCheckedChanged += (_, _) => { if (_run.IsChecked == true) StartSim(); else StopSim(); };
+        ToolTip.SetTip(_showCurrent, "Puntos amarillos que recorren los cables con la corriente: en continua avanzan; en alterna van y vienen (ralentizado). Más rápido = más corriente.");
+        ToolTip.SetTip(_showVoltage, "Color de los cables según su tensión en cada instante: verde positiva, rojo negativa, gris sin tensión (como Falstad).");
+        _showCurrent.IsCheckedChanged += (_, _) => { _canvas.ShowCurrent = _showCurrent.IsChecked == true; _canvas.InvalidateVisual(); };
+        _showVoltage.IsCheckedChanged += (_, _) => { _canvas.ShowVoltage = _showVoltage.IsChecked == true; _canvas.InvalidateVisual(); };
 
-        var bar = new StackPanel
+        // WrapPanel: en pantallas estrechas los botones pasan a una segunda fila en vez de cortarse.
+        var bar = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 6,
             Margin = new Thickness(8, 6),
             Children =
             {
@@ -127,12 +141,18 @@ internal sealed class ElectricoView : DockPanel
                 B("⟲ Reiniciar", ResetSim, "Vuelve todo a reposo y pone el tiempo a cero"),
                 _speed,
                 _clock,
+                _showCurrent,
+                _showVoltage,
                 new Separator { Width = 12 },
                 B("Importar catálogo CSV…", () => _ = ImportCatalogAsync(), "Añade aparatos reales de fabricante (contactores, guardamotores, motores…) desde un CSV"),
+                B("Importar símbolos QElectroTech…", () => _ = ImportQetAsync(),
+                    "Añade símbolos .elmt de QElectroTech (la librería libre con miles de aparatos de Schneider, Siemens, ABB, Legrand…). " +
+                    "Bobinas y contactos NA/NC se simulan; el resto queda como dibujo con bornes."),
                 B("Girar (R)", RotateSelected, "Gira 90° el elemento seleccionado"),
                 B("Borrar (Supr)", () => _canvas.DeleteSelection(), "Borra el elemento o conductor seleccionado"),
             },
         };
+        foreach (var c in bar.Children.OfType<Control>()) c.Margin = new Thickness(0, 2, 6, 2);
         var border = new Border { Child = bar, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0, 0, 0, 1) };
         SetDock(border, Dock.Top);
         return border;
@@ -281,6 +301,7 @@ internal sealed class ElectricoView : DockPanel
         _canvas.Sim = _sim;
         _events.Items.Clear();
         _shownEvents = 0;
+        StartPlcs();
         _run.Content = "⏸ Editar";
         _props.Show(_canvas.Selected, true);
         _timer.Start();
@@ -288,9 +309,62 @@ internal sealed class ElectricoView : DockPanel
         Tick();
     }
 
+    /// <summary>
+    /// Cada PLC del esquema lleva dentro una CPU del módulo PLC (perfil genérico IEC, direcciones %IX/%QX) con su
+    /// programa. El simulador eléctrico la avanza con su tiempo de ciclo y le pasa la tensión real de cada entrada.
+    /// </summary>
+    private void StartPlcs()
+    {
+        _plcs.Clear();
+        _plcFaultShown.Clear();
+        if (_sim is null) return;
+        foreach (var e in _canvas.Schematic.Elements.Where(x => _catalog.TryGet(x.Type, out var t) && t.Behavior == Behavior.Plc))
+        {
+            var tag = string.IsNullOrWhiteSpace(e.Tag) ? "KF" : e.Tag.Trim();
+            var cpu = new PlcCpu(tag, PlcProfiles.Get("generico-iec"));
+            try
+            {
+                var ladder = e.Text(PlcProgramKeys.Ladder);
+                if (ladder.Length > 0) cpu.LoadLadder(LadderFile.Load(ladder).Program);
+                else cpu.LoadStructuredText(e.Text(PlcProgramKeys.StructuredText, PlcProgramKeys.Template));
+                cpu.Start();
+                foreach (var w in _sim.AttachController(tag, cpu)) AddLogLine($"{tag}: {w}", EventSeverity.Warning);
+                _plcs[e.Id] = cpu;
+                AddLogLine($"{tag}: programa cargado, PLC en RUN.", EventSeverity.Info);
+            }
+            catch (Exception ex)
+            {
+                AddLogLine($"{tag}: el programa tiene errores y el PLC queda en STOP. {ex.Message}", EventSeverity.Fault);
+                _host.SetStatus($"{tag}: error en el programa del PLC: {ex.Message}");
+            }
+        }
+    }
+
+    private string PlcStatusText(PlacedElement e)
+    {
+        if (!_plcs.TryGetValue(e.Id, out var cpu)) return "El PLC no tiene un programa válido (mira el registro).";
+        var text = $"Estado: {cpu.State}. Ciclos ejecutados: {cpu.ScanCount}.";
+        if (cpu.FaultMessage is not null) text += $" Fallo: {cpu.FaultMessage}";
+        if (cpu.Diagnostics.Count > 0) text += " " + string.Join(" ", cpu.Diagnostics);
+        return text;
+    }
+
+    private void AddLogLine(string text, EventSeverity severity)
+    {
+        var line = new TextBlock
+        {
+            Text = $"{_sim?.Time ?? 0,7:0.000} s  {text}",
+            FontFamily = new FontFamily("Consolas, Menlo, monospace"),
+        };
+        if (severity == EventSeverity.Fault) line.Foreground = SymbolPainter.Fault;
+        else if (severity == EventSeverity.Warning) line.Foreground = new SolidColorBrush(Color.Parse("#E08A00"));
+        _events.Items.Insert(0, line);
+    }
+
     private void StopSim()
     {
         _timer.Stop();
+        _plcs.Clear();
         _sim = null;
         _canvas.Sim = null;
         if (_run.IsChecked == true) _run.IsChecked = false;
@@ -305,6 +379,8 @@ internal sealed class ElectricoView : DockPanel
         _sim.Reset();
         _events.Items.Clear();
         _shownEvents = 0;
+        _plcFaultShown.Clear();
+        foreach (var cpu in _plcs.Values) { try { cpu.Start(); } catch (InvalidOperationException) { } }
         Tick();
     }
 
@@ -313,7 +389,11 @@ internal sealed class ElectricoView : DockPanel
         if (_sim is null) return;
         var speed = Speeds[Math.Max(0, _speed.SelectedIndex)];
         _sim.Run(0.033 * speed);
+        _canvas.Animate(0.033);
         _clock.Text = $"t = {_sim.Time:0.0} s";
+        foreach (var (id, cpu) in _plcs)
+            if ((cpu.State == PlcState.Fault || cpu.Diagnostics.Count > 0) && _plcFaultShown.Add(id))
+                AddLogLine($"{cpu.Id}: {cpu.FaultMessage ?? string.Join(" ", cpu.Diagnostics)}", EventSeverity.Fault);
         var events = _sim.Events;
         if (events.Count < _shownEvents) _shownEvents = 0;
         for (; _shownEvents < events.Count; _shownEvents++)
@@ -408,6 +488,55 @@ internal sealed class ElectricoView : DockPanel
             try { _presets.ImportCsv(File.ReadAllText(f), _catalog); }
             catch (IOException) { }
         }
+    }
+
+    private string SymbolDir => Path.Combine(_host.GetDataDirectory("electrico"), "simbolos");
+
+    /// <summary>Símbolos de QElectroTech importados en sesiones anteriores (se guardan copiados en la carpeta de datos).</summary>
+    private void LoadImportedSymbols()
+    {
+        try
+        {
+            if (!Directory.Exists(SymbolDir)) return;
+            foreach (var f in Directory.GetFiles(SymbolDir, "*.elmt"))
+            {
+                try { _catalog.Register(QetImporter.Parse(File.ReadAllText(f), f, _catalog).Type); }
+                catch (FormatException) { }
+            }
+        }
+        catch (IOException) { }
+    }
+
+    private async Task ImportQetAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Importar símbolos de QElectroTech (.elmt)",
+            AllowMultiple = true,
+            FileTypeFilter = [new FilePickerFileType("Elemento QElectroTech") { Patterns = ["*.elmt"] }, FilePickerFileTypes.All],
+        });
+        int simulated = 0, drawn = 0;
+        var errors = new List<string>();
+        foreach (var path in files.Select(f => f.TryGetLocalPath()).OfType<string>())
+        {
+            try
+            {
+                var r = QetImporter.Parse(await File.ReadAllTextAsync(path), path, _catalog);
+                _catalog.Register(r.Type);
+                if (r.Type.Behavior == Behavior.Graphic) drawn++; else simulated++;
+                Directory.CreateDirectory(SymbolDir);
+                File.Copy(path, Path.Combine(SymbolDir, Path.GetFileName(path)), overwrite: true);
+            }
+            catch (Exception ex) when (ex is FormatException or IOException)
+            {
+                errors.Add(ex.Message);
+            }
+        }
+        FillPalette();
+        var msg = $"{simulated + drawn} símbolos importados en «{ElementCatalog.CatImported}»: {simulated} se simulan y {drawn} son solo dibujo.";
+        if (errors.Count > 0) msg += $" {errors.Count} con errores: {string.Join(" | ", errors.Take(2))}";
+        _host.SetStatus(msg);
     }
 
     private async Task ImportCatalogAsync()

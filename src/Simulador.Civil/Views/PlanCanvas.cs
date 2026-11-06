@@ -41,6 +41,8 @@ public sealed class PlanCanvas : Control
     public double DoorWidth { get; set; } = 0.8;
     public double WindowWidth { get; set; } = 1.2;
     public double StairWidth { get; set; } = 1.0;
+    public StairShape StairShape { get; set; } = StairShape.Straight;
+    public bool StairTurnLeft { get; set; } = true;
     public FixtureType FixtureType { get; set; } = FixtureCatalog.Tomacorriente;
     public string? SelectedId { get; private set; }
 
@@ -245,22 +247,60 @@ public sealed class PlanCanvas : Control
 
     private void DrawStair(DrawingContext ctx, Stair s)
     {
-        var design = s.Design;
         bool sel = s.Id == SelectedId;
-        ctx.DrawGeometry(sel ? SelBrush : new SolidColorBrush(Color.FromArgb(40, 160, 110, 60)), StairPen, Poly(s.Outline));
-        var d = s.Direction;
-        var n = d.Perp() * (s.Width / 2);
-        for (int i = 1; i < design.Risers - 1; i++)
+        IBrush fill = sel ? SelBrush : new SolidColorBrush(Color.FromArgb(40, 160, 110, 60));
+        foreach (var part in s.Parts) ctx.DrawGeometry(fill, StairPen, Poly(part));
+        // Líneas de peldaño (borde delantero de cada huella menos la primera) y descanso.
+        var steps = s.Steps;
+        for (int i = 0; i < steps.Count; i++)
         {
-            var c = s.Start + d * (i * design.Tread);
-            ctx.DrawLine(StairPen, ToScreen(c - n), ToScreen(c + n));
+            var o = steps[i].Outline;
+            if (steps[i].IsLanding) continue;
+            bool firstOfFlight = i == 0 || steps[i - 1].IsLanding;
+            if (!firstOfFlight) ctx.DrawLine(StairPen, ToScreen(o[0]), ToScreen(o[3]));
         }
-        // Flecha de subida.
-        var end = s.Start + d * design.RunLength;
-        ctx.DrawLine(StairPen, ToScreen(s.Start), ToScreen(end));
-        ctx.DrawLine(StairPen, ToScreen(end), ToScreen(end - d * 0.25 + d.Perp() * 0.12));
-        ctx.DrawLine(StairPen, ToScreen(end), ToScreen(end - d * 0.25 - d.Perp() * 0.12));
-        DrawLabel(ctx, "sube", ToScreen(s.Start - d * 0.2), 10, StairPen.Brush!, center: true);
+        // Línea de huella con flecha de subida: pasa por el centro de cada tramo y del descanso.
+        var path = new List<Point2> { s.Start };
+        foreach (var st in steps)
+        {
+            var o = st.Outline;
+            path.Add(new Point2(o.Average(p => p.X), o.Average(p => p.Y)));
+        }
+        path.Add(s.Arrival);
+        path = SimplifyPath(path);
+        for (int i = 0; i + 1 < path.Count; i++) ctx.DrawLine(StairPen, ToScreen(path[i]), ToScreen(path[i + 1]));
+        if (path.Count >= 2)
+        {
+            var end = path[^1];
+            var d = path[^1] - path[^2];
+            if (d.Length > 1e-9)
+            {
+                d = d * (1 / d.Length);
+                ctx.DrawLine(StairPen, ToScreen(end), ToScreen(end - d * 0.25 + d.Perp() * 0.12));
+                ctx.DrawLine(StairPen, ToScreen(end), ToScreen(end - d * 0.25 - d.Perp() * 0.12));
+            }
+        }
+        DrawLabel(ctx, "sube", ToScreen(s.Start - s.Direction * 0.2), 10, StairPen.Brush!, center: true);
+    }
+
+    /// <summary>Quita los puntos intermedios alineados para dibujar la línea de huella con pocos tramos.</summary>
+    private static List<Point2> SimplifyPath(List<Point2> pts)
+    {
+        var r = new List<Point2>();
+        foreach (var p in pts)
+        {
+            if (r.Count > 0 && r[^1].DistanceTo(p) < 1e-6) continue;
+            if (r.Count >= 2)
+            {
+                var a = r[^2];
+                var b = r[^1];
+                double cross = (b.X - a.X) * (p.Y - b.Y) - (b.Y - a.Y) * (p.X - b.X);
+                if (Math.Abs(cross) < 1e-6) r[^1] = p;
+                else r.Add(p);
+            }
+            else r.Add(p);
+        }
+        return r;
     }
 
     private void DrawFixture(DrawingContext ctx, PlacedFixture f)
@@ -321,10 +361,11 @@ public sealed class PlanCanvas : Control
             var dir = c - st;
             if (dir.Length > 1e-6)
             {
-                var stair = new Stair("_", LevelId, st, Math.Atan2(dir.Y, dir.X), StairWidth, CurrentRise());
-                ctx.DrawGeometry(SelBrush, SelPen, Poly(stair.Outline));
+                var stair = new Stair("_", LevelId, st, Math.Atan2(dir.Y, dir.X), StairWidth, CurrentRise(), StairShape, StairTurnLeft);
+                foreach (var part in stair.Parts) ctx.DrawGeometry(SelBrush, SelPen, Poly(part));
                 var d = stair.Design;
-                DrawLabel(ctx, $"{d.Risers} escalones de {d.Riser * 100:0.0} cm, huella {d.Tread * 100:0.0} cm, largo {d.RunLength:0.00} m",
+                var (len, breadth) = stair.Footprint;
+                DrawLabel(ctx, $"{d.Risers} escalones de {d.Riser * 100:0.0} cm, huella {d.Tread * 100:0.0} cm, caja {len:0.00} × {breadth:0.00} m",
                     ToScreen(st) + new Point(10, 10), 12, Brushes.DarkOrange, center: false);
             }
         }
@@ -442,7 +483,7 @@ public sealed class PlanCanvas : Control
                 {
                     var dir = p - st;
                     if (dir.Length > 0.1)
-                        _doc.Edit(ed => ed.AddStair(LevelId, st, Math.Atan2(dir.Y, dir.X), StairWidth, CurrentRise()));
+                        _doc.Edit(ed => ed.AddStair(LevelId, st, Math.Atan2(dir.Y, dir.X), StairWidth, CurrentRise(), StairShape, StairTurnLeft));
                     _drawStart = null;
                 }
                 else _drawStart = p;
@@ -497,7 +538,7 @@ public sealed class PlanCanvas : Control
         PlanTool.Room => "Clic en dos esquinas opuestas para crear una habitación rectangular.",
         PlanTool.Door => "Clic sobre un muro para poner la puerta (el lado del clic decide hacia dónde abre).",
         PlanTool.Window => "Clic sobre un muro para poner la ventana.",
-        PlanTool.Stair => "Clic en el arranque y otro clic hacia donde sube; los peldaños se calculan solos.",
+        PlanTool.Stair => "Clic en el arranque y otro clic hacia donde sube; los peldaños y el descanso (en L o U) se calculan solos.",
         PlanTool.Fixture => $"Clic para colocar: {FixtureType.Name}.",
         PlanTool.Route => _routeFrom is null ? "Clic en el elemento de origen." : "Clic en el elemento de destino (la ruta va por el techo).",
         PlanTool.Rename => "Clic dentro de una habitación para ponerle nombre y uso.",
@@ -593,7 +634,7 @@ public sealed class PlanCanvas : Control
                 if (s.Start.Z >= level.Elevation - 1e-6 && s.Start.Z <= level.Elevation + level.Height + 1e-6
                     && Geo.DistanceToSegment(s.Start.Xy, s.End.Xy, p) < tol)
                     return r.Id;
-        var st = _doc.Stairs.FirstOrDefault(s => s.LevelId == LevelId && Geo.Contains(s.Outline, p));
+        var st = _doc.Stairs.FirstOrDefault(s => s.LevelId == LevelId && s.Parts.Any(part => Geo.Contains(part, p)));
         if (st is not null) return st.Id;
         return _doc.SpaceAt(LevelId, p)?.Id;
     }

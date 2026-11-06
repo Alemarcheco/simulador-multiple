@@ -12,8 +12,20 @@ public static partial class SpiceNetlister
 {
     public const string TemplateProperty = "Sim.Template";
 
+    /// <summary>Nombre del vector de ngspice con la corriente que entra al componente por ese pin.</summary>
+    public static string ProbeVector(string reference, string pin) => $"vpp_{Safe(reference)}_{Safe(pin)}#branch".ToLowerInvariant();
+
+    /// <summary>Prefijo de los nodos internos de las sondas de corriente (para ocultarlos en las gráficas).</summary>
+    public const string ProbeNodePrefix = "pp_";
+
+    private static string Safe(string s) => new(s.Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_').ToArray());
+
     /// <param name="analysis">Líneas de análisis (".op", ".tran 1u 10m"…); se añaden antes de ".end".</param>
-    public static SpiceNetlist Build(SchematicDocument doc, ComponentCatalog catalog, IEnumerable<string>? analysis = null)
+    /// <param name="currentProbes">
+    /// Mete un amperímetro (fuente de 0 V) en serie con cada pin para conocer la corriente de todos los
+    /// componentes, que se usa para animar la corriente en el esquema.
+    /// </param>
+    public static SpiceNetlist Build(SchematicDocument doc, ComponentCatalog catalog, IEnumerable<string>? analysis = null, bool currentProbes = false)
     {
         var warnings = new List<string>();
         var conn = Connectivity.Analyze(doc);
@@ -23,6 +35,7 @@ public static partial class SpiceNetlister
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool hasGround = conn.Nets.Any(n => n.Name == Connectivity.GroundNet);
+        var probes = new Dictionary<string, string>();
 
         foreach (var s in doc.Symbols.OrderBy(s => s.Reference, StringComparer.OrdinalIgnoreCase))
         {
@@ -48,11 +61,17 @@ public static partial class SpiceNetlister
                     var net = conn.NetOf(s, pinNo);
                     bool alone = net is null || net.Pins.Count < 2 && net.Name.StartsWith('N');
                     if (alone) warnings.Add($"{s.Reference}: el pin {pinNo} no está conectado.");
-                    return net?.Name ?? $"NC_{s.Reference}_{pinNo}";
+                    if (net is null) return $"NC_{s.Reference}_{pinNo}";
+                    if (!currentProbes) return net.Name;
+                    var inner = $"{ProbeNodePrefix}{Safe(s.Reference)}_{Safe(pinNo)}";
+                    probes.TryAdd(inner, $"VPP_{Safe(s.Reference)}_{Safe(pinNo)} {net.Name} {inner} 0");
+                    return inner;
                 }
                 return m.Value;
             });
             sb.AppendLine(line);
+            foreach (var probe in probes.Values) sb.AppendLine(probe);
+            probes.Clear();
 
             foreach (var token in s.Value.Split((char[])[' ', '(', ')', '='], StringSplitOptions.RemoveEmptyEntries))
                 usedNames.Add(token);

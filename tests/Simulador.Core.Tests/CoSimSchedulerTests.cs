@@ -161,4 +161,40 @@ public class CoSimSchedulerTests
 
         Assert.True(runner.Latest.Time >= TimeSpan.FromSeconds(1));
     }
+
+    [Fact]
+    public void Runner_runs_posted_actions_on_sim_thread_even_when_paused()
+    {
+        var s = new CoSimScheduler();
+        s.Add(new Probe("p", SimPhase.Logic, 1, []));
+        using var runner = new SimRunner(s);
+        int simThread = -1;
+        var done = new ManualResetEventSlim();
+        runner.StepOnce(3);
+        runner.Post(() => { simThread = Environment.CurrentManagedThreadId; done.Set(); });
+
+        Assert.True(done.Wait(TimeSpan.FromSeconds(5)));
+        Assert.NotEqual(Environment.CurrentManagedThreadId, simThread);
+        Assert.True(runner.IsPaused);
+    }
+
+    [Fact]
+    public void Runner_reset_returns_to_zero_and_runs_after_reset_hook()
+    {
+        var s = new CoSimScheduler();
+        s.Add(new Probe("p", SimPhase.Logic, 1, []));
+        using var runner = new SimRunner(s);
+        var stepped = new ManualResetEventSlim();
+        runner.FramePublished += (_, f) => { if (f.Time >= Ms(10)) stepped.Set(); };
+        runner.StepOnce(10);
+        Assert.True(stepped.Wait(TimeSpan.FromSeconds(5)));
+
+        var reset = new ManualResetEventSlim();
+        bool hook = false;
+        runner.FramePublished += (_, f) => { if (f.Time == TimeSpan.Zero && hook) reset.Set(); };
+        runner.Reset(() => hook = true);
+
+        Assert.True(reset.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Equal(TimeSpan.Zero, runner.Latest.Time);
+    }
 }

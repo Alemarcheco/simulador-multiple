@@ -9,7 +9,7 @@ Hecha con C# (.NET 8) y [Avalonia](https://avaloniaui.net/). La simulación de c
 | Pestaña | Proyecto | Estado |
 |---|---|---|
 | ⚡ Circuitos y PCB | `src/Simulador.Circuitos` | Librerías, esquemáticos, simulación (ngspice) y diseño de PCB y salidas de fabricación (PDF para transferencia térmica, Gerber y taladros) |
-| 🔌 Instalaciones eléctricas | `src/Simulador.Electrico` | Editor y simulación de mando y potencia: contactores, relés, temporizadores, protecciones, motores e iluminación. Ver [docs/modulo-electrico.md](docs/modulo-electrico.md) |
+| 🔌 Instalaciones eléctricas | `src/Simulador.Electrico` | Editor y simulación de mando y potencia: contactores, relés, temporizadores, protecciones, motores, variadores, transformadores, PLC e iluminación, con corriente animada y símbolos de QElectroTech. Ver [docs/modulo-electrico.md](docs/modulo-electrico.md) |
 
 ## Descargar y ejecutar
 

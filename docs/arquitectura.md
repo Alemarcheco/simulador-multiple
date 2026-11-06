@@ -28,6 +28,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.Modules` | `IModule`, `IModuleHost`, `ModuleLoader` | Circuitos y PCB |
 | `Simulador.Core.Signals` | `ISignalPort`, `IPowerPort`, `ISignalBus`, `ISimulationClock` | PLC y Arduino |
 | `Simulador.Core.CoSim` | `ISimComponent`, `ISimComponentFactory`, `SimContext`, `CoSimScheduler` (reloj común y planificador), `SimRunner` (ejecución a velocidad controlada), `PowerPort` | Entorno combinado |
+| `Simulador.Core.Rendering` | `OrbitCamera` (perspectiva u ortográfica, encuadre fijo al girar), `ZBufferRasterizer` (búfer de profundidad por software, transparencias, líneas, supermuestreo opcional) | Edificación e Hidráulica |
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
 | `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
@@ -66,16 +67,18 @@ Diseño civil básico (sin cálculo estructural) para ubicar sobre él las insta
 Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos del proyecto).
 
 - **Hecho (fase 1)**: niveles con cota y altura; muros con espesor, altura y material; puertas y ventanas alojadas en
-  muros; losas y cubiertas; escaleras rectas con cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
+  muros; losas y cubiertas; escaleras rectas, en L y en U con descanso y cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
   habitaciones con nombre, uso, área y perímetro; copiar planta encima (planta tipo); planta 2D editable con imán y
-  ortogonal; vista 3D con búfer de profundidad por software (`Rendering/`); plantillas (casa, casa de dos
+  ortogonal; vista 3D ortográfica con el rasterizador común de `Simulador.Core.Rendering` (`Rendering/BuildingRenderer.cs`); plantillas (casa, casa de dos
   plantas, hotel, nave industrial, casa con instalación eléctrica e hidráulica, edificio de apartamentos, oficina); colocar
   tomacorrientes, interruptores, luminarias, tableros, puntos de agua, desagües y tanques; rutas por el techo con
   longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una
   puerta, escaleras incómodas, habitaciones pequeñas); deshacer/rehacer; archivo `.edif.json`.
-- **Siguiente**: asistente de sugerencias por reglas configurables por país (tomas por habitación, dotación y
-  tanque, evacuación, ventilación), metrado y presupuesto, escaleras en L/U, importar DXF y planos escaneados como
-  calco, exportar planos PDF/DXF.
+- **Asistente** (`Model/Advisor.cs`, pestaña Asistente): reglas editables y guardadas con el proyecto (tomas por
+  perímetro y mínimos por uso, luminarias, interruptores, ventanas ≥ 1/8 del piso, agua por persona y tanque elevado,
+  presión mínima, distancia de evacuación); botón Aplicar que coloca lo que falta (tomas, luces, interruptores,
+  tanque, puntos de agua, tablero y rutas); materiales y presupuesto con precios editables y copia para Excel.
+- **Siguiente**: escaleras en L/U, importar DXF y planos escaneados como calco, exportar planos PDF/DXF.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D (plan)
@@ -93,3 +96,11 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
 3. **Bocetos 2D** con restricciones y cotas, revolución, patrones y simetrías.
 4. **Integración**: caja desde la placa del módulo de circuitos con un clic; exportar equipos animables `.sm3d`
    para el banco de pruebas (contrato `Simulador.Core.Model3D`).
+
+## Banco de pruebas (`Simulador.Banco`)
+
+Pestaña que junta piezas de varios módulos en una sola simulación con el reloj común (`CoSimScheduler` + `SimRunner`):
+
+- **Montajes** (`Scenarios/`): llenado de tanque (PLC real en texto estructurado → contactor con térmico → motor → bomba y red hidráulica real del módulo Hidráulica → tanque con transmisor de nivel), turbogenerador en isla con regulador PI y turbocompresor con depósito de aire regulado por el PLC.
+- **Equipos genéricos** (`Generic/`): red trifásica, contactor con relé térmico, motor asíncrono (Kloss), generador síncrono en isla, carga eléctrica, turbina (vapor, gas o hidráulica) con limitador y disparo por sobrevelocidad, compresor, depósito de aire, transmisores de señal y regulador PI. Son modelos sencillos con parámetros de placa; cuando cada módulo publique su `ISimComponentFactory` se usan los suyos.
+- **Vista** (`Ui/`): animación 2D, marcha/pausa/paso/velocidad, mandos y fallos, valores, lista de conexiones (bornes, cables, ejes, tuberías), programa del PLC y tendencias. Los cambios desde la interfaz pasan por `SimRunner.Post`, que los ejecuta en el hilo de simulación.

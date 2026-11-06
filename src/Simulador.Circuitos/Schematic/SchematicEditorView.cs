@@ -36,6 +36,10 @@ public sealed class SchematicEditorView : DockPanel
         _catalog.Changed += (_, _) => RefreshPalette();
         _labelName.TextChanged += (_, _) => _canvas.LabelName = string.IsNullOrWhiteSpace(_labelName.Text) ? "RED" : _labelName.Text.Trim();
 
+        ToolTip.SetTip(_liveButton, "Simula el circuito y anima la corriente por los cables (los puntos van más rápido cuanta más corriente). Pulsa otra vez para parar.");
+        _liveButton.Click += async (_, _) => { await ToggleLiveAsync(); _canvas.Focus(); };
+        _canvas.AnimationChanged += (_, _) => _liveButton.Content = _canvas.Animation is null ? "⚡ Ver la corriente" : "■ Parar la corriente";
+
         var toolbar = BuildToolbar();
         SetDock(toolbar, Dock.Top);
         Children.Add(toolbar);
@@ -117,8 +121,42 @@ public sealed class SchematicEditorView : DockPanel
                 B("Ajustar", "Ver todo el esquema (F)", _canvas.ZoomToFit),
                 Sep(),
                 B("Netlist SPICE", "Ver la netlist que se enviará al simulador", ShowNetlist),
+                Sep(),
+                _liveButton,
             },
         };
+    }
+
+    private readonly Button _liveButton = new()
+    {
+        Content = "⚡ Ver la corriente", Padding = new Thickness(10, 4), FontWeight = FontWeight.SemiBold,
+        Background = new SolidColorBrush(Color.Parse("#FFE58A")),
+    };
+
+    private async Task ToggleLiveAsync()
+    {
+        if (_canvas.Animation is not null) { _canvas.SetAnimation(null); _canvas.SetOperatingPoint(null); return; }
+        var settings = Simulation.LiveRun.Suggest(_canvas.Document);
+        _liveButton.IsEnabled = false;
+        _host.SetStatus("Simulando…");
+        try
+        {
+            var doc = _canvas.Document;
+            var outcome = await Task.Run(() => Simulation.LiveRun.Run(doc, _catalog, settings));
+            if (!ReferenceEquals(doc, _canvas.Document)) return;
+            _canvas.SetAnimation(outcome.Animation);
+            if (outcome.Animation is { IsStatic: true } && outcome.Result is { } r)
+                _canvas.SetOperatingPoint(outcome.Animation.Voltages.Where(kv => kv.Key != Connectivity.GroundNet).ToDictionary(kv => kv.Key, kv => kv.Value[0]));
+            _host.SetStatus(outcome.Message);
+        }
+        catch (Simulation.NgSpiceNotFoundException ex)
+        {
+            _host.SetStatus(ex.Message);
+        }
+        finally
+        {
+            _liveButton.IsEnabled = true;
+        }
     }
 
     private Control ExamplesButton()

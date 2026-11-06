@@ -123,6 +123,14 @@ internal static class SymbolPainter
         var sim = st is not null;
         var paths = st?.Paths ?? [];
         bool Path(int i, bool rest) => sim && paths.Length > i ? paths[i] : rest;
+        if (t.Graphic is { } imported)
+        {
+            DrawGraphic(dc, imported, st);
+            // Los símbolos importados no saben dibujar su estado: un piloto al lado dice si el contacto está cerrado.
+            if (sim && paths.Length > 0 && t.Behavior != Behavior.Graphic)
+                dc.DrawEllipse(paths[0] ? Energized : Paper, Thin, P(imported.X1 + 0.5, imported.Y0 + 0.5), 4, 4);
+            return;
+        }
 
         switch (t.Behavior)
         {
@@ -285,6 +293,201 @@ internal static class SymbolPainter
             case Behavior.Junction:
                 dc.DrawEllipse(Ink, null, P(0, 0), 3.5, 3.5);
                 break;
+            case Behavior.Motor1:
+            {
+                const double cx = 1, cy = 3.2;
+                foreach (var term in t.Terminals) L(dc, term.X, 0, term.X, cy - Math.Sqrt(Math.Max(0, 2.89 - Math.Pow(term.X - cx, 2))));
+                DrawMotorBody(dc, st, cx, cy, "1~");
+                break;
+            }
+            case Behavior.Transformer1 or Behavior.Transformer3:
+                DrawTransformer(dc, t, st);
+                break;
+            case Behavior.Vfd:
+                DrawVfd(dc, st);
+                break;
+            case Behavior.Plc:
+                DrawPlc(dc, t, st);
+                break;
+            case Behavior.Graphic:
+            default:
+                if (t.Graphic is { } graphic) DrawGraphic(dc, graphic, st);
+                break;
+        }
+    }
+
+    private static readonly IBrush Running = new SolidColorBrush(Color.Parse("#DCEFFD"));
+    private static readonly IBrush LedInput = new SolidColorBrush(Color.Parse("#34C759"));
+    private static readonly IBrush LedOutput = new SolidColorBrush(Color.Parse("#FFB300"));
+    private static readonly IBrush LedOff = new SolidColorBrush(Color.Parse("#D5DBE3"));
+
+    /// <summary>Círculo del motor con su rótulo y la flecha que gira con el eje.</summary>
+    private static void DrawMotorBody(DrawingContext dc, ElementStatus? st, double cx, double cy, string kind)
+    {
+        var running = Math.Abs(st?.Rpm ?? 0) > 5;
+        dc.DrawEllipse(running ? Running : Paper, st?.Tripped == true ? FaultPen : Line, P(cx, cy), 1.7 * G, 1.7 * G);
+        Label(dc, "M", cx, cy - 0.35, 15, Ink, center: true);
+        Label(dc, kind, cx, cy + 0.65, 10, Ink, center: true);
+        if (!running) return;
+        var angle = (st!.Rpm / 60.0) * 2 * Math.PI * (Environment.TickCount64 / 1000.0) * 0.02;
+        var dir = Math.Sign(st.Rpm);
+        const double r = 2.15;
+        var a0 = angle * dir;
+        var p0 = P(cx + r * Math.Cos(a0), cy + r * Math.Sin(a0));
+        var p1 = P(cx + r * Math.Cos(a0 + dir * 0.9), cy + r * Math.Sin(a0 + dir * 0.9));
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+        {
+            c.BeginFigure(p0, false);
+            c.ArcTo(p1, new Size(r * G, r * G), 0, false, dir > 0 ? SweepDirection.Clockwise : SweepDirection.CounterClockwise);
+        }
+        dc.DrawGeometry(null, new Pen(Select, 2.2), g);
+        dc.DrawEllipse(Select, null, p1, 3, 3);
+    }
+
+    /// <summary>Dos círculos entrelazados (IEC 60617-06): primario arriba, secundario abajo.</summary>
+    private static void DrawTransformer(DrawingContext dc, ElementType t, ElementStatus? st)
+    {
+        var three = t.Behavior == Behavior.Transformer3;
+        var cx = three ? 2.0 : 1.0;
+        var r = three ? 1.35 : 1.05;
+        var (y1, y2) = three ? (2.25, 3.75) : (2.35, 3.65);
+        foreach (var term in t.Terminals)
+        {
+            if (term.Y == 0) L(dc, term.X, 0, term.X, y1 - Math.Sqrt(Math.Max(0, r * r - Math.Pow(term.X - cx, 2))) + 0.05);
+            else if (term.X - cx <= r) L(dc, term.X, 6, term.X, y2 + Math.Sqrt(Math.Max(0, r * r - Math.Pow(term.X - cx, 2))) - 0.05);
+            else
+            {
+                // Neutro del secundario (2N): sale del centro de la estrella hacia su borne.
+                L(dc, term.X, 6, term.X, y2);
+                L(dc, term.X, y2, cx + r, y2);
+            }
+        }
+        var loaded = (st?.Current ?? 0) > 0.01;
+        dc.DrawEllipse(loaded ? Running : Paper, Line, P(cx, y1), r * G, r * G);
+        dc.DrawEllipse(loaded ? new SolidColorBrush(Color.Parse("#DCEFFD"), 0.6) : null, Line, P(cx, y2), r * G, r * G);
+        if (three)
+        {
+            // Triángulo en el primario y estrella en el secundario.
+            var tri = new StreamGeometry();
+            using (var c = tri.Open())
+            {
+                c.BeginFigure(P(cx, y1 - 0.55), false);
+                c.LineTo(P(cx + 0.5, y1 + 0.3)); c.LineTo(P(cx - 0.5, y1 + 0.3)); c.LineTo(P(cx, y1 - 0.55));
+            }
+            dc.DrawGeometry(null, Thin, tri);
+            foreach (var a in new[] { -90.0, 30, 150 })
+            {
+                var rad = a * Math.PI / 180;
+                L(dc, cx, y2 + 0.15, cx + 0.5 * Math.Cos(rad), y2 + 0.15 + 0.5 * Math.Sin(rad), Thin);
+            }
+        }
+    }
+
+    private static void DrawVfd(DrawingContext dc, ElementStatus? st)
+    {
+        foreach (var x in new[] { 0.0, 2, 4 }) { L(dc, x, 0, x, 1); L(dc, x, 7, x, 8); }
+        foreach (var y in new[] { 2.0, 4, 6 }) L(dc, 6.6, y, 8, y);
+        var fault = st?.Fault is not null;
+        var on = Math.Abs(st?.Frequency ?? 0) > 0.05;
+        dc.DrawRectangle(fault ? new SolidColorBrush(Color.Parse("#FFEBEE")) : on ? Running : Tint, fault ? FaultPen : Line, new Rect(P(-0.8, 1), P(6.6, 7)));
+        // Símbolo de convertidor: diagonal con ~ arriba y ~ abajo.
+        L(dc, -0.8, 7, 2.2, 1, Thin);
+        Label(dc, "3~", 0.2, 2.1, 10, Ink, center: true);
+        Label(dc, "f ~", 1.8, 5.8, 10, Ink, center: true);
+        var display = st is null ? "VFD" : fault ? "ERR" : $"{Math.Abs(st.Frequency):0.0} Hz";
+        var box = new Rect(P(2.7, 3.4), new Size(3.6 * G, 1.2 * G));
+        dc.DrawRectangle(new SolidColorBrush(Color.Parse("#102030")), null, box, 3, 3);
+        var lcd = new SolidColorBrush(fault ? Color.Parse("#FF6B6B") : Color.Parse("#7CF2A0"));
+        var tlcd = Text(display, 11, lcd, FontWeight.Bold);
+        dc.DrawText(tlcd, new Point(box.X + (box.Width - tlcd.Width) / 2, box.Y + (box.Height - tlcd.Height) / 2));
+        if (st is not null && st.Frequency != 0)
+            Label(dc, st.Frequency > 0 ? "↻" : "↺", 4.5, 2.4, 12, Select, center: true);
+    }
+
+    private static void DrawPlc(DrawingContext dc, ElementType t, ElementStatus? st)
+    {
+        var maxX = t.Terminals.Max(x => x.X);
+        foreach (var term in t.Terminals) L(dc, term.X, term.Y == 0 ? 0 : 5, term.X, term.Y == 0 ? 1 : 6);
+        var powered = st?.Powered == true;
+        dc.DrawRectangle(Tint, Line, new Rect(P(-0.8, 1), P(maxX + 0.8, 5)));
+        Label(dc, "PLC", maxX - 1.2, 3.0, 12, Ink, center: true);
+        dc.DrawEllipse(st is null ? LedOff : powered ? LedInput : Fault, null, P(maxX - 2.6, 3.0), 3, 3);
+        var inputs = st?.Inputs ?? [];
+        var outputs = st?.Paths ?? [];
+        var i = 0; var o = 0;
+        foreach (var term in t.Terminals)
+        {
+            if (term.Id.StartsWith('I'))
+            {
+                var lit = i < inputs.Length && inputs[i];
+                dc.DrawRectangle(lit ? LedInput : LedOff, null, new Rect(P(term.X - 0.25, 2.25), P(term.X + 0.25, 2.6)));
+                i++;
+            }
+            else if (term.Id.StartsWith('Q'))
+            {
+                var lit = o < outputs.Length && outputs[o];
+                dc.DrawRectangle(lit ? LedOutput : LedOff, null, new Rect(P(term.X - 0.25, 3.4), P(term.X + 0.25, 3.75)));
+                o++;
+            }
+        }
+    }
+
+    /// <summary>Símbolo importado (QElectroTech…): sus primitivas vectoriales en unidades de rejilla.</summary>
+    private static void DrawGraphic(DrawingContext dc, SymbolGraphic graphic, ElementStatus? st)
+    {
+        var active = st is not null && (st.CoilOn || st.Brightness > 0.3 || (st.Paths.Length > 0 && st.Paths[0] && st.Current > 0.001));
+        foreach (var p in graphic.Primitives)
+        {
+            var pen = new Pen(Ink, Math.Max(0.8, 1.2 * p.Thickness), p.Dashed ? new DashStyle([3, 3], 0) : null);
+            IBrush? fill = p.Filled ? Ink : null;
+            switch (p.Kind)
+            {
+                case PrimitiveKind.Line when p.Points.Count >= 2:
+                    dc.DrawLine(pen, P(p.Points[0].X, p.Points[0].Y), P(p.Points[1].X, p.Points[1].Y));
+                    break;
+                case PrimitiveKind.Polygon when p.Points.Count >= 2:
+                {
+                    var g = new StreamGeometry();
+                    using (var c = g.Open())
+                    {
+                        c.BeginFigure(P(p.Points[0].X, p.Points[0].Y), p.Filled);
+                        foreach (var q in p.Points.Skip(1)) c.LineTo(P(q.X, q.Y));
+                        if (p.Closed) c.EndFigure(true);
+                    }
+                    dc.DrawGeometry(fill, pen, g);
+                    break;
+                }
+                case PrimitiveKind.Rect:
+                    dc.DrawRectangle(fill ?? (active ? Energized : null), pen, new Rect(P(p.X, p.Y), P(p.X + p.W, p.Y + p.H)));
+                    break;
+                case PrimitiveKind.Ellipse:
+                    dc.DrawEllipse(fill ?? (active ? Energized : null), pen, P(p.X + p.W / 2, p.Y + p.H / 2), p.W / 2 * G, p.H / 2 * G);
+                    break;
+                case PrimitiveKind.Arc:
+                {
+                    // QElectroTech: ángulos en grados, 0 = a la derecha, positivos en sentido antihorario (y hacia arriba).
+                    var cx = p.X + p.W / 2; var cy = p.Y + p.H / 2;
+                    var a0 = p.Start * Math.PI / 180; var a1 = (p.Start + p.Angle) * Math.PI / 180;
+                    var s0 = P(cx + p.W / 2 * Math.Cos(a0), cy - p.H / 2 * Math.Sin(a0));
+                    var s1 = P(cx + p.W / 2 * Math.Cos(a1), cy - p.H / 2 * Math.Sin(a1));
+                    var g = new StreamGeometry();
+                    using (var c = g.Open())
+                    {
+                        c.BeginFigure(s0, false);
+                        c.ArcTo(s1, new Size(p.W / 2 * G, p.H / 2 * G), 0, Math.Abs(p.Angle) > 180,
+                            p.Angle > 0 ? SweepDirection.CounterClockwise : SweepDirection.Clockwise);
+                    }
+                    dc.DrawGeometry(null, pen, g);
+                    break;
+                }
+                case PrimitiveKind.Text when p.Text.Length > 0:
+                {
+                    var tx = Text(p.Text, Math.Clamp(p.Size, 5, 24), Ink);
+                    dc.DrawText(tx, P(p.X, p.Y) - new Point(0, tx.Height * 0.8));
+                    break;
+                }
+            }
         }
     }
 

@@ -42,6 +42,8 @@ public static class Artwork
                 break;
             case ArtworkLayer.TopSilk:
                 foreach (var f in doc.Footprints) shapes.AddRange(SilkShapes(f));
+                // Los puentes de cable se marcan en la serigrafía para saber dónde soldarlos.
+                foreach (var t in doc.Tracks.Where(t => t.Layer == Layers.Jumper)) shapes.Add(new Stroke(t.A, t.B, 0.3));
                 break;
             case ArtworkLayer.Edge:
                 var c = new[] { new Vec2(0, 0), new Vec2(doc.BoardWidth, 0), new Vec2(doc.BoardWidth, doc.BoardHeight), new Vec2(0, doc.BoardHeight) };
