@@ -74,7 +74,7 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   longitud y desnivel reales; comprobaciones (huecos que no caben, elementos dentro de un hueco o tapados por una
   puerta, escaleras incómodas, habitaciones pequeñas); deshacer/rehacer; archivo `.edif.json`.
 - **Siguiente**: asistente de sugerencias por reglas configurables por país (tomas por habitación, dotación y
-  tanque, evacuación, ventilación), metrado y presupuesto, importar DXF y planos escaneados como
+  tanque, evacuación, ventilación), metrado y presupuesto, escaleras en L/U, importar DXF y planos escaneados como
   calco, exportar planos PDF/DXF.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
