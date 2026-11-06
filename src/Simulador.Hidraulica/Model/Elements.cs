@@ -26,7 +26,13 @@ public sealed class Junction : HydraulicNode
 {
     /// <summary>Caudal que sale de la red en este punto (m³/s). Positivo = consumo.</summary>
     public double Demand { get; set; }
-    public override string TypeName => "Nudo / unión";
+    /// <summary>
+    /// Descarga libre a la atmósfera (aspersor, boquilla, orificio): caudal en m³/s cuando la presión es 1 bar.
+    /// El caudal sigue la ley del orificio, Q = Q₁·√(p / 1 bar). 0 = sin descarga.
+    /// </summary>
+    public double DischargeAt1Bar { get; set; }
+    [JsonIgnore] public bool IsEmitter => DischargeAt1Bar > 0;
+    public override string TypeName => IsEmitter ? "Aspersor / descarga libre" : "Nudo / unión";
 }
 
 /// <summary>Depósito de nivel constante (fuente infinita: río, red pública, pozo grande).</summary>
@@ -47,13 +53,32 @@ public sealed class Tank : HydraulicNode
     /// <summary>Nivel al empezar la simulación (m).</summary>
     public double InitialLevel { get; set; } = 1;
 
+    /// <summary>
+    /// Tanque cerrado con colchón de aire (calderín o hidroneumático). El aire se comprime al subir el agua
+    /// (isotermo, p·V = constante) y su presión se suma a la columna de agua.
+    /// </summary>
+    public bool Closed { get; set; }
+    /// <summary>Presión manométrica del aire con el nivel inicial (Pa). Solo si <see cref="Closed"/>.</summary>
+    public double InitialGasPressure { get; set; } = 1.5e5;
+
     /// <summary>Nivel actual durante la simulación (m). No se guarda.</summary>
     [JsonIgnore] public double Level { get; set; }
+
+    public const double AtmosphericPressure = 101_325;
+
+    /// <summary>Presión manométrica del aire (Pa) con el nivel <paramref name="level"/>. 0 si el tanque es abierto.</summary>
+    public double GasPressureAt(double level)
+    {
+        if (!Closed) return 0;
+        double v0 = Math.Max(MaxLevel - InitialLevel, 1e-3);
+        double v = Math.Max(MaxLevel - level, 1e-3);
+        return (InitialGasPressure + AtmosphericPressure) * v0 / v - AtmosphericPressure;
+    }
 
     [JsonIgnore] public double Area => Math.PI * Diameter * Diameter / 4;
     [JsonIgnore] public double Volume => Area * Level;
     [JsonIgnore] public double Capacity => Area * MaxLevel;
-    public override string TypeName => "Tanque";
+    public override string TypeName => Closed ? "Tanque presurizado (calderín)" : "Tanque";
 }
 
 /// <summary>Elemento entre dos nudos por el que circula caudal (tubería, bomba, válvula).</summary>
@@ -86,8 +111,32 @@ public sealed class Pipe : HydraulicLink
     public double Roughness { get; set; } = 0.0015;
     /// <summary>Suma de coeficientes de pérdidas locales (codos, entradas, salidas).</summary>
     public double MinorLoss { get; set; }
-    /// <summary>Material para la lista de materiales.</summary>
+    /// <summary>Material para la lista de materiales y la velocidad de onda del golpe de ariete.</summary>
     public string Material { get; set; } = "PVC";
+    /// <summary>Espesor de pared (m), para la velocidad de onda del golpe de ariete.</summary>
+    public double WallThickness { get; set; } = 0.003;
+
+    /// <summary>Módulo de elasticidad del material (Pa).</summary>
+    public static double ElasticModulus(string material) => material.Trim().ToLowerInvariant() switch
+    {
+        "pvc" or "pvc-u" => 3.0e9,
+        "pe" or "pead" or "polietileno" => 0.9e9,
+        "ppr" or "pp" => 0.8e9,
+        "acero" or "acero galvanizado" or "galvanizado" => 200e9,
+        "fundición" or "fundicion" or "fundición dúctil" => 170e9,
+        "cobre" => 117e9,
+        "hormigón" or "hormigon" => 30e9,
+        _ => 3.0e9,
+    };
+
+    /// <summary>Celeridad de la onda de presión (m/s) por la fórmula de Korteweg.</summary>
+    public double WaveSpeed(Fluid fluid)
+    {
+        double k = fluid.BulkModulus;
+        double e = ElasticModulus(Material);
+        double ratio = Diameter / Math.Max(WallThickness, 1e-4);
+        return Math.Sqrt(k / fluid.Density / (1 + k * ratio / e));
+    }
     public override string TypeName => "Tubería";
 }
 
@@ -111,6 +160,16 @@ public sealed class Pump : HydraulicLink
     public double Inertia { get; set; } = 0.01;
     /// <summary>Encendida al empezar (si no hay motor ni PLC conectados).</summary>
     public bool InitiallyOn { get; set; } = true;
+    /// <summary>
+    /// Presostato: nudo o tanque cuya presión arranca y para la bomba (vacío = sin presostato). Arranca por debajo de
+    /// <see cref="SwitchOnPressure"/> y para por encima de <see cref="SwitchOffPressure"/>.
+    /// </summary>
+    public string PressureSwitchNode { get; set; } = "";
+    /// <summary>Presión de arranque (Pa manométricos).</summary>
+    public double SwitchOnPressure { get; set; } = 2.5e5;
+    /// <summary>Presión de paro (Pa manométricos).</summary>
+    public double SwitchOffPressure { get; set; } = 4.0e5;
+    [JsonIgnore] public bool HasPressureSwitch => !string.IsNullOrWhiteSpace(PressureSwitchNode);
 
     /// <summary>Velocidad relativa actual (0 = parada, 1 = nominal). No se guarda.</summary>
     [JsonIgnore] public double RelativeSpeed { get; set; }

@@ -82,6 +82,13 @@ public static class SceneBuilder
                 Ring(s, p + new Vector3(0, 0, h), r, 0.05f, SteelDark, 32);
                 Ring(s, p, r, 0.05f, SteelDark, 32);
                 Disk(s, p - new Vector3(0, 0, 0.02f), r, SteelDark, 32);
+                if (t.Closed)
+                {
+                    // Calderín: tapa cerrada y manómetro.
+                    Disk(s, p + new Vector3(0, 0, h + 0.02f), r, Steel, 32);
+                    Cylinder(s, p + new Vector3(0, 0, h), p + new Vector3(0, 0, h + 0.25f), 0.03f, SteelDark, 8, caps: true);
+                    Cylinder(s, p + new Vector3(-0.03f, 0, h + 0.33f), p + new Vector3(0.03f, 0, h + 0.33f), 0.1f, Black, 16, caps: true);
+                }
                 // Patas y plataforma si el tanque está elevado.
                 if (p.Z - ground > 0.3f)
                 {
@@ -94,6 +101,7 @@ public static class SceneBuilder
                     Box(s, p - new Vector3(0, 0, 0.08f), new Vector3(r * 2.1f, r * 2.1f, 0.1f), Steel);
                 }
                 string text = $"{t.Id}  {level:0.00} m";
+                if (t.Closed) text += $"  aire {t.GasPressureAt(level) / 1e5:0.0} bar";
                 if (sim is not null && sim.Overflow[sim.NodeIndex(t.Id)] > 1e-7) text += "  ¡rebosa!";
                 s.Labels.Add(new(p + new Vector3(0, 0, h + 0.4f), text, selected));
                 break;
@@ -129,10 +137,30 @@ public static class SceneBuilder
                     bool flowing = sim is null || j.Demand > 0;
                     if (flowing) Cylinder(s, p - new Vector3(0, 0, 0.35f), p - new Vector3(0, 0, 0.75f), r * 0.35f, WaterLight, 10, caps: true);
                 }
+                if (j.IsEmitter)
+                {
+                    // Aspersor: tubo vertical y abanico de chorros que crece con el caudal.
+                    var top = p + new Vector3(0, 0, 0.6f);
+                    Cylinder(s, p, top, r * 0.5f, SteelDark, 10, caps: true);
+                    Sphere(s, top, r * 0.8f, Black);
+                    double q = sim is null ? j.DischargeAt1Bar : sim.EmittedAt(j.Id);
+                    float len = 0.4f + 1.4f * (float)Math.Clamp(q / Math.Max(j.DischargeAt1Bar, 1e-9), 0, 2);
+                    if (q > 1e-7)
+                        for (int k = 0; k < 8; k++)
+                        {
+                            double a = k * Math.PI / 4;
+                            var mid = top + new Vector3((float)Math.Cos(a) * len * 0.5f, (float)Math.Sin(a) * len * 0.5f, len * 0.35f);
+                            var end = top + new Vector3((float)Math.Cos(a) * len, (float)Math.Sin(a) * len, len * 0.1f);
+                            Cylinder(s, top, mid, 0.025f, 0xAA63A9E6, 6, caps: false);
+                            Cylinder(s, mid, end, 0.025f, 0xAA63A9E6, 6, caps: false);
+                        }
+                }
                 string text = j.Id;
                 if (sim is not null) text += $"  {sim.PressureAt(sim.NodeIndex(j.Id)) / 1e5:0.00} bar";
+                if (j.IsEmitter) text += $"  {(sim is null ? j.DischargeAt1Bar : sim.EmittedAt(j.Id)) * 1000:0.##} L/s";
                 if (j.Demand > 0) text += $"  ↓{j.Demand * 1000:0.#} L/s";
-                if (j.Demand > 0 || selected) s.Labels.Add(new(p + new Vector3(0, 0, r + 0.25f), text, selected));
+                if (j.Demand > 0 || j.IsEmitter || selected)
+                    s.Labels.Add(new(p + new Vector3(0, 0, r + (j.IsEmitter ? 1.1f : 0.25f)), text, selected));
                 break;
             }
         }

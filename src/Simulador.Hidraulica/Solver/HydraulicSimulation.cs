@@ -22,6 +22,8 @@ public sealed class HydraulicSimulation
     public double[] Flows { get; private set; }
     /// <summary>Caudal que rebosa de cada tanque (m³/s), por índice de nudo.</summary>
     public double[] Overflow { get; private set; }
+    /// <summary>Caudal que sale por las descargas libres (aspersores, orificios) de cada nudo (m³/s).</summary>
+    public double[] Emitted { get; private set; } = [];
     public bool LastSolveConverged { get; private set; } = true;
     public IReadOnlyList<string> Warnings => _warnings;
     private readonly List<string> _warnings = [];
@@ -39,6 +41,7 @@ public sealed class HydraulicSimulation
         Heads = new double[network.Nodes.Count];
         Flows = new double[network.Links.Count];
         Overflow = new double[network.Nodes.Count];
+        Emitted = new double[network.Nodes.Count];
         Reset();
     }
 
@@ -53,6 +56,7 @@ public sealed class HydraulicSimulation
         foreach (var v in Network.Links.OfType<Valve>())
             v.Opening = v.OpeningSetpoint = v.Kind == ValveKind.Check ? 1 : Math.Clamp(v.InitialOpening, 0, 1);
         SolveHydraulics();
+        if (ApplyPressureSwitches()) SolveHydraulics();
     }
 
     // ---- Mando desde la interfaz, el PLC o el motor ----
@@ -103,6 +107,13 @@ public sealed class HydraulicSimulation
             {
                 double rate = Math.Abs(NetInflow(i) - Overflow[i]) / t.Area;
                 if (rate > 1e-12) h = Math.Min(h, 0.01 * t.MaxLevel / rate);
+                if (t.Closed && rate > 1e-12)
+                {
+                    // Con aire comprimido la altura cambia más deprisa que el nivel: limita el salto a 0,25 m.
+                    double dl = 1e-4;
+                    double dHdL = 1 + (t.GasPressureAt(Math.Min(t.Level + dl, t.MaxLevel * 0.999)) - t.GasPressureAt(t.Level)) / dl / RhoG;
+                    h = Math.Min(h, 0.25 / (rate * Math.Max(dHdL, 1)));
+                }
             }
         return Math.Max(h, 1e-3);
     }
@@ -118,9 +129,25 @@ public sealed class HydraulicSimulation
 
         for (int i = 0; i < Network.Nodes.Count; i++)
             if (Network.Nodes[i] is Tank t)
-                t.Level = Math.Clamp(t.Level + (NetInflow(i) - Overflow[i]) * h / t.Area, 0, t.MaxLevel);
+                t.Level = Math.Clamp(t.Level + (NetInflow(i) - Overflow[i]) * h / t.Area, 0, t.Closed ? t.MaxLevel * 0.999 : t.MaxLevel);
 
         SolveHydraulics();
+        if (ApplyPressureSwitches()) SolveHydraulics();
+    }
+
+    /// <summary>Arranca o para las bombas con presostato según la presión medida. true si alguna cambió.</summary>
+    private bool ApplyPressureSwitches()
+    {
+        bool changed = false;
+        foreach (var p in Network.Links.OfType<Pump>())
+        {
+            if (!p.HasPressureSwitch || Network.FindNode(p.PressureSwitchNode) is null) continue;
+            double pressure = PressureAt(p.PressureSwitchNode);
+            bool on = p.RelativeSpeed > 0.01;
+            if (on && pressure >= p.SwitchOffPressure) { p.RelativeSpeed = 0; changed = true; }
+            else if (!on && pressure <= p.SwitchOnPressure) { p.RelativeSpeed = 1; changed = true; }
+        }
+        return changed;
     }
 
     /// <summary>Caudal neto que entra al nudo por sus enlaces (m³/s).</summary>
@@ -147,7 +174,7 @@ public sealed class HydraulicSimulation
             fixedHeads[i] = node switch
             {
                 Reservoir r => r.Elevation + r.Level,
-                Tank t => t.Elevation + t.Level,
+                Tank t => t.Elevation + t.Level + t.GasPressureAt(t.Level) / RhoG,
                 _ => double.NaN,
             };
             if (node is Junction j) demands[i] = j.Demand;
@@ -168,7 +195,7 @@ public sealed class HydraulicSimulation
         }
 
         for (int i = 0; i < n; i++)
-            Overflow[i] = Network.Nodes[i] is Tank t && t.Level >= t.MaxLevel - 1e-9 ? Math.Max(NetInflow(i), 0) : 0;
+            Overflow[i] = Network.Nodes[i] is Tank { Closed: false } t && t.Level >= t.MaxLevel - 1e-9 ? Math.Max(NetInflow(i), 0) : 0;
 
         LastSolveConverged = result.Converged;
         if (!result.Converged)
@@ -180,6 +207,7 @@ public sealed class HydraulicSimulation
 
     private void Apply(SolveResult r)
     {
+        Emitted = r.Emitted;
         Heads = r.Heads;
         Flows = r.Flows;
         _lastFlows = r.Flows;
@@ -202,6 +230,8 @@ public sealed class HydraulicSimulation
     }
 
     public double PressureAt(string nodeId) => PressureAt(NodeIndex(nodeId));
+    /// <summary>Caudal que sale por la descarga libre del nudo (m³/s).</summary>
+    public double EmittedAt(string nodeId) => Emitted[NodeIndex(nodeId)];
     public double HeadAt(string nodeId) => Heads[NodeIndex(nodeId)];
     public double FlowIn(string linkId) => Flows[LinkIndex(linkId)];
 
