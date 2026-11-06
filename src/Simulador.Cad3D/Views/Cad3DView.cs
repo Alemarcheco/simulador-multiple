@@ -20,7 +20,6 @@ internal sealed class Cad3DView : DockPanel
     private readonly IGeometryKernel _kernel;
     private readonly DocumentEvaluator _evaluator;
     private readonly ViewportHost _viewport = new();
-    private string _rendererLabel = "iniciando…";
     private bool _pendingFit;
     private readonly PropertyEditor _properties = new();
     private readonly ListBox _parts = new() { MinHeight = 80 };
@@ -41,6 +40,7 @@ internal sealed class Cad3DView : DockPanel
         _rebuildTimer.Tick += (_, _) => { _rebuildTimer.Stop(); _ = RebuildAsync(); };
         _properties.Changed += ScheduleRebuild;
         _properties.Renamed += RefreshLists;
+        _properties.Refresh += OnFeatureSelected;
 
         var toolbar = BuildToolbar();
         SetDock(toolbar, Dock.Top);
@@ -63,7 +63,7 @@ internal sealed class Cad3DView : DockPanel
         _parts.SelectionChanged += (_, _) => { if (!_refreshing) OnPartSelected(); };
         _features.SelectionChanged += (_, _) => { if (!_refreshing) OnFeatureSelected(); };
 
-        _viewport.RendererChanged += name => { _rendererLabel = name; _ = RebuildAsync(); };
+        _viewport.RendererChanged += name => { _ = RebuildAsync(); };
         LoadDocument(Examples.ElectronicsBox(_kernel is IExactKernel), null);
     }
 
@@ -351,7 +351,7 @@ internal sealed class Cad3DView : DockPanel
         int tris = visible.Sum(p => _meshes[p]!.TriangleCount);
         double vol = visible.Sum(p => _meshes[p]!.Volume()) / 1000.0;
         bool watertight = visible.All(p => _meshes[p]!.CountOpenEdges() == 0);
-        _info.Text = $"Motor: {_kernel.Name} · Visor: {_rendererLabel} · {visible.Count} pieza(s) · {tris:N0} triángulos · volumen {vol:0.##} cm³ · " +
+        _info.Text = $"Motor: {_kernel.Name} · Visor: {_viewport.RendererName} · {visible.Count} pieza(s) · {tris:N0} triángulos · volumen {vol:0.##} cm³ · " +
                      (watertight ? "malla cerrada, lista para imprimir" : "atención: la malla tiene aberturas") +
                      (errors.Count > 0 ? " · Errores: " + string.Join(" | ", errors) : "");
     }

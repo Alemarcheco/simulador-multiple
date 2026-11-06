@@ -19,7 +19,7 @@ public sealed class ViewportHost : Border
     /// <summary>Se lanza cuando cambia el motor de dibujo (para mostrarlo en la barra de estado).</summary>
     public event Action<string>? RendererChanged;
 
-    public string RendererName { get; private set; } = "software";
+    public string RendererName { get; private set; } = "iniciando…";
 
     public ViewportHost()
     {
@@ -33,6 +33,7 @@ public sealed class ViewportHost : Border
         if (Environment.GetEnvironmentVariable("CAD3D_SOFTWARE_VIEW") == "1")
         {
             Child = _software;
+            RendererName = "software";
             return;
         }
         _gl = new GlViewport3D(_camera);
@@ -58,8 +59,8 @@ public sealed class ViewportHost : Border
         _gl = null;
         Child = _software;
         _software.SetItems(_items);
-        RendererName = "software";
-        RendererChanged?.Invoke($"software ({reason})");
+        RendererName = $"software ({reason})";
+        RendererChanged?.Invoke(RendererName);
     }
 
     private void Redraw()
