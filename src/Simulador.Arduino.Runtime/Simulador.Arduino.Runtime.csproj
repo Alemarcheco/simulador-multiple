@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Microcontroladores simulados sin interfaz gráfica: placas Arduino e intérprete de sketches en C/C++. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Arduino.Runtime</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Arduino.Tests" />
+  </ItemGroup>
+</Project>
