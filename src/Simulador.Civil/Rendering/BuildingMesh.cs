@@ -72,16 +72,9 @@ public sealed class BuildingMesh
 
         foreach (var st in doc.Stairs.Where(s => shown.Contains(s.LevelId)))
         {
-            var d = st.Design;
             double z0 = doc.GetLevel(st.LevelId).Elevation;
-            var dir = st.Direction;
-            var n = dir.Perp() * (st.Width / 2);
-            for (int i = 0; i < d.Risers - 1; i++)
-            {
-                var a = st.Start + dir * (i * d.Tread);
-                var b = st.Start + dir * ((i + 1) * d.Tread);
-                m.AddBox([a - n, b - n, b + n, a + n], z0, z0 + (i + 1) * d.Riser, StairColor);
-            }
+            // Huellas y descanso macizos hasta el suelo (escalera de obra).
+            foreach (var step in st.Steps) m.AddBox(step.Outline, z0, z0 + step.Top, StairColor);
         }
 
         foreach (var f in doc.Fixtures.Where(f => shown.Contains(f.LevelId)))

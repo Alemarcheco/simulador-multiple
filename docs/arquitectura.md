@@ -67,7 +67,7 @@ Diseño civil básico (sin cálculo estructural) para ubicar sobre él las insta
 Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos del proyecto).
 
 - **Hecho (fase 1)**: niveles con cota y altura; muros con espesor, altura y material; puertas y ventanas alojadas en
-  muros; losas y cubiertas; escaleras rectas con cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
+  muros; losas y cubiertas; escaleras rectas, en L y en U con descanso y cálculo de peldaños (2C + H ≈ 63 cm); detección automática de
   habitaciones con nombre, uso, área y perímetro; copiar planta encima (planta tipo); planta 2D editable con imán y
   ortogonal; vista 3D ortográfica con el rasterizador común de `Simulador.Core.Rendering` (`Rendering/BuildingRenderer.cs`); plantillas (casa, casa de dos
   plantas, hotel, nave industrial, casa con instalación eléctrica e hidráulica, edificio de apartamentos, oficina); colocar
