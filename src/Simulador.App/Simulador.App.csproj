@@ -22,5 +22,6 @@
     <ProjectReference Include="..\Simulador.Hidraulica\Simulador.Hidraulica.csproj" />
     <ProjectReference Include="..\Simulador.Cad3D\Simulador.Cad3D.csproj" />
     <ProjectReference Include="..\Simulador.Electrico\Simulador.Electrico.csproj" />
+    <ProjectReference Include="..\Simulador.Banco\Simulador.Banco.csproj" />
   </ItemGroup>
 </Project>

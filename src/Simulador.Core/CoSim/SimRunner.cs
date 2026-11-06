@@ -17,6 +17,7 @@ public sealed class SimRunner : IDisposable
     private volatile bool _paused = true;
     private int _pendingSteps;
     private double _speed = 1.0;
+    private readonly Queue<Action> _posted = new();
 
     public SimRunner(CoSimScheduler scheduler, TimeSpan? publishEvery = null)
     {
@@ -70,6 +71,26 @@ public sealed class SimRunner : IDisposable
         lock (_gate) { _pendingSteps += steps; Monitor.PulseAll(_gate); }
     }
 
+    /// <summary>
+    /// Ejecuta <paramref name="action"/> en el hilo de simulación, entre dos pasos (también en pausa).
+    /// Úsalo para cambiar el modelo desde la interfaz sin carreras: abrir una válvula, cambiar una carga, reiniciar.
+    /// </summary>
+    public void Post(Action action)
+    {
+        EnsureThread();
+        lock (_gate) { _posted.Enqueue(action); Monitor.PulseAll(_gate); }
+    }
+
+    /// <summary>Reinicia el banco en el hilo de simulación y publica la instantánea inicial.</summary>
+    public void Reset(Action? afterReset = null) => Post(() =>
+    {
+        _scheduler.Reset();
+        afterReset?.Invoke();
+        _resetPending = true;
+    });
+
+    private bool _resetPending;
+
     private void EnsureThread()
     {
         if (_thread != null) return;
@@ -89,14 +110,31 @@ public sealed class SimRunner : IDisposable
             {
                 int manual;
                 double speed;
+                Action[] posted;
                 lock (_gate)
                 {
-                    while (!_stop && _paused && _pendingSteps == 0) Monitor.Wait(_gate);
+                    while (!_stop && _paused && _pendingSteps == 0 && _posted.Count == 0) Monitor.Wait(_gate);
                     if (_stop) break;
+                    posted = [.. _posted];
+                    _posted.Clear();
                     manual = _pendingSteps;
                     _pendingSteps = 0;
                     speed = _speed;
                     if (_rebase) { simBase = _scheduler.Now; wallBase = wall.Elapsed; _rebase = false; }
+                }
+
+                if (posted.Length > 0)
+                {
+                    foreach (var a in posted) a();
+                    if (_resetPending)
+                    {
+                        _resetPending = false;
+                        lock (_gate) _rebase = true;
+                        simBase = _scheduler.Now;
+                        wallBase = wall.Elapsed;
+                        lastPublish = _scheduler.Now;
+                    }
+                    Publish();
                 }
 
                 if (manual > 0)
