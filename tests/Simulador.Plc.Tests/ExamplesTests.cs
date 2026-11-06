@@ -44,6 +44,47 @@ public class ExamplesTests
             for (int i = 1; i <= 20; i++) cpu.Scan(TimeSpan.FromMilliseconds(10 * i));
             Assert.True(cpu.State == PlcState.Run, $"{e.Name}: {cpu.FaultMessage}");
         }
+        foreach (var e in Simulador.Plc.Examples.Fbd)
+        {
+            var cpu = new PlcCpu("PLC1", profile);
+            cpu.LoadFbd(e.Create());
+            cpu.Start();
+            for (int i = 1; i <= 20; i++) cpu.Scan(TimeSpan.FromMilliseconds(10 * i));
+            Assert.True(cpu.State == PlcState.Run, $"{e.Name}: {cpu.FaultMessage}");
+        }
+    }
+
+    [Fact]
+    public void Fbd_toggle_and_hysteresis_examples_behave()
+    {
+        var cpu = new PlcCpu("PLC1", new GenericIecProfile());
+        cpu.LoadFbd(Simulador.Plc.Examples.Fbd.Single(e => e.Name.StartsWith("Telerruptor")).Create());
+        cpu.Start();
+        var port = (string a) => cpu.Signals.Single(s => s.Id == "PLC1." + a);
+        var t = TimeSpan.Zero;
+        void Press()
+        {
+            port("%IX0.0").Value = 24; cpu.Scan(t += TimeSpan.FromMilliseconds(10));
+            port("%IX0.0").Value = 0; cpu.Scan(t += TimeSpan.FromMilliseconds(10));
+        }
+        Press();
+        Assert.Equal(1, port("%QX0.0").Value);
+        Press();
+        Assert.Equal(0, port("%QX0.0").Value);
+
+        cpu = new PlcCpu("PLC1", new GenericIecProfile());
+        cpu.LoadFbd(Simulador.Plc.Examples.Fbd.Single(e => e.Name.StartsWith("Depósito")).Create());
+        cpu.Start();
+        var level = cpu.Signals.Single(s => s.Id == "PLC1.%IW64");
+        var pump = cpu.Signals.Single(s => s.Id == "PLC1.%QX0.0");
+        level.Value = 1; cpu.Scan(t += TimeSpan.FromMilliseconds(10));   // 1 V ≈ 2765: bajo
+        Assert.Equal(1, pump.Value);
+        level.Value = 5; cpu.Scan(t += TimeSpan.FromMilliseconds(10));   // en la banda: sigue
+        Assert.Equal(1, pump.Value);
+        level.Value = 9.5; cpu.Scan(t += TimeSpan.FromMilliseconds(10)); // ≈ 26265: lleno
+        Assert.Equal(0, pump.Value);
+        level.Value = 5; cpu.Scan(t += TimeSpan.FromMilliseconds(10));
+        Assert.Equal(0, pump.Value);
     }
 
     [Fact]
