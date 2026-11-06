@@ -72,6 +72,7 @@ public abstract class Scenario
     public static IReadOnlyList<(string Name, Func<Scenario> Create)> All { get; } =
     [
         ("Llenado de tanque: PLC, contactor, motor y bomba", () => new TankFillScenario()),
+        ("Llenado de tanque con esquema eléctrico real (módulo Eléctrico)", () => new TankFillElectricScenario()),
         ("Turbogenerador en isla con regulador de velocidad", () => new TurboGeneratorScenario()),
         ("Turbocompresor y depósito de aire controlados por PLC", () => new TurboCompressorScenario()),
     ];

@@ -109,6 +109,7 @@ public sealed class BancoView : UserControl
         _program.Text = _scenario switch
         {
             TankFillScenario => TankFillScenario.Program,
+            TankFillElectricScenario => TankFillElectricScenario.Program,
             TurboCompressorScenario => TurboCompressorScenario.Program,
             _ => "(este montaje no lleva PLC: el regulador GOV es un PI genérico)",
         };
