@@ -156,9 +156,10 @@ public sealed class BuildingDocument : IBuildingModel
             return s;
         }
 
-        public Stair AddStair(string levelId, Point2 start, double angle, double width, double rise)
+        public Stair AddStair(string levelId, Point2 start, double angle, double width, double rise,
+            StairShape shape = StairShape.Straight, bool turnLeft = true)
         {
-            var s = new Stair(NewId("E"), levelId, start, angle, width, rise);
+            var s = new Stair(NewId("E"), levelId, start, angle, width, rise, shape, turnLeft);
             _d._stairs.Add(s);
             return s;
         }

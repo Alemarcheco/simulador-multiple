@@ -161,6 +161,11 @@ public sealed class EdificacionView : DockPanel
         p.Children.Add(Num("Ancho de puerta (m)", 0.8, 0.5, 6, v => _plan.DoorWidth = v));
         p.Children.Add(Num("Ancho de ventana (m)", 1.2, 0.3, 6, v => _plan.WindowWidth = v));
         p.Children.Add(Num("Ancho de escalera (m)", 1.0, 0.6, 3, v => _plan.StairWidth = v));
+        p.Children.Add(Choice("Forma de escalera", StairForms.Select(f => f.Label).ToArray(), 0, i =>
+        {
+            (_, _plan.StairShape, _plan.StairTurnLeft) = StairForms[i];
+            SetTool(PlanTool.Stair);
+        }));
 
         p.Children.Add(Header("Instalaciones"));
         var kind = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -209,6 +214,26 @@ public sealed class EdificacionView : DockPanel
         n.ValueChanged += (_, e) => { if (e.NewValue is { } v) set((double)v); };
         return new StackPanel { Spacing = 2, Children = { new TextBlock { Text = label, FontSize = 12, Opacity = 0.8 }, n } };
     }
+
+    private static Control Choice(string label, IReadOnlyList<string> options, int selected, Action<int> set)
+    {
+        var c = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = options, SelectedIndex = selected };
+        c.SelectionChanged += (_, _) => { if (c.SelectedIndex >= 0) set(c.SelectedIndex); };
+        return new StackPanel { Spacing = 2, Children = { new TextBlock { Text = label, FontSize = 12, Opacity = 0.8 }, c } };
+    }
+
+    /// <summary>Formas de escalera que se ofrecen, con el sentido de giro del segundo tramo.</summary>
+    private static readonly (string Label, StairShape Shape, bool TurnLeft)[] StairForms =
+    [
+        ("Recta", StairShape.Straight, true),
+        ("En L, gira a la izquierda", StairShape.L, true),
+        ("En L, gira a la derecha", StairShape.L, false),
+        ("En U, vuelve por la izquierda", StairShape.U, true),
+        ("En U, vuelve por la derecha", StairShape.U, false),
+    ];
+
+    private static int StairFormIndex(StairShape shape, bool turnLeft) =>
+        Math.Max(0, Array.FindIndex(StairForms, f => f.Shape == shape && (shape == StairShape.Straight || f.TurnLeft == turnLeft)));
 
     // ------------------------------------------------------------ panel derecho
 
@@ -379,10 +404,19 @@ public sealed class EdificacionView : DockPanel
         {
             var d = st.Design;
             Title($"Escalera {st.Id}");
-            _props.Children.Add(Info($"{d.Risers} escalones de {d.Riser * 100:0.0} cm\nHuella {d.Tread * 100:0.0} cm · 2C+H = {d.Blondel * 100:0.0} cm\nLongitud en planta {d.RunLength:0.00} m"));
+            var (len, breadth) = st.Footprint;
+            string flights = st.Shape == StairShape.Straight ? "" : $"\nTramos de {st.FirstFlightRisers} y {d.Risers - st.FirstFlightRisers} escalones, descanso a {st.FirstFlightRisers * d.Riser:0.00} m";
+            _props.Children.Add(Info($"{d.Risers} escalones de {d.Riser * 100:0.0} cm\nHuella {d.Tread * 100:0.0} cm · 2C+H = {d.Blondel * 100:0.0} cm{flights}\nCaja de escalera {len:0.00} × {breadth:0.00} m"));
             foreach (var w in d.Warnings) _props.Children.Add(Info("⚠ " + w));
             _props.Children.Add(Num("Altura a salvar (m)", st.Rise, 0.3, 10, v => Apply(() => _doc.Stairs.First(s => s.Id == id), (e, s) => e.Replace(s, s with { Rise = v }))));
             _props.Children.Add(Num("Ancho (m)", st.Width, 0.5, 4, v => Apply(() => _doc.Stairs.First(s => s.Id == id), (e, s) => e.Replace(s, s with { Width = v }))));
+            _props.Children.Add(Choice("Forma", StairForms.Select(f => f.Label).ToArray(), StairFormIndex(st.Shape, st.TurnLeft), i =>
+            {
+                var (_, shape, left) = StairForms[i];
+                var cur = _doc.Stairs.First(s => s.Id == id);
+                if (cur.Shape != shape || (shape != StairShape.Straight && cur.TurnLeft != left))
+                    Apply(() => _doc.Stairs.First(s => s.Id == id), (e, s) => e.Replace(s, s with { Shape = shape, TurnLeft = left }));
+            }));
         }
         else if (_doc.Fixtures.FirstOrDefault(f => f.Id == id) is { } fx)
         {
