@@ -2,6 +2,7 @@
   <!-- Módulo "Edificación": diseño civil básico (niveles, muros, puertas, ventanas, losas, escaleras, habitaciones)
        en planta 2D y vista 3D, sobre el que los demás módulos colocan sus instalaciones. -->
   <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Simulador.Civil</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
