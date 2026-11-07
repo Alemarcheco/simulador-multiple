@@ -199,6 +199,23 @@ public sealed class Building3DView : Control
     public string? UpToLevelId { get => _upTo; set { _upTo = value; Invalidate(); } }
     public bool ShowRoof { get => _showRoof; set { _showRoof = value; Invalidate(); } }
 
+    /// <summary>
+    /// true = perspectiva (lo lejano más pequeño, como lo ve el ojo); false = vista paralela (medidas iguales en todo
+    /// el dibujo, pero el fondo parece más ancho). Al cambiar se vuelve a encuadrar.
+    /// </summary>
+    public bool Perspective
+    {
+        get => !_camera.Orthographic;
+        set
+        {
+            if (value == Perspective) return;
+            _camera.Orthographic = !value;
+            _userMoved = false;
+            _fitted = null;
+            InvalidateVisual();
+        }
+    }
+
     /// <summary>La malla se reconstruye solo cuando cambia el edificio o el filtro; al girar se reutiliza.</summary>
     private void Invalidate()
     {
@@ -245,7 +262,7 @@ public sealed class Building3DView : Control
         // usuario haya movido la vista a mano.
         if (_fitted is null || (!_userMoved && _fitted.Value != bounds))
         {
-            _camera.Fit(bounds.Min, bounds.Max);
+            BuildingRenderer.Fit(_camera, bounds.Min, bounds.Max);
             _fitted = bounds;
         }
 

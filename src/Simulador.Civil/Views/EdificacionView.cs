@@ -58,12 +58,15 @@ public sealed class EdificacionView : DockPanel
         Children.Add(side);
 
         var view3dPanel = new DockPanel();
-        var v3bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(6) };
+        var v3bar = new WrapPanel { Margin = new Thickness(6) }; // pasa a otra fila si no cabe
         var roof = new CheckBox { Content = "Mostrar cubierta", IsChecked = true };
         roof.IsCheckedChanged += (_, _) => { _view3d.ShowRoof = roof.IsChecked == true; _view3d.InvalidateVisual(); };
         var upTo = new CheckBox { Content = "Solo hasta el nivel actual" };
         upTo.IsCheckedChanged += (_, _) => { _view3d.UpToLevelId = upTo.IsChecked == true ? _plan.LevelId : null; _view3d.InvalidateVisual(); };
         _levelBox.SelectionChanged += (_, _) => { if (upTo.IsChecked == true) { _view3d.UpToLevelId = _plan.LevelId; _view3d.InvalidateVisual(); } };
+        var persp = new CheckBox { Content = "Perspectiva", IsChecked = _view3d.Perspective };
+        ToolTip.SetTip(persp, "Con perspectiva lo lejano se ve más pequeño, como lo ve el ojo, y el edificio se ve proporcionado. Sin ella (vista paralela) todas las medidas se dibujan iguales, pero el fondo parece más ancho que el frente.");
+        persp.IsCheckedChanged += (_, _) => _view3d.Perspective = persp.IsChecked == true;
         var reset = new Button { Content = "Vista inicial" };
         reset.Click += (_, _) => _view3d.ResetView();
         var walk = new ToggleButton { Content = "🚶 Recorrer por dentro" };
@@ -71,7 +74,7 @@ public sealed class EdificacionView : DockPanel
         walk.IsCheckedChanged += (_, _) =>
         {
             _view3d.WalkMode = walk.IsChecked == true;
-            roof.IsEnabled = upTo.IsEnabled = reset.IsEnabled = walk.IsChecked != true;
+            roof.IsEnabled = upTo.IsEnabled = persp.IsEnabled = reset.IsEnabled = walk.IsChecked != true;
         };
         _view3d.WalkModeExited += (_, _) => walk.IsChecked = false;
         var sunToggle = new ToggleButton { Content = "☀ Sol y sombras" };
@@ -87,8 +90,10 @@ public sealed class EdificacionView : DockPanel
         v3bar.Children.Add(sunToggle);
         v3bar.Children.Add(roof);
         v3bar.Children.Add(upTo);
+        v3bar.Children.Add(persp);
         v3bar.Children.Add(reset);
-        v3bar.Children.Add(new TextBlock { Text = "Arrastra para girar · botón derecho para mover · rueda para zoom", Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
+        v3bar.Children.Add(new TextBlock { Text = "Arrastra para girar (también por debajo) · botón derecho para mover · rueda para zoom", Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
+        foreach (var c in v3bar.Children) c.Margin = new Thickness(0, 2, 8, 2);
         SetDock(v3bar, Dock.Top);
         view3dPanel.Children.Add(v3bar);
         SetDock(sunBar, Dock.Top);

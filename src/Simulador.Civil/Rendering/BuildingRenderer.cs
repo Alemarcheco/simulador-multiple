@@ -12,11 +12,27 @@ public static class BuildingRenderer
 {
     public const uint Background = 0xFFE0EAF2;
 
-    /// <summary>Cámara ortográfica de la vista de edificación (las verticales no se inclinan).</summary>
-    public static OrbitCamera CreateCamera() => new()
+    /// <summary>
+    /// Cámara de la vista de edificación. Por defecto en perspectiva suave (lo lejano se ve algo más pequeño, como lo
+    /// ve el ojo; en paralela el fondo parece más ancho que el frente). Gira por completo en vertical, también por
+    /// debajo del suelo para ver la cara inferior.
+    /// </summary>
+    public static OrbitCamera CreateCamera(bool perspective = true) => new()
     {
-        Orthographic = true, Yaw = -55, Pitch = 34, MinPitch = 3, MaxPitch = 86,
+        Orthographic = !perspective, FieldOfView = 35, Yaw = -55, Pitch = 30, MinPitch = -89, MaxPitch = 89,
     };
+
+    /// <summary>
+    /// Encuadra la caja. En paralela usa el encuadre común; en perspectiva aleja la cámara hasta que la esfera que
+    /// envuelve la caja quepa entera en vertical, así nada se sale al girar en cualquier dirección.
+    /// </summary>
+    public static void Fit(OrbitCamera camera, Vector3 min, Vector3 max)
+    {
+        camera.Fit(min, max);
+        if (camera.Orthographic || min.X > max.X) return;
+        double radius = Math.Max((max - min).Length(), 0.5f) / 2;
+        camera.Distance = radius / Math.Sin(camera.FieldOfView * Math.PI / 360) * 1.06;
+    }
 
     /// <summary>Rasterizador preparado para edificios: más luz ambiente para que los muros a la sombra se lean.</summary>
     public static ZBufferRasterizer CreateRasterizer(int supersampling = 1) => new() { Ambient = 0.62f, Supersampling = supersampling };
