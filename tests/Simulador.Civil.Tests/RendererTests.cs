@@ -40,7 +40,7 @@ public class RendererTests
         var (min, max) = BuildingRenderer.Bounds(mesh);
         var center = (min + max) / 2;
         var cam = BuildingRenderer.CreateCamera();
-        cam.Fit(min, max);
+        BuildingRenderer.Fit(cam, min, max);
         var r = BuildingRenderer.CreateRasterizer();
         r.Resize(800, 600);
         double? scale = null;
@@ -58,8 +58,10 @@ public class RendererTests
         }
     }
 
-    [Fact]
-    public void All_templates_fit_inside_the_canvas_from_any_angle()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void All_templates_fit_inside_the_canvas_from_any_angle(bool perspective)
     {
         var r = BuildingRenderer.CreateRasterizer();
         r.Resize(640, 480);
@@ -67,10 +69,10 @@ public class RendererTests
         {
             var mesh = BuildingMesh.Build(create());
             var (min, max) = BuildingRenderer.Bounds(mesh);
-            var cam = BuildingRenderer.CreateCamera();
-            cam.Fit(min, max);
+            var cam = BuildingRenderer.CreateCamera(perspective);
+            BuildingRenderer.Fit(cam, min, max);
             for (double yaw = 0; yaw < 360; yaw += 30)
-            for (double pitch = 5; pitch < 86; pitch += 20)
+            for (double pitch = -85; pitch < 90; pitch += 20)
             {
                 cam.Yaw = yaw; cam.Pitch = pitch;
                 r.Begin(cam);
@@ -81,5 +83,37 @@ public class RendererTests
                 }
             }
         }
+    }
+
+    [Fact]
+    public void Orbit_goes_below_the_ground_to_show_the_underside()
+    {
+        var cam = BuildingRenderer.CreateCamera();
+        cam.Orbit(0, -200);
+        Assert.True(cam.Pitch < -80);
+
+        // Desde abajo se ve la losa de la planta baja (no queda el fondo vacío).
+        var mesh = BuildingMesh.Build(BuildingTemplates.All.First().Create());
+        var (min, max) = BuildingRenderer.Bounds(mesh);
+        BuildingRenderer.Fit(cam, min, max);
+        cam.Pitch = -60;
+        var r = BuildingRenderer.CreateRasterizer();
+        r.Resize(200, 200);
+        BuildingRenderer.Render(r, mesh, cam, edges: false);
+        Assert.NotEqual(BuildingRenderer.Background, r.Pixels[100 * 200 + 100]);
+    }
+
+    [Fact]
+    public void Perspective_draws_the_far_side_shorter_than_the_near_side()
+    {
+        // Mirando de frente y desde arriba, el borde trasero de una losa no debe verse más ancho que el delantero.
+        var cam = BuildingRenderer.CreateCamera();
+        cam.Yaw = -90; cam.Pitch = 35;
+        BuildingRenderer.Fit(cam, new(-5, -5, 0), new(5, 5, 3));
+        var r = BuildingRenderer.CreateRasterizer();
+        r.Resize(400, 300);
+        r.Begin(cam);
+        double Width(float y) => r.Project(new(5, y, 3))!.Value.X - r.Project(new(-5, y, 3))!.Value.X;
+        Assert.True(Width(5) < Width(-5) * 0.95, $"trasero {Width(5):0.0} px, delantero {Width(-5):0.0} px");
     }
 }
