@@ -132,6 +132,18 @@ public sealed class BuildingMesh
         }
     }
 
+    public const uint GroundColor = 0xFFB4C39A;
+
+    /// <summary>Terreno alrededor del edificio (para ver las sombras que proyecta), un poco por debajo de la planta baja.</summary>
+    public void AddGround(double margin)
+    {
+        if (Faces.Count == 0) return;
+        var (min, max) = Bounds;
+        double z = min.Z - 0.02;
+        Faces.Add(new([new(min.X - margin, min.Y - margin, z), new(max.X + margin, min.Y - margin, z),
+                       new(max.X + margin, max.Y + margin, z), new(min.X - margin, max.Y + margin, z)], GroundColor));
+    }
+
     public void AddBox(IReadOnlyList<Point2> b, double z0, double z1, uint argb)
     {
         if (z1 - z0 < 1e-6 || b.Count < 3) return;

@@ -24,6 +24,7 @@ public sealed class Building3DView : Control
     private readonly OrbitCamera _camera = BuildingRenderer.CreateCamera();
     private readonly ZBufferRasterizer _renderer = BuildingRenderer.CreateRasterizer();
     private BuildingMesh? _mesh;
+    private (System.Numerics.Vector3 Min, System.Numerics.Vector3 Max) _fitBounds;
     /// <summary>Caja del último encuadre automático; null = encuadrar en el próximo dibujo.</summary>
     private (System.Numerics.Vector3 Min, System.Numerics.Vector3 Max)? _fitted;
     /// <summary>true cuando el usuario ha desplazado o acercado: los cambios del edificio ya no reencuadran.</summary>
@@ -39,6 +40,55 @@ public sealed class Building3DView : Control
         Focusable = true;
         doc.Changed += (_, _) => Invalidate();
         _walkTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(30), DispatcherPriority.Render, (_, _) => WalkTick());
+    }
+
+    // ------------------------------------------------------------------ soleamiento
+
+    private readonly SunShadows _shadows = new();
+    private bool _sunStudy;
+    private DateTime _sunTime = DateTime.Today.AddHours(12);
+    /// <summary>Para qué malla, sol y lugar se hizo el mapa de sombras (se rehace solo si cambia algo).</summary>
+    private (BuildingMesh? Mesh, DateTime Time, SiteLocation Site) _shadowKey;
+
+    /// <summary>Sol y sombras según el lugar del edificio (<see cref="BuildingDocument.Site"/>) y <see cref="SunTime"/>.</summary>
+    public bool SunStudy { get => _sunStudy; set { _sunStudy = value; Invalidate(); } }
+
+    /// <summary>Fecha y hora oficial del lugar para el soleamiento.</summary>
+    public DateTime SunTime { get => _sunTime; set { _sunTime = value; InvalidateVisual(); } }
+
+    /// <summary>Malla con el terreno alrededor cuando hay soleamiento (el terreno recibe las sombras).</summary>
+    private BuildingMesh BuildMesh(string? upTo, bool roof)
+    {
+        var m = BuildingMesh.Build(_doc, upTo, roof);
+        if (_sunStudy)
+        {
+            var (min, max) = m.Bounds;
+            m.AddGround(Math.Max(8, (max.Z - min.Z) * 3));
+        }
+        return m;
+    }
+
+    /// <summary>Luz del sol de ahora: dirección de la luz y sombras, o luz de noche si el sol no ha salido.</summary>
+    private void PrepareSun(BuildingMesh mesh)
+    {
+        _renderer.PixelLight = null;
+        _renderer.LightDirection = new(0.4f, -0.6f, 1f);
+        if (!_sunStudy) return;
+        var sun = Solar.Position(_doc.Site, _sunTime);
+        if (!sun.IsUp)
+        {
+            _renderer.PixelLight = (_, _) => 0.45f;
+            return;
+        }
+        var (x, y, z) = Solar.DirectionInPlan(sun, _doc.Site);
+        var dir = new System.Numerics.Vector3((float)x, (float)y, (float)z);
+        _renderer.LightDirection = dir;
+        if (_shadowKey.Mesh != mesh || _shadowKey.Time != _sunTime || _shadowKey.Site != _doc.Site)
+        {
+            _shadows.Build(mesh, dir);
+            _shadowKey = (mesh, _sunTime, _doc.Site);
+        }
+        _renderer.PixelLight = _shadows.LightAt;
     }
 
     // ------------------------------------------------------------------ recorrido en primera persona
@@ -165,8 +215,9 @@ public sealed class Building3DView : Control
         if (_walker is not null)
         {
             // Dentro se ve todo el edificio, con cubierta, y sin supermuestreo para que el paso sea fluido.
-            _mesh ??= BuildingMesh.Build(_doc, null, true);
+            _mesh ??= BuildMesh(null, true);
             AimCamera(_walkCamera, _walker);
+            PrepareSun(_mesh);
             _renderer.Supersampling = 1;
             _renderer.Resize(w, h);
             BuildingRenderer.Render(_renderer, _mesh, _walkCamera, edges: true);
@@ -183,8 +234,13 @@ public sealed class Building3DView : Control
             return;
         }
 
-        _mesh ??= BuildingMesh.Build(_doc, UpToLevelId, ShowRoof);
-        var bounds = BuildingRenderer.Bounds(_mesh);
+        if (_mesh is null)
+        {
+            _mesh = BuildMesh(UpToLevelId, ShowRoof);
+            // El encuadre es el del edificio, sin el terreno.
+            _fitBounds = BuildingRenderer.Bounds(BuildingMesh.Build(_doc, UpToLevelId, ShowRoof));
+        }
+        var bounds = _fitBounds;
         // Encuadre con la esfera envolvente (fijo al girar). Se rehace si el edificio cambia de tamaño, salvo que el
         // usuario haya movido la vista a mano.
         if (_fitted is null || (!_userMoved && _fitted.Value != bounds))
@@ -196,6 +252,7 @@ public sealed class Building3DView : Control
         // Suavizado de bordes por supermuestreo 2× mientras el lienzo no sea enorme.
         _renderer.Supersampling = w * h <= 1_500_000 ? 2 : 1;
         _renderer.Resize(w, h);
+        PrepareSun(_mesh);
         BuildingRenderer.Render(_renderer, _mesh, _camera, edges: true);
         Blit(ctx, w, h, scaling);
     }

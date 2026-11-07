@@ -111,4 +111,25 @@ public class RenderingTests
             }
         }
     }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public void Pixel_light_receives_the_world_point_and_normal_of_each_pixel(bool ortho, int ss)
+    {
+        var tris = new List<Triangle>();
+        Wall(tris, 3, 12, 0xFFFFFFFF); // pared grande en x = 3, de cara a la cámara (que mira hacia +X)
+        var r = new ZBufferRasterizer { Supersampling = ss, Ambient = 1 };
+        r.Resize(40, 30);
+        var seen = new List<(Vector3 P, Vector3 N)>();
+        // Mitad izquierda de la imagen (Y del mundo > 0, porque la cámara mira hacia +X) a la sombra.
+        r.PixelLight = (p, n) => { seen.Add((p, n)); return p.Y > 0 ? 0.5f : 1f; };
+        r.Render(tris, Camera(ortho));
+        Assert.NotEmpty(seen);
+        Assert.All(seen, s => Assert.Equal(3, s.P.X, 2));
+        Assert.All(seen, s => Assert.True(s.N.X < -0.99f, $"normal {s.N}")); // hacia la cámara
+        uint left = r.Pixels[15 * 40 + 12], right = r.Pixels[15 * 40 + 28];
+        Assert.True(((left >> 16) & 0xFF) is >= 120 and <= 135, $"izquierda {left:X8}, derecha {right:X8}");
+        Assert.Equal(255u, (right >> 16) & 0xFF);
+    }
 }

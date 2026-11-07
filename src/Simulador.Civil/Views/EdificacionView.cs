@@ -74,13 +74,25 @@ public sealed class EdificacionView : DockPanel
             roof.IsEnabled = upTo.IsEnabled = reset.IsEnabled = walk.IsChecked != true;
         };
         _view3d.WalkModeExited += (_, _) => walk.IsChecked = false;
+        var sunToggle = new ToggleButton { Content = "☀ Sol y sombras" };
+        ToolTip.SetTip(sunToggle, "Estudio de soleamiento: sombras según el lugar, la orientación, la fecha y la hora.");
+        var sunBar = BuildSunBar();
+        sunBar.IsVisible = false;
+        sunToggle.IsCheckedChanged += (_, _) =>
+        {
+            sunBar.IsVisible = sunToggle.IsChecked == true;
+            _view3d.SunStudy = sunToggle.IsChecked == true;
+        };
         v3bar.Children.Add(walk);
+        v3bar.Children.Add(sunToggle);
         v3bar.Children.Add(roof);
         v3bar.Children.Add(upTo);
         v3bar.Children.Add(reset);
         v3bar.Children.Add(new TextBlock { Text = "Arrastra para girar · botón derecho para mover · rueda para zoom", Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
         SetDock(v3bar, Dock.Top);
         view3dPanel.Children.Add(v3bar);
+        SetDock(sunBar, Dock.Top);
+        view3dPanel.Children.Add(sunBar);
         view3dPanel.Children.Add(_view3d);
 
         var center = new TabControl();
@@ -318,8 +330,126 @@ public sealed class EdificacionView : DockPanel
         _plan.InvalidateVisual();
     }
 
+    private Action? _refreshSun;
+
+    /// <summary>
+    /// Barra del soleamiento: lugar (o coordenadas a mano), norte de la planta, fecha, hora con su deslizador y un botón
+    /// para ver pasar el día; debajo, la altura y el acimut del sol, la salida, la puesta y las horas de sol.
+    /// </summary>
+    private Control BuildSunBar()
+    {
+        var places = SiteLocation.Presets.Select(p => p.Place).Append("Personalizado").ToArray();
+        var place = new ComboBox { ItemsSource = places, MinWidth = 170 };
+        NumericUpDown Num(double min, double max, double inc, string fmt, double width) => new()
+        {
+            Minimum = (decimal)min, Maximum = (decimal)max, Increment = (decimal)inc, FormatString = fmt, Width = width,
+        };
+        var lat = Num(-90, 90, 0.1, "0.0000", 150);
+        var lon = Num(-180, 180, 0.1, "0.0000", 160);
+        var utc = Num(-12, 14, 0.5, "+0.#;-0.#;0", 120);
+        var north = Num(-180, 180, 5, "0", 120);
+        var date = new DatePicker { SelectedDate = DateTimeOffset.Now.Date };
+        var hour = new Slider { Minimum = 0, Maximum = 24, SmallChange = 0.25, LargeChange = 1, Value = 12, Width = 260 };
+        var hourText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Width = 44 };
+        var play = new ToggleButton { Content = "▶ Ver pasar el día" };
+        var info = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.85 };
+        bool syncing = false;
+
+        void ShowSite()
+        {
+            syncing = true;
+            var site = _doc.Site;
+            int idx = Array.FindIndex(SiteLocation.Presets, p => p.Place == site.Place);
+            place.SelectedIndex = idx >= 0 ? idx : places.Length - 1;
+            lat.Value = (decimal)site.Latitude;
+            lon.Value = (decimal)site.Longitude;
+            utc.Value = (decimal)site.UtcOffsetHours;
+            north.Value = (decimal)site.NorthAngleDeg;
+            syncing = false;
+        }
+
+        void Update()
+        {
+            var day = date.SelectedDate?.Date ?? DateTime.Today;
+            var t = day.AddHours(hour.Value);
+            hourText.Text = t.ToString("HH:mm", CultureInfo.InvariantCulture);
+            _view3d.SunTime = t;
+            var sun = Solar.Position(_doc.Site, t);
+            var (rise, set) = Solar.RiseSet(_doc.Site, day);
+            var len = Solar.DayLength(_doc.Site, day);
+            string R(DateTime? d) => d?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "—";
+            info.Text = (sun.IsUp
+                    ? $"Sol a {sun.AltitudeDeg:0}° de altura, hacia el {sun.Cardinal} (acimut {sun.AzimuthDeg:0}°)"
+                    : "De noche: el sol está bajo el horizonte")
+                + $" · sale {R(rise)} · se pone {R(set)} · {(int)len.TotalHours} h {len.Minutes:00} min de sol";
+        }
+
+        void SetSite(SiteLocation site)
+        {
+            _doc.Site = site;
+            ShowSite();
+            Update();
+            _view3d.InvalidateVisual();
+        }
+
+        place.SelectionChanged += (_, _) =>
+        {
+            if (syncing || place.SelectedIndex < 0 || place.SelectedIndex >= SiteLocation.Presets.Length) return;
+            SetSite(SiteLocation.Presets[place.SelectedIndex] with { NorthAngleDeg = _doc.Site.NorthAngleDeg });
+        };
+        void Custom(object? _, NumericUpDownValueChangedEventArgs __)
+        {
+            if (syncing || lat.Value is null || lon.Value is null || utc.Value is null) return;
+            SetSite(new SiteLocation("Personalizado", (double)lat.Value, (double)lon.Value, (double)utc.Value, _doc.Site.NorthAngleDeg));
+        }
+        lat.ValueChanged += Custom;
+        lon.ValueChanged += Custom;
+        utc.ValueChanged += Custom;
+        north.ValueChanged += (_, _) =>
+        {
+            if (syncing || north.Value is null) return;
+            SetSite(_doc.Site with { NorthAngleDeg = (double)north.Value });
+        };
+        date.SelectedDateChanged += (_, _) => Update();
+        hour.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) Update(); };
+
+        // Ver pasar el día: avanza la hora un cuarto cada décima de segundo, de la salida a la puesta del sol.
+        var timer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        timer.Tick += (_, _) =>
+        {
+            var (rise, set) = Solar.RiseSet(_doc.Site, date.SelectedDate?.Date ?? DateTime.Today);
+            double from = rise?.TimeOfDay.TotalHours ?? 0, to = set?.TimeOfDay.TotalHours ?? 24;
+            double next = hour.Value + 0.25;
+            hour.Value = next > to || next < from ? from : next;
+        };
+        play.IsCheckedChanged += (_, _) => { if (play.IsChecked == true) timer.Start(); else timer.Stop(); };
+        DetachedFromVisualTree += (_, _) => timer.Stop();
+
+        _refreshSun = () => { ShowSite(); Update(); };
+        ShowSite();
+        Update();
+
+        TextBlock L(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center };
+        var row1 = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 6,
+            Children = { L("Lugar"), place, L("Lat."), lat, L("Lon."), lon, L("UTC"), utc, L("Norte de la planta (°)"), north },
+        };
+        var row2 = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 6,
+            Children = { L("Fecha"), date, L("Hora"), hour, hourText, play },
+        };
+        return new StackPanel
+        {
+            Margin = new Thickness(6, 0, 6, 6), Spacing = 4,
+            Children = { new WrapPanel { Children = { row1 } }, new WrapPanel { Children = { row2 } }, info },
+        };
+    }
+
     private void AfterLoad()
     {
+        _refreshSun?.Invoke();
         _plan.LevelId = _doc.Levels.OrderBy(l => l.Elevation).First().Id;
         RefreshAll();
         _plan.Select(null);

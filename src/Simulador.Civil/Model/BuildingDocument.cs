@@ -31,6 +31,8 @@ public sealed class BuildingDocument : IBuildingModel
 
     public string Name { get; set; } = "Edificio sin nombre";
     public BuildingType Type { get; set; } = BuildingType.Vivienda;
+    /// <summary>Lugar y orientación del edificio, para el estudio de soleamiento.</summary>
+    public SiteLocation Site { get; set; } = SiteLocation.Default;
 
     /// <summary>Reglas del asistente y precios unitarios; se guardan con el proyecto.</summary>
     public AdvisorSettings Advisor { get; set; } = new();
@@ -351,17 +353,17 @@ public sealed class BuildingDocument : IBuildingModel
         int Version, string Name, BuildingType Type,
         List<Level> Levels, List<Wall> Walls, List<Opening> Openings, List<Slab> Slabs, List<Stair> Stairs,
         List<SpaceTag> SpaceTags, List<PlacedFixture> Fixtures, List<Route> Routes, AdvisorSettings? Advisor = null,
-        List<Underlay>? Underlays = null);
+        List<Underlay>? Underlays = null, SiteLocation? Site = null);
 
     public const int FileVersion = 1;
     public const string FileExtension = ".edif.json";
 
     public string ToJson() => JsonSerializer.Serialize(
-        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, _underlays), JsonOpts);
+        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, _underlays, Site), JsonOpts);
 
     /// <summary>Estado para deshacer: sin los calcos, que pueden ser grandes y no se deshacen.</summary>
     private string Snapshot() => JsonSerializer.Serialize(
-        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor), JsonOpts);
+        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, null, Site), JsonOpts);
 
     public static BuildingDocument FromJson(string json)
     {
@@ -381,6 +383,7 @@ public sealed class BuildingDocument : IBuildingModel
         Replace(_slabs, dto.Slabs); Replace(_stairs, dto.Stairs); Replace(_tags, dto.SpaceTags);
         Replace(_fixtures, dto.Fixtures); Replace(_routes, dto.Routes);
         Advisor = dto.Advisor ?? new AdvisorSettings();
+        Site = dto.Site ?? SiteLocation.Default;
         if (!keepUnderlays) Replace(_underlays, dto.Underlays);
         if (_levels.Count == 0) _levels.Add(new Level("N0", "Planta baja", 0, 3.0));
     }

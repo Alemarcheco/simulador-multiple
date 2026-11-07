@@ -32,6 +32,14 @@ public class ZBufferRasterizer
     /// <summary>Dirección hacia la luz (se normaliza).</summary>
     public Vector3 LightDirection { get; set; } = new(0.4f, -0.6f, 1f);
 
+    /// <summary>
+    /// Luz por píxel (sombras): si se fija antes de <see cref="Begin"/>, en <see cref="End"/> se llama con el punto del
+    /// mundo que se ve en cada píxel opaco y la normal de su cara (hacia la cámara), y su color se multiplica por el
+    /// valor devuelto (1 = igual, 0 = negro). Se aplica antes de los
+    /// semitransparentes y de reducir el supermuestreo.
+    /// </summary>
+    public Func<Vector3, Vector3, float>? PixelLight { get; set; }
+
     /// <summary>Imagen final en BGRA (formato Bgra8888 de Avalonia; opaca, así que vale como premultiplicada).</summary>
     public uint[] Pixels { get; private set; } = [];
 
@@ -44,6 +52,8 @@ public class ZBufferRasterizer
     private float _scale, _cx, _cy;
     private bool _ortho;
     private readonly List<(float Depth, Triangle T)> _transparent = [];
+    /// <summary>Normal de la cara de cada píxel (solo con <see cref="PixelLight"/>).</summary>
+    private Vector3[]? _normals;
 
     public void Resize(int width, int height)
     {
@@ -80,11 +90,14 @@ public class ZBufferRasterizer
             Array.Fill(_work, c, y * _w, _w);
         }
         Array.Fill(Depth, float.PositiveInfinity);
+        if (PixelLight is null) _normals = null;
+        else if (_normals is null || _normals.Length != _work.Length) _normals = new Vector3[_work.Length];
     }
 
     /// <summary>Dibuja los semitransparentes pendientes y, con supermuestreo, reduce la imagen a <see cref="Pixels"/>.</summary>
     public void End()
     {
+        if (PixelLight is { } light && _normals is not null) ApplyPixelLight(light, _normals);
         _transparent.Sort((a, b) => b.Depth.CompareTo(a.Depth));
         foreach (var (_, t) in _transparent) Fill(t, writeDepth: false);
         _transparent.Clear();
@@ -165,6 +178,36 @@ public class ZBufferRasterizer
         }
     }
 
+    private void ApplyPixelLight(Func<Vector3, Vector3, float> light, Vector3[] normals)
+    {
+        for (int y = 0; y < _h; y++)
+        {
+            float py = y + 0.5f;
+            for (int x = 0; x < _w; x++)
+            {
+                int i = y * _w + x;
+                float z = Depth[i];
+                if (float.IsPositiveInfinity(z)) continue;
+                float px = x + 0.5f;
+                float vx = (px - _cx) / _scale, vy = (_cy - py) / _scale;
+                if (!_ortho) { vx *= z; vy *= z; }
+                float k = light(_eye + _right * vx + _up * vy + _forward * z, normals[i]);
+                if (k < 0.999f) _work[i] = Shade(_work[i], k);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Profundidad de vista (m) de la superficie más cercana en el punto (x, y) de la imagen final; +∞ si no hay nada
+    /// o queda fuera. Con <see cref="Project"/> sirve de mapa de sombras visto desde el sol.
+    /// </summary>
+    public float DepthAt(float x, float y)
+    {
+        int ix = (int)(x * _ss), iy = (int)(y * _ss);
+        if (x < 0 || y < 0 || ix >= _w || iy >= _h) return float.PositiveInfinity;
+        return Depth[iy * _w + ix];
+    }
+
     /// <summary>Proyecta un punto a píxeles de la imagen final; null si queda detrás de la cámara.</summary>
     public (float X, float Y, float Depth)? Project(Vector3 p)
     {
@@ -198,8 +241,11 @@ public class ZBufferRasterizer
         Span<Vector3> v = stackalloc Vector3[4];
         int count = _ortho ? Copy(ToView(t.A), ToView(t.B), ToView(t.C), v) : ClipNear(ToView(t.A), ToView(t.B), ToView(t.C), v);
         if (count < 3) return;
-        RasterTriangle(v[0], v[1], v[2], color, writeDepth);
-        if (count == 4) RasterTriangle(v[0], v[2], v[3], color, writeDepth);
+        // Normal hacia el lado que se ve (para la luz por píxel).
+        var toEye = _ortho ? -_forward : _eye - t.A;
+        if (Vector3.Dot(n, toEye) < 0) n = -n;
+        RasterTriangle(v[0], v[1], v[2], color, writeDepth, n);
+        if (count == 4) RasterTriangle(v[0], v[2], v[3], color, writeDepth, n);
     }
 
     private Vector3 ToView(Vector3 p)
@@ -241,7 +287,7 @@ public class ZBufferRasterizer
         return n;
     }
 
-    private void RasterTriangle(Vector3 a, Vector3 b, Vector3 c, uint color, bool writeDepth)
+    private void RasterTriangle(Vector3 a, Vector3 b, Vector3 c, uint color, bool writeDepth, Vector3 normal)
     {
         var (ax, ay, aw) = Screen(a);
         var (bx, by, bw) = Screen(b);
@@ -258,6 +304,7 @@ public class ZBufferRasterizer
         if (minX > maxX || minY > maxY) return;
 
         bool ortho = _ortho;
+        var normals = _normals;
         uint alpha = color >> 24;
         for (int y = minY; y <= maxY; y++)
         {
@@ -278,6 +325,7 @@ public class ZBufferRasterizer
                 {
                     Depth[i] = depth;
                     _work[i] = color;
+                    if (normals is not null) normals[i] = normal;
                 }
                 else _work[i] = Blend(_work[i], color, alpha);
             }
