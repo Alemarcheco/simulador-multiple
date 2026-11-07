@@ -39,9 +39,16 @@ public static class PcbBoardExport
                     pins.Add(new BoardConnectorPin(f.Reference, pad.Pad.Number, pad.Net, P(pad.Center)));
             }
             if (mounting) continue;
+            PointMm? bmin = null, bmax = null;
+            if (f.Definition is not null)
+            {
+                var (a, b) = FootprintTransform.Bounds(f);
+                bmin = new PointMm(a.X, h - b.Y);
+                bmax = new PointMm(b.X, h - a.Y);
+            }
             components.Add(new BoardComponent(
                 f.Reference, f.Value, f.FootprintName, P(f.Position), f.Rotation, BoardSide.Top,
-                EstimateHeightMm(f), f.Definition?.Models3D.FirstOrDefault()));
+                EstimateHeightMm(f), f.Definition?.Models3D.FirstOrDefault(), bmin, bmax));
         }
 
         return new BoardExport(doc.Title, outline, Array.Empty<IReadOnlyList<PointMm>>(), thicknessMm, holes, components, pins);

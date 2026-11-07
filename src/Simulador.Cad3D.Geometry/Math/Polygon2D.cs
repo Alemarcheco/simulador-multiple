@@ -41,6 +41,8 @@ public static class Polygon2D
                 foreach (var j in idx)
                 {
                     if (j == ia || j == ib || j == ic) continue;
+                    // Vértices repetidos de los puentes hacia los huecos (ver MergeHoles): no bloquean la oreja.
+                    if (Same(pts[j], a) || Same(pts[j], b) || Same(pts[j], c)) continue;
                     if (PointInTriangle(pts[j], a, b, c)) { inside = true; break; }
                 }
                 if (inside) continue;
@@ -57,6 +59,62 @@ public static class Polygon2D
         }
         if (idx.Count == 3) result.Add((idx[0], idx[1], idx[2]));
         return result;
+    }
+
+    private static bool Same(Vec2 p, Vec2 q) => Math.Abs(p.X - q.X) < 1e-12 && Math.Abs(p.Y - q.Y) < 1e-12;
+
+    /// <summary>
+    /// Une los huecos (en sentido horario) al contorno exterior (antihorario) con puentes de ida y vuelta,
+    /// para triangular una región con huecos como un solo polígono. Los huecos se procesan de derecha a izquierda
+    /// y cada uno se une al vértice visible más cercano.
+    /// </summary>
+    public static List<Vec2> MergeHoles(IReadOnlyList<Vec2> outer, IReadOnlyList<IReadOnlyList<Vec2>> holes)
+    {
+        var poly = outer.ToList();
+        var pending = holes.Where(h => h.Count >= 3).Select(h => h.ToList()).ToList();
+        foreach (var hole in pending.OrderByDescending(h => h.Max(p => p.X)).ToList())
+        {
+            pending.Remove(hole);
+            int mi = 0;
+            for (int i = 1; i < hole.Count; i++) if (hole[i].X > hole[mi].X) mi = i;
+            var m = hole[mi];
+            int best = -1;
+            foreach (int vi in Enumerable.Range(0, poly.Count).OrderBy(i => Dist2(poly[i], m)))
+            {
+                if (Visible(m, poly[vi], poly, hole, pending)) { best = vi; break; }
+            }
+            if (best < 0) best = Enumerable.Range(0, poly.Count).OrderBy(i => Dist2(poly[i], m)).First();
+            var bridged = new List<Vec2>(poly.Count + hole.Count + 2);
+            bridged.AddRange(poly.Take(best + 1));
+            for (int k = 0; k <= hole.Count; k++) bridged.Add(hole[(mi + k) % hole.Count]);
+            bridged.Add(poly[best]);
+            bridged.AddRange(poly.Skip(best + 1));
+            poly = bridged;
+        }
+        return poly;
+    }
+
+    private static double Dist2(Vec2 a, Vec2 b) => (a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y);
+
+    private static bool Visible(Vec2 m, Vec2 v, List<Vec2> poly, List<Vec2> hole, List<List<Vec2>> others)
+    {
+        bool Crosses(IReadOnlyList<Vec2> ring)
+        {
+            for (int i = 0; i < ring.Count; i++)
+            {
+                var a = ring[i]; var b = ring[(i + 1) % ring.Count];
+                if (Same(a, m) || Same(b, m) || Same(a, v) || Same(b, v)) continue;
+                if (ProperCross(m, v, a, b)) return true;
+            }
+            return false;
+        }
+        return !Crosses(poly) && !Crosses(hole) && !others.Any(Crosses);
+    }
+
+    private static bool ProperCross(Vec2 a, Vec2 b, Vec2 c, Vec2 d)
+    {
+        double d1 = (b - a).Cross(c - a), d2 = (b - a).Cross(d - a), d3 = (d - c).Cross(a - c), d4 = (d - c).Cross(b - c);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
     }
 
     private static bool PointInTriangle(Vec2 p, Vec2 a, Vec2 b, Vec2 c)

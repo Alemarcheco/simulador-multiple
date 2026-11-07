@@ -134,10 +134,15 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
    - Ejemplos prediseñados (`Templates/Examples.cs`): cajas, soporte en L, engranaje, maceta, separador, atril.
    - «Caja para placa…»: abre un `.placa`, lo convierte con `PcbBoardExport.ToBoardExport` (Simulador.Circuitos,
      Y hacia arriba) y crea la caja con `EnclosureTemplate.FromBoard` (postes en los taladros de montaje,
-     huecos para conectores).
+     huecos para conectores). Si el componente trae su huella (`BoardComponent.BoundsMin/BoundsMax`), el hueco
+     mide lo que la huella más 0,5 mm de holgura por lado y va en la pared más cercana; si no, 12 mm genéricos.
+   - Texto en relieve o grabado (`Model/TextFeature.cs`, tipo `texto`): contornos de la fuente del sistema con
+     SkiaSharp (`TextOutline`), altura de mayúscula en mm, negrita y alineación; las letras con agujeros (o, A, 8)
+     se extruyen con `IGeometryKernel.ExtrudeRegion`. Con el motor de malla, grabar varias letras puede dejar
+     grietas; con OpenCASCADE sale cerrado.
 4. **Pendiente**: restricciones de boceto (paralelo, perpendicular, igual), arcos exactos en OpenCASCADE (ahora
    llegan divididos en tramos),
-   texto en relieve, ancho real de los huecos de conector desde la huella, ver los modelos STEP de los componentes
+   texto sobre caras curvas, ver los modelos STEP de los componentes
    dentro de la caja y exportar equipos animables `.sm3d` (contrato `Simulador.Core.Model3D`).
 
 ## Banco de pruebas (`Simulador.Banco`)

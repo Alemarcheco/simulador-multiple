@@ -26,6 +26,18 @@ public interface IGeometryKernel
     /// <summary>Extrusión de un perfil del plano XY desde z = 0 hasta z = <paramref name="height"/>.</summary>
     ISolid Extrude(IReadOnlyList<Vec2> profile, double height);
 
+    /// <summary>
+    /// Extrusión de una región con huecos (p. ej. una letra «o»): contorno exterior menos los contornos interiores.
+    /// Por defecto resta cada hueco (algo más alto, para no restar caras coplanarias); el motor de mallas lo construye directamente.
+    /// </summary>
+    ISolid ExtrudeRegion(IReadOnlyList<Vec2> outer, IReadOnlyList<IReadOnlyList<Vec2>> holes, double height)
+    {
+        var result = Extrude(outer, height);
+        foreach (var h in holes)
+            result = Subtract(result, Transform(Extrude(h, height + 0.2), Transform3.Translate(new Vec3(0, 0, -0.1))));
+        return result;
+    }
+
     ISolid Transform(ISolid solid, Transform3 transform);
     ISolid Union(ISolid a, ISolid b);
     ISolid Subtract(ISolid a, ISolid b);

@@ -6,6 +6,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Contorno de las letras para la operación «Texto» (fuentes del sistema). -->
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
   <!-- Biblioteca nativa de OpenCASCADE (native/simcad_occt), si se ha compilado e instalado en native/bin. -->
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\native\bin')">
     <None Include="$(MSBuildThisFileDirectory)..\..\native\bin\*.dll;$(MSBuildThisFileDirectory)..\..\native\bin\*.so*;$(MSBuildThisFileDirectory)..\..\native\bin\*.dylib"

@@ -148,15 +148,34 @@ public static class EnclosureTemplate
         double boardTopZ = standoffH + board.ThicknessMm;
         var cutouts = new List<WallCutout>();
         const double edge = 4; // un conector a menos de 4 mm del borde se considera de borde
+        const double gap = 0.5; // holgura a cada lado del hueco
         foreach (var c in board.Components.Where(IsConnector))
         {
+            string name = $"Hueco {c.Reference}";
+            if (c.BoundsMin is { } bmin && c.BoundsMax is { } bmax && bmax.X > bmin.X && bmax.Y > bmin.Y)
+            {
+                // Huella conocida: el hueco mide lo que el conector más la holgura, en la pared más cercana.
+                double x0 = bmin.X - min.X, x1 = bmax.X - min.X, y0 = bmin.Y - min.Y, y1 = bmax.Y - min.Y;
+                double h = (c.HeightMm > 0 ? c.HeightMm : 8) + 2 * gap;
+                double z = boardTopZ - gap;
+                var candidates = new (double Dist, Wall Wall)[]
+                {
+                    (y0, Wall.Frontal), (bd - y1, Wall.Trasera), (x0, Wall.Izquierda), (bw - x1, Wall.Derecha),
+                };
+                var (dist, wallSide) = candidates.MinBy(t => t.Dist);
+                if (dist > edge) continue;
+                bool alongX = wallSide is Wall.Frontal or Wall.Trasera;
+                double a0 = alongX ? x0 : y0, a1 = alongX ? x1 : y1;
+                cutouts.Add(new WallCutout(name, wallSide, a0 + margin - gap, z, a1 - a0 + 2 * gap, h));
+                continue;
+            }
             double x = c.Position.X - min.X, y = c.Position.Y - min.Y;
-            double w = 12, h = Math.Max(6, c.HeightMm + 2);
-            double z = boardTopZ - 1;
-            if (y <= edge) cutouts.Add(new WallCutout($"Hueco {c.Reference}", Wall.Frontal, x + margin - w / 2, z, w, h));
-            else if (y >= bd - edge) cutouts.Add(new WallCutout($"Hueco {c.Reference}", Wall.Trasera, x + margin - w / 2, z, w, h));
-            else if (x <= edge) cutouts.Add(new WallCutout($"Hueco {c.Reference}", Wall.Izquierda, y + margin - w / 2, z, w, h));
-            else if (x >= bw - edge) cutouts.Add(new WallCutout($"Hueco {c.Reference}", Wall.Derecha, y + margin - w / 2, z, w, h));
+            double w = 12, hh = Math.Max(6, c.HeightMm + 2);
+            double zz = boardTopZ - 1;
+            if (y <= edge) cutouts.Add(new WallCutout(name, Wall.Frontal, x + margin - w / 2, zz, w, hh));
+            else if (y >= bd - edge) cutouts.Add(new WallCutout(name, Wall.Trasera, x + margin - w / 2, zz, w, hh));
+            else if (x <= edge) cutouts.Add(new WallCutout(name, Wall.Izquierda, y + margin - w / 2, zz, w, hh));
+            else if (x >= bw - edge) cutouts.Add(new WallCutout(name, Wall.Derecha, y + margin - w / 2, zz, w, hh));
         }
 
         var p = new EnclosureParameters
