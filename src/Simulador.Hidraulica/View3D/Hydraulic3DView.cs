@@ -34,6 +34,8 @@ public sealed class Hydraulic3DView : Control
     public HydraulicSimulation? Simulation { get; set; }
     public string? SelectedId { get; set; }
     public bool ShowLabels { get; set; } = true;
+    /// <summary>Otra fuente de escena (la usa la pestaña Neumática): recibe el tiempo de animación y el elemento seleccionado.</summary>
+    public Func<double, string?, Scene>? SceneProvider { get; set; }
     private double _animation;
 
     public Hydraulic3DView()
@@ -52,8 +54,7 @@ public sealed class Hydraulic3DView : Control
     /// <summary>Encuadra toda la instalación.</summary>
     public void FitAll()
     {
-        if (Network is null) return;
-        var scene = SceneBuilder.Build(Network, Simulation, _animation);
+        if (BuildScene() is not { } scene) return;
         Camera.Fit(scene.Min, scene.Max);
         _fitted = true;
         InvalidateVisual();
@@ -69,13 +70,14 @@ public sealed class Hydraulic3DView : Control
     /// <summary>Cambió el diseño completo (nuevo proyecto): vuelve a encuadrar la próxima vez.</summary>
     public void ResetFraming() { _fitted = false; InvalidateVisual(); }
 
+    private Scene? BuildScene() =>
+        SceneProvider?.Invoke(_animation, SelectedId) ?? (Network is null ? null : SceneBuilder.Build(Network, Simulation, _animation, SelectedId));
+
     public override void Render(DrawingContext ctx)
     {
         var size = Bounds.Size;
         int w = Math.Max(1, (int)size.Width), h = Math.Max(1, (int)size.Height);
-        if (Network is null || w < 4 || h < 4) return;
-
-        var scene = SceneBuilder.Build(Network, Simulation, _animation, SelectedId);
+        if (w < 4 || h < 4 || BuildScene() is not { } scene) return;
         if (!_fitted) { Camera.Fit(scene.Min, scene.Max); _fitted = true; }
 
         _raster.Resize(w, h);
