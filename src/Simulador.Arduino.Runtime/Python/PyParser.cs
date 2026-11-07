@@ -197,14 +197,22 @@ internal sealed class PyParser
         return n;
     }
 
+    private PImport ImportItem(int line)
+    {
+        string mod = DottedName();
+        return new PImport(mod, AcceptName("as") ? ExpectName() : null, line);
+    }
+
     /// <summary>Una o varias sentencias simples en una línea, separadas por ';'.</summary>
     private IReadOnlyList<PStmt> SimpleLine()
     {
         var list = new List<PStmt> { Simple() };
+        while (list[^1] is PImport im && AcceptOp(",")) list.Add(ImportItem(im.Line)); // import network, time
         while (AcceptOp(";"))
         {
             if (Peek.Kind is PT.Newline or PT.Eof) break;
             list.Add(Simple());
+            while (list[^1] is PImport im2 && AcceptOp(",")) list.Add(ImportItem(im2.Line));
         }
         if (Peek.Kind == PT.Newline) _p++;
         else if (Peek.Kind is not (PT.Eof or PT.Dedent)) throw Error($"Sobra {Peek} al final de la línea.");
@@ -236,10 +244,7 @@ internal sealed class PyParser
                 case "import":
                 {
                     _p++;
-                    string mod = DottedName();
-                    string? alias = AcceptName("as") ? ExpectName() : null;
-                    if (IsOp(",")) throw Error("Importa los módulos de uno en uno (una línea por import).");
-                    return new PImport(mod, alias, line);
+                    return ImportItem(line);
                 }
                 case "from":
                 {

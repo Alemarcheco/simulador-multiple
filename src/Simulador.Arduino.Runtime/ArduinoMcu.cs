@@ -58,6 +58,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         for (int i = 0; i < board.PinCount; i++)
             _pins[i] = new PinPort($"{id}.{board.PinName(i)}", i, board.PinName(i), board.Vcc, board.Pwm.Contains(i), board.IsAnalog(i), board.AnalogOnly.Contains(i));
         Signals = _pins;
+        if (board == ArduinoBoard.Esp32) Wifi = new WifiWorld();
         var constants = new Dictionary<string, long>(StringComparer.Ordinal)
         {
             ["INPUT"] = 0, ["OUTPUT"] = 1, ["INPUT_PULLUP"] = 2,
@@ -89,6 +90,9 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
 
     /// <summary>Tiempo transcurrido desde el arranque del sketch (lo que devuelve millis()).</summary>
     public TimeSpan Uptime => TimeSpan.FromTicks(_now);
+
+    /// <summary>Wi‑Fi simulado (solo el ESP32): redes, IP y el navegador del simulador.</summary>
+    public WifiWorld? Wifi { get; }
 
     public IReadOnlyList<PinPort> Pins => _pins;
     public IReadOnlyList<ISignalPort> Signals { get; }
@@ -168,7 +172,8 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         if (_pyProgram is not null)
         {
             _interpreter = null;
-            _py = new PyInterpreter(_pyProgram, Host, Board);
+            Wifi?.Reset();
+            _py = new PyInterpreter(_pyProgram, Host, Board, Wifi);
             Host.Random = new Random(1);
             SerialBaud = 115200; // la consola de MicroPython va por USB
             var py = _py;

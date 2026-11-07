@@ -25,13 +25,15 @@ internal sealed partial class PyInterpreter
     private int _depth;
     private PyError? _handling; // excepción que se está atendiendo (para "raise" sin argumentos)
 
-    public PyInterpreter(PyModuleAst ast, IMcuHost host, ArduinoBoard board)
+    public PyInterpreter(PyModuleAst ast, IMcuHost host, ArduinoBoard board, WifiWorld? wifi = null)
     {
         _ast = ast;
         Host = host;
         Board = board;
+        Wifi = wifi;
         InitBuiltins();
         InitModules();
+        InitNetworkModules();
     }
 
     internal IMcuHost Host { get; }

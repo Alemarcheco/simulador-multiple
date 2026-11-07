@@ -36,6 +36,7 @@ internal sealed partial class ArduinoView : UserControl
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly ContentControl _boardHost = new();
     private readonly PartsPanel _parts = new();
+    private readonly WifiPanel _wifi = new();
     private readonly BlockEditor _blocks = new();
     private readonly TabControl _modeTabs;
     private readonly TabItem _blocksTab;
@@ -172,6 +173,7 @@ internal sealed partial class ArduinoView : UserControl
         });
         right.Children.Add(Title("Montaje"));
         right.Children.Add(_parts);
+        right.Children.Add(_wifi);
         right.Children.Add(Title("Otras entradas"));
         right.Children.Add(_inputs);
         right.Children.Add(Title("Salidas"));
@@ -445,6 +447,7 @@ internal sealed partial class ArduinoView : UserControl
         _board = new ArduinoBoardView(_mcu, TogglePin);
         _boardHost.Content = _board;
         _parts.Attach(_mcu);
+        _wifi.Mcu = _mcu;
         _board.Refresh();
     }
 
@@ -564,6 +567,7 @@ internal sealed partial class ArduinoView : UserControl
     {
         _board?.Refresh();
         _parts.Refresh();
+        _wifi.Refresh();
         BuildInputs();
         var serial = _mcu.SerialOutput;
         if (serial != _serial.Text)

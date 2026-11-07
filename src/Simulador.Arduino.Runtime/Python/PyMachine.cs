@@ -35,7 +35,7 @@ internal sealed partial class PyInterpreter
     private readonly List<TimerEntry> _timers = [];
     private bool _inEvent;
 
-    private bool HasEvents => _irqs.Count > 0 || _timers.Count > 0;
+    private bool HasEvents => _irqs.Count > 0 || _timers.Count > 0 || _wifiPending is not null;
 
     private bool IsEsp32 => Board.Chip.StartsWith("ESP32", StringComparison.Ordinal);
 
@@ -43,6 +43,7 @@ internal sealed partial class PyInterpreter
     private void PollEvents()
     {
         if (_inEvent || !HasEvents) return;
+        PollWifi();
         _inEvent = true;
         int line = CurrentLine;
         try
