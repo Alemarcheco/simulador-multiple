@@ -148,7 +148,6 @@ internal sealed class PlcView : UserControl
         _languages.Items.Add(new TabItem { Header = "Bloques de función (FBD)", Content = fbdPanel, Tag = "fbd" });
         _languages.Items.Add(new TabItem { Header = "Lista de instrucciones (IL)", Content = ilPanel, Tag = "il" });
         _languages.Items.Add(new TabItem { Header = "SFC / GRAFCET", Content = sfcGrid, Tag = "sfc" });
-        _languages.Items.Add(new TabItem { Header = "Próximamente", Content = Upcoming() });
 
         // --- Panel derecho: E/S y observación ---
         var right = new StackPanel { Spacing = 10, Margin = new Thickness(8) };
@@ -237,16 +236,6 @@ internal sealed class PlcView : UserControl
         editor = box;
         return panel;
     }
-
-    private static Control Upcoming() => new TextBlock
-    {
-        Margin = new Thickness(16),
-        TextWrapping = TextWrapping.Wrap,
-        Text = "Siguientes fases:\n\n" +
-               "• Arduino Uno/Nano/Mega en C/C++ y bloques tipo Scratch\n" +
-               "• ESP32, Raspberry Pi Pico y MicroPython\n" +
-               "• Conexión de las E/S con los esquemas del módulo eléctrico",
-    };
 
     private string Display(string operand)
     {
