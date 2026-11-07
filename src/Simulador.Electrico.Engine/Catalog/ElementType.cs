@@ -19,6 +19,8 @@ public enum Behavior
     Voltmeter, Ammeter, Junction,
     // Transformación, variación de velocidad y automatización
     Transformer1, Transformer3, Vfd, Plc,
+    // Señal analógica de 0-10 V (consigna o sensor)
+    Transmitter,
     // Solo dibujo (símbolos importados sin comportamiento eléctrico reconocido)
     Graphic,
 }

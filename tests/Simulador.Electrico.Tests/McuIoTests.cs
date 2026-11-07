@@ -110,6 +110,69 @@ public class McuIoTests
         Assert.Equal(ArduinoBoard.Everything.Select(b => b.Name), ElementCatalog.McuBoards);
         var type = ElementCatalog.Default.Get(ElementCatalog.McuTypeId);
         Assert.Equal(Behavior.Plc, type.Behavior);
-        Assert.Equal(ElementCatalog.Default.Get("plc_compacto").Terminals.Select(x => x.Id), type.Terminals.Select(x => x.Id));
+        // Mismos bornes que el PLC compacto, en el mismo orden, y después las analógicas.
+        Assert.Equal(ElementCatalog.Default.Get("plc_compacto").Terminals.Select(x => x.Id).Concat(["AI1", "AI2"]), type.Terminals.Select(x => x.Id));
+    }
+
+    [Fact]
+    public void Level_transmitter_drives_the_pump_through_the_analog_input()
+    {
+        var s = Examples.McuLevelControl();
+        var kf = El(s, "KF1", ElementCatalog.McuTypeId);
+        var b1 = El(s, "B1", "transmisor_010");
+        var h1 = El(s, "H1", "piloto");
+        var sim = new Simulator(s);
+        using var io = new McuIoBoard("KF1", ArduinoBoard.Uno);
+        io.Load(kf.Texts["codigo"]);
+        Assert.Empty(sim.AttachController("KF1", io));
+
+        sim.Run(0.5);
+        Assert.True(sim.Status(b1.Id).Powered);
+        Assert.Equal(5.0, sim.Status(b1.Id).Voltage, 1);
+        Assert.Equal(5.0, sim.Status(kf.Id).AnalogInputs[0], 1);
+        Assert.False(sim.Status(h1.Id).Brightness > 0.5, "al 50 % la bomba sigue parada");
+
+        sim.SetTransmitter(b1.Id, 20);
+        sim.Run(0.5);
+        Assert.Equal(2.0, sim.Status(kf.Id).AnalogInputs[0], 1);
+        Assert.True(sim.Status(h1.Id).Brightness > 0.9, $"por debajo del 30 % la bomba arranca ({io.Mcu.FaultMessage})");
+        sim.SetTransmitter(b1.Id, 60);
+        sim.Run(0.5);
+        Assert.True(sim.Status(h1.Id).Brightness > 0.9, "histéresis: al 60 % sigue llenando");
+        sim.SetTransmitter(b1.Id, 90);
+        sim.Run(0.5);
+        Assert.False(sim.Status(h1.Id).Brightness > 0.5);
+        Assert.Contains("bomba en marcha", io.Mcu.SerialOutput);
+        Assert.Contains("bomba parada", io.Mcu.SerialOutput);
+    }
+
+    [Fact]
+    public void Transmitter_without_supply_gives_zero_volts()
+    {
+        var s = Examples.McuLevelControl();
+        var b1 = El(s, "B1", "transmisor_010");
+        s.Wires.RemoveAll(w => w.A.Element == b1.Id && w.A.Terminal == "L+" || w.B.Element == b1.Id && w.B.Terminal == "L+");
+        var sim = new Simulator(s);
+        sim.Run(0.3);
+        Assert.False(sim.Status(b1.Id).Powered);
+        Assert.Equal(0, sim.Status(El(s, "KF1", ElementCatalog.McuTypeId).Id).AnalogInputs[0], 2);
+    }
+
+    [Theory]
+    [MemberData(nameof(Boards))]
+    public void Analog_input_reaches_the_adc_of_every_board(string boardId)
+    {
+        var board = ArduinoBoard.Everything.Single(b => b.Id == boardId);
+        using var io = new McuIoBoard("KF1", board);
+        int pin = io.AnalogPins[1];
+        io.Load(board.IsPython
+            ? $"from machine import ADC, Pin\nimport time\nadc = ADC(Pin({pin}))\nwhile True:\n    valor = adc.read_u16()\n    time.sleep_ms(10)\n"
+            : $"int valor;\nvoid setup() {{}}\nvoid loop() {{ valor = analogRead({pin}); delay(10); }}\n");
+        io.Signals.Single(x => x.Id == "KF1.AI2").Value = 7.5;
+        var t = TimeSpan.Zero;
+        for (int k = 0; k < 10; k++) { io.DoStep(t, TimeSpan.FromMilliseconds(10)); t += TimeSpan.FromMilliseconds(10); }
+        var v = io.Mcu.Variables().Single(x => x.Name == "valor").Value;
+        double expected = board.IsPython ? 0.75 * 65535 : 0.75 * 1023;
+        Assert.InRange(double.Parse(v, System.Globalization.CultureInfo.InvariantCulture), expected - 2, expected + 2);
     }
 }

@@ -62,6 +62,8 @@ internal sealed class ElectricoView : DockPanel
         _props.MotorLoadChanged += (id, pct) => _sim?.SetMotorLoad(id, pct);
         _props.VfdReferenceChanged += (id, hz) => _sim?.SetVfdReference(id, hz);
         _props.PlcStatus = PlcStatusText;
+        _props.TransmitterValue = id => _sim?.Status(id).Percent ?? 50;
+        _props.TransmitterChanged += (id, pct) => _sim?.SetTransmitter(id, pct);
         _timer.Tick += (_, _) => Tick();
 
         Children.Add(BuildToolbar());

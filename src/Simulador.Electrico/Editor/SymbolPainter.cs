@@ -309,6 +309,9 @@ internal static class SymbolPainter
             case Behavior.Plc:
                 DrawPlc(dc, t, st);
                 break;
+            case Behavior.Transmitter:
+                DrawTransmitter(dc, st);
+                break;
             case Behavior.Graphic:
             default:
                 if (t.Graphic is { } graphic) DrawGraphic(dc, graphic, st);
@@ -403,6 +406,18 @@ internal static class SymbolPainter
         dc.DrawText(tlcd, new Point(box.X + (box.Width - tlcd.Width) / 2, box.Y + (box.Height - tlcd.Height) / 2));
         if (st is not null && st.Frequency != 0)
             Label(dc, st.Frequency > 0 ? "↻" : "↺", 4.5, 2.4, 12, Select, center: true);
+    }
+
+    /// <summary>Transmisor de 0-10 V: caja con la barra de su valor (L+ y OUT arriba, M abajo).</summary>
+    private static void DrawTransmitter(DrawingContext dc, ElementStatus? st)
+    {
+        L(dc, 0, 0, 0, 1); L(dc, 2, 0, 2, 1); L(dc, 1, 3, 1, 4);
+        var powered = st?.Powered == true;
+        dc.DrawRectangle(powered ? Running : Tint, Line, new Rect(P(-0.6, 1), P(2.6, 3)), 3, 3);
+        Label(dc, "0-10V", 1, 1.55, 8, Ink, center: true);
+        var pct = Math.Clamp(st?.Percent ?? 0, 0, 100) / 100;
+        dc.DrawRectangle(LedOff, null, new Rect(P(-0.3, 2.3), P(2.3, 2.65)));
+        if (st is not null) dc.DrawRectangle(powered ? LedInput : LedOff, null, new Rect(P(-0.3, 2.3), P(-0.3 + 2.6 * pct, 2.65)));
     }
 
     private static void DrawPlc(DrawingContext dc, ElementType t, ElementStatus? st)

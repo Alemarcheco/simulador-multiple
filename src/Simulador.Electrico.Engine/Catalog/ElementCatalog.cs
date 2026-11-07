@@ -52,6 +52,13 @@ public sealed class ElementCatalog
     public const int PlcInputs = 8;
     public const int PlcOutputs = 8;
 
+    /// <summary>Entradas analógicas de 0-10 V del microcontrolador (bornes AI1, AI2 tras Q0.7).</summary>
+    public const int McuAnalogInputs = 2;
+
+    /// <summary>Magnitudes del transmisor de 0-10 V: nombre, unidad y valor a 10 V.</summary>
+    public static readonly (string Name, string Unit, double Full)[] TransmitterKinds =
+        [("Consigna (potenciómetro)", "%", 100), ("Temperatura", "°C", 100), ("Nivel", "%", 100), ("Presión", "bar", 10), ("Caudal", "m³/h", 50)];
+
     /// <summary>Elemento «microcontrolador con placa de relés».</summary>
     public const string McuTypeId = "mcu_reles";
 
@@ -270,10 +277,17 @@ public sealed class ElementCatalog
             for (var i = 0; i < PlcInputs; i++) mcuTerms.Add(new($"I0.{i}", 4 + 2 * i, 0, $"IN{i + 1}"));
             mcuTerms.Add(new("1L", 0, 6, "COM"));
             for (var i = 0; i < PlcOutputs; i++) mcuTerms.Add(new($"Q0.{i}", 2 + 2 * i, 6, $"K{i + 1}"));
+            for (var i = 0; i < McuAnalogInputs; i++) mcuTerms.Add(new($"AI{i + 1}", 4 + 2 * (PlcInputs + i), 0, $"AI{i + 1}"));
             yield return new(McuTypeId, "Arduino / ESP32 / Pico con placa de relés", CatAutomation, Behavior.Plc, "KF", mcuTerms,
                 [O("placa", "Placa", 0, McuBoards), P("ciclo", "Paso de simulación", "ms", 5, 1, 50)],
-                "Microcontrolador sobre una placa de E/S de 24 V DC: 8 entradas optoacopladas (IN1-IN8, activas con 24 V respecto a M) y 8 relés (COM común, K1-K8). Se programa en Propiedades: en C++ (Arduino) o en MicroPython (ESP32 y Pico).");
+                "Microcontrolador sobre una placa de E/S de 24 V DC: 8 entradas optoacopladas (IN1-IN8, activas con 24 V respecto a M) y 8 relés (COM común, K1-K8), más 2 entradas analógicas de 0-10 V (AI1, AI2, respecto a M). Se programa en Propiedades: en C++ (Arduino) o en MicroPython (ESP32 y Pico).");
         }
+
+        yield return new("transmisor_010", "Transmisor / potenciómetro 0-10 V", CatAutomation, Behavior.Transmitter, "B",
+            [new("L+", 0, 0, "L+"), new("OUT", 2, 0, "OUT"), new("M", 1, 4, "M")],
+            [O("magnitud", "Magnitud", 0, TransmitterKinds.Select(k => $"{k.Name} (0-{k.Full:0.##} {k.Unit})").ToArray()),
+             P("valor", "Valor inicial", "% del rango", 50, 0, 100)],
+            "Sensor o consigna con salida de 0-10 V entre OUT y M; se alimenta con 24 V DC entre L+ y M. Mientras simulas, mueve su valor en Propiedades. Úsalo con las entradas AI del microcontrolador.");
 
         // ---------------- Medida y conexión ----------------
         yield return new("voltimetro", "Voltímetro", CatInstruments, Behavior.Voltmeter, "P", TwoTerm(), [],

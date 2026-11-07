@@ -18,6 +18,7 @@ public static class Examples
         ("Variador de frecuencia: rampa y dos sentidos de giro", VfdDrive),
         ("Marcha-paro de motor con PLC", PlcStartStop),
         ("Marcha-paro de motor con Arduino y placa de relés", McuStartStop),
+        ("Depósito con sensor de nivel 0-10 V y Arduino", McuLevelControl),
     ];
 
     /// <summary>Sketch del Arduino Uno del ejemplo <see cref="McuStartStop"/>.</summary>
@@ -55,6 +56,43 @@ public static class Examples
           digitalWrite(CONTACTOR, motor ? HIGH : LOW);
           digitalWrite(PILOTO, motor ? HIGH : LOW);
           delay(10);
+        }
+        """;
+
+    /// <summary>Sketch del ejemplo <see cref="McuLevelControl"/>: bomba con histéresis según el nivel (0-10 V en AI1).</summary>
+    public const string McuLevelSketch = """
+        // Control de nivel de un depósito con un Arduino Uno y su placa de E/S.
+        // AI1 (A4): transmisor de nivel 0-10 V -> analogRead 0-1023
+        // K1 (D10): bomba de llenado (aquí, su piloto H1)
+        const int NIVEL = A4;
+        const int BOMBA = 10;
+        const float ARRANCA = 30;   // % : por debajo se llena
+        const float PARA = 80;      // % : por encima se para
+
+        bool bomba = false;
+
+        void setup() {
+          pinMode(BOMBA, OUTPUT);
+          Serial.begin(9600);
+        }
+
+        void loop() {
+          int lectura = analogRead(NIVEL);
+          float nivel = lectura * 100.0 / 1023;
+          if (nivel < ARRANCA && !bomba) {
+            bomba = true;
+            Serial.print("Nivel bajo (");
+            Serial.print(nivel, 0);
+            Serial.println(" %): bomba en marcha");
+          }
+          if (nivel > PARA && bomba) {
+            bomba = false;
+            Serial.print("Depósito lleno (");
+            Serial.print(nivel, 0);
+            Serial.println(" %): bomba parada");
+          }
+          digitalWrite(BOMBA, bomba ? HIGH : LOW);
+          delay(100);
         }
         """;
 
@@ -478,6 +516,27 @@ public static class Examples
         b.Wire(plc, "Q0.0", coil, "A1").Wire(plc, "Q0.2", h1, "1");
         var xn2 = b.Add("borne", "XN2", 22, 37);
         b.Wire(coil, "A2", xn2, "1").Wire(h1, "2", xn2, "1").Wire(xn2, "1", xn, "1");
+        return b.Schematic;
+    }
+
+    /// <summary>Transmisor de nivel de 0-10 V en la entrada AI1 de un Arduino; su relé K1 enciende la bomba (piloto de 24 V).</summary>
+    public static Schematic McuLevelControl()
+    {
+        var b = new SchematicBuilder("Depósito con sensor de nivel 0-10 V y Arduino",
+            "El transmisor de nivel B1 da de 0 a 10 V y llega a la entrada analógica AI1 de la placa del Arduino (A4). El sketch " +
+            "arranca la bomba (piloto H1, por el relé K1) por debajo del 30 % y la para por encima del 80 %. Simula, selecciona B1 " +
+            "y mueve su valor en Propiedades; los mensajes del Arduino salen en el registro.");
+        var g1 = b.Add("fuente_dc", "G1", 0, 0, ("V", 24));
+        var xp = b.Add("borne", "X+", 6, 4);
+        var xm = b.Add("borne", "X-", 8, 22);
+        b.Wire(g1, "+", xp, "1").Wire(g1, "-", xm, "1");
+        var kf = b.Add(Catalog.ElementCatalog.McuTypeId, "KF1", 4, 10);
+        b.Text(kf, "codigo", McuLevelSketch);
+        b.Wire(xp, "1", kf, "L+").Wire(xm, "1", kf, "M");
+        var b1 = b.Add("transmisor_010", "B1", 28, 2, ("magnitud", 2), ("valor", 50));
+        b.Wire(xp, "1", b1, "L+").Wire(b1, "OUT", kf, "AI1").Wire(b1, "M", xm, "1");
+        var h1 = b.Add("piloto", "H1", 12, 20, ("V", 24), ("P", 1.5), ("color", 1));
+        b.Wire(xp, "1", kf, "1L").Wire(kf, "Q0.0", h1, "1").Wire(h1, "2", xm, "1");
         return b.Schematic;
     }
 }

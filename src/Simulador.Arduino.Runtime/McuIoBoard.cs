@@ -11,11 +11,14 @@ namespace Simulador.Arduino.Runtime;
 public sealed class McuIoBoard : ISimComponent, IDisposable
 {
     public const int Channels = 8;
+    /// <summary>Entradas de 0-10 V (AI1, AI2): un divisor en la placa las reduce a 0-Vcc para el ADC.</summary>
+    public const int AnalogChannels = 2;
     /// <summary>Tensión a partir de la cual el optoacoplador conduce (como una entrada de PLC de tipo 1).</summary>
     public const double InputOnVolts = 15;
 
     private readonly SignalPort[] _in;
     private readonly SignalPort[] _out;
+    private readonly SignalPort[] _ain;
 
     public McuIoBoard(string id, ArduinoBoard board)
     {
@@ -24,7 +27,9 @@ public sealed class McuIoBoard : ISimComponent, IDisposable
         (InputPins, OutputPins) = Mapping(board);
         _in = Enumerable.Range(0, Channels).Select(i => new SignalPort($"{id}.IN{i + 1}", SignalKind.DI, SignalUnit.Volt, 24)).ToArray();
         _out = Enumerable.Range(0, Channels).Select(i => new SignalPort($"{id}.K{i + 1}", SignalKind.DO, SignalUnit.Bool, 24)).ToArray();
-        Signals = [.. _in, .. _out];
+        _ain = Enumerable.Range(0, AnalogChannels).Select(i => new SignalPort($"{id}.AI{i + 1}", SignalKind.AI, SignalUnit.Volt, 10)).ToArray();
+        AnalogPins = AnalogMapping(board);
+        Signals = [.. _in, .. _out, .. _ain];
     }
 
     public string Id { get; }
@@ -32,6 +37,17 @@ public sealed class McuIoBoard : ISimComponent, IDisposable
     public ArduinoMcu Mcu { get; }
     public IReadOnlyList<int> InputPins { get; }
     public IReadOnlyList<int> OutputPins { get; }
+    public IReadOnlyList<int> AnalogPins { get; }
+
+    /// <summary>Pines del ADC unidos a AI1 y AI2.</summary>
+    public static int[] AnalogMapping(ArduinoBoard board)
+    {
+        if (board == ArduinoBoard.Esp32) return [36, 39];
+        if (board == ArduinoBoard.Pico) return [26, 27];
+        if (board == ArduinoBoard.Mega) return [54, 55];
+        if (board == ArduinoBoard.Nano) return [20, 21]; // A6 y A7, solo analógicas
+        return [18, 19]; // Uno: A4 y A5
+    }
     public IReadOnlyList<ISignalPort> Signals { get; }
     public IReadOnlyList<IPowerPort> PowerPorts { get; } = [];
     public int StepMultiple => 1;
@@ -52,7 +68,8 @@ public sealed class McuIoBoard : ISimComponent, IDisposable
     {
         var (i, o) = Mapping(board);
         return "Entradas: " + string.Join(", ", i.Select((p, k) => $"IN{k + 1}={board.PinName(p)}"))
-            + ". Relés: " + string.Join(", ", o.Select((p, k) => $"K{k + 1}={board.PinName(p)}")) + ".";
+            + ". Relés: " + string.Join(", ", o.Select((p, k) => $"K{k + 1}={board.PinName(p)}"))
+            + ". Analógicas 0-10 V: " + string.Join(", ", AnalogMapping(board).Select((p, k) => $"AI{k + 1}={board.PinName(p)}")) + " (10 V = " + board.Vcc.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " V en el pin).";
     }
 
     /// <summary>Programa de partida: marcha/paro de un motor con IN1 (marcha), IN2 (paro NC) y el relé K1.</summary>
@@ -113,6 +130,7 @@ public sealed class McuIoBoard : ISimComponent, IDisposable
         double vcc = Mcu.Board.Vcc;
         // El optoacoplador da nivel alto o bajo con fuerza: el pin nunca queda al aire.
         for (int k = 0; k < Channels; k++) pins[InputPins[k]].Value = _in[k].Value >= InputOnVolts ? vcc : 0;
+        for (int k = 0; k < AnalogChannels; k++) pins[AnalogPins[k]].Value = Math.Clamp(_ain[k].Value, 0, 10) / 10 * vcc;
         Mcu.Advance(now + dt);
         for (int k = 0; k < Channels; k++)
         {
