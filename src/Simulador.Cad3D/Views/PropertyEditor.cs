@@ -54,8 +54,16 @@ internal sealed class PropertyEditor : ScrollViewer
         Header(f.KindName);
         Text("Nombre", f.Name, v => { f.Name = v; Renamed?.Invoke(); });
 
-        bool modifier = f is ModifierFeature;
-        if (!modifier)
+        bool modifier = f is ModifierFeature or PatternFeature;
+        if (f is PatternFeature)
+        {
+            _stack.Children.Add(new TextBlock
+            {
+                Text = "Copia las últimas operaciones de la pieza (por ejemplo un agujero y su avellanado). Cada copia suma o resta igual que el original, que cuenta como la primera. En una rejilla las filas van en el eje siguiente (X → Y, Y → Z, Z → X); el círculo gira alrededor del eje Z.",
+                Opacity = 0.6, FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
+        }
+        else if (!modifier)
         {
             var mode = new ComboBox { ItemsSource = new[] { "Sólido (añade)", "Hueco (resta)", "Intersección" }, SelectedIndex = (int)f.Mode, HorizontalAlignment = HorizontalAlignment.Stretch };
             mode.SelectionChanged += (_, _) => { f.Mode = (CombineMode)Math.Max(0, mode.SelectedIndex); Renamed?.Invoke(); Changed?.Invoke(); };
@@ -65,7 +73,9 @@ internal sealed class PropertyEditor : ScrollViewer
         {
             _stack.Children.Add(new TextBlock
             {
-                Text = "Se aplica a todo lo construido antes en esta pieza. Necesita el motor exacto (OpenCASCADE).",
+                Text = f is ModifierFeature { NeedsExactKernel: true }
+                    ? "Se aplica a todo lo construido antes en esta pieza. Necesita el motor exacto (OpenCASCADE)."
+                    : "Se aplica a todo lo construido antes en esta pieza.",
                 Opacity = 0.6, FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
             });
         }
@@ -84,11 +94,15 @@ internal sealed class PropertyEditor : ScrollViewer
             });
         }
 
-        foreach (var prop in f.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.PropertyType == typeof(EdgeSelection)))
+        // Listas de opciones (todas las propiedades enumeradas salvo el modo, que ya está arriba).
+        foreach (var prop in f.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(p => p.PropertyType.IsEnum && p.PropertyType != typeof(CombineMode) && p.CanWrite))
         {
-            var combo = new ComboBox { ItemsSource = Enum.GetNames<EdgeSelection>(), SelectedIndex = (int)(EdgeSelection)prop.GetValue(f)!, HorizontalAlignment = HorizontalAlignment.Stretch };
-            combo.SelectionChanged += (_, _) => { prop.SetValue(f, (EdgeSelection)Math.Max(0, combo.SelectedIndex)); Changed?.Invoke(); };
-            Row("Aristas", combo);
+            var values = Enum.GetValues(prop.PropertyType);
+            var names = Enum.GetNames(prop.PropertyType);
+            var combo = new ComboBox { ItemsSource = names, SelectedIndex = Array.IndexOf(values, prop.GetValue(f)), HorizontalAlignment = HorizontalAlignment.Stretch };
+            combo.SelectionChanged += (_, _) => { prop.SetValue(f, values.GetValue(Math.Max(0, combo.SelectedIndex))); Changed?.Invoke(); };
+            Row(EnumLabel(prop.Name), combo);
         }
 
         if (f is ExtrudeFeature ex)
@@ -151,6 +165,15 @@ internal sealed class PropertyEditor : ScrollViewer
             });
         _stack.Children.Add(error);
     }
+
+    private static string EnumLabel(string property) => property switch
+    {
+        "Edges" => "Aristas",
+        "Kind" => "Tipo de repetición",
+        "Direction" => "Dirección (fila / columnas)",
+        "Normal" => "Espejo perpendicular al eje",
+        _ => property,
+    };
 
     private void VecEditor(Vec3 initial, Action<Vec3> set, double step)
     {

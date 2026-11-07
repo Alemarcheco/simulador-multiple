@@ -139,6 +139,8 @@ internal sealed class Cad3DView : DockPanel
                 Small("Redondeo", () => AddFeature(new FilletFeature { Name = "Redondeo" }), "Redondea aristas de lo anterior (necesita OpenCASCADE)"),
                 Small("Chaflán", () => AddFeature(new ChamferFeature { Name = "Chaflán" }), "Achaflana aristas de lo anterior (necesita OpenCASCADE)"),
                 Small("Vaciado", () => AddFeature(new ShellFeature { Name = "Vaciado" }), "Vacía lo anterior dejando la parte de arriba abierta (necesita OpenCASCADE)"),
+                Small("Repetir", () => AddFeature(new PatternFeature { Name = "Repetición" }), "Repite la operación anterior en fila, en rejilla o en círculo"),
+                Small("Simetría", () => AddFeature(new MirrorFeature { Name = "Simetría" }), "Añade la imagen en espejo de lo anterior"),
             },
         };
 
@@ -230,7 +232,7 @@ internal sealed class Cad3DView : DockPanel
 
     private static string Describe(Feature f)
     {
-        string mode = f is ModifierFeature ? "◇" : f.Mode switch { CombineMode.Hueco => "−", CombineMode.Interseccion => "∩", _ => "+" };
+        string mode = f is ModifierFeature ? "◇" : f is PatternFeature ? "⁂" : f.Mode switch { CombineMode.Hueco => "−", CombineMode.Interseccion => "∩", _ => "+" };
         string name = string.IsNullOrWhiteSpace(f.Name) ? f.KindName : f.Name;
         return f.Enabled ? $"{mode} {name}" : $"{mode} {name} (desactivada)";
     }
@@ -366,7 +368,24 @@ internal sealed class Cad3DView : DockPanel
             items.Add(new RenderItem(mesh, color));
         }
         // La operación seleccionada se resalta en transparente (así se ven también los huecos).
-        if (CurrentFeature is { } f and not ModifierFeature)
+        if (CurrentFeature is PatternFeature pattern && CurrentPart is { } part0)
+        {
+            // Muestra dónde caen las copias.
+            try
+            {
+                var before = part0.Features.TakeWhile(x => x != pattern)
+                    .Where(x => x.Enabled && x is not ModifierFeature and not PatternFeature).ToList();
+                foreach (var g in before.Skip(Math.Max(0, before.Count - pattern.Operations)))
+                {
+                    var local = g.Build(_kernel);
+                    var col = g.Mode == CombineMode.Hueco ? Color.FromArgb(90, 255, 80, 60) : Color.FromArgb(90, 255, 200, 0);
+                    foreach (var t in pattern.CopyTransforms().Take(500))
+                        items.Add(new RenderItem(_kernel.ToMesh(_kernel.Transform(local, t)), col, Overlay: true));
+                }
+            }
+            catch { /* medidas no válidas mientras se escribe */ }
+        }
+        else if (CurrentFeature is { } f and not ModifierFeature and not PatternFeature)
         {
             try
             {

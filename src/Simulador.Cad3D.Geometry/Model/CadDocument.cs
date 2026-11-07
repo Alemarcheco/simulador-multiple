@@ -72,27 +72,29 @@ public sealed class DocumentEvaluator
     private ISolid? Build(Part part, List<string> errors)
     {
         ISolid? current = null;
+        var built = new List<Feature>(); // operaciones con forma propia ya aplicadas, para las repeticiones
         foreach (var f in part.Features)
         {
             if (!f.Enabled) continue;
             try
             {
+                if (f is PatternFeature pattern)
+                {
+                    var group = built.Skip(Math.Max(0, built.Count - Math.Max(1, pattern.Operations))).ToList();
+                    if (group.Count == 0) throw new InvalidOperationException("no hay ninguna operación antes que repetir");
+                    foreach (var t in pattern.CopyTransforms())
+                        foreach (var g in group)
+                            current = Combine(current, _kernel.Transform(g.Build(_kernel), t), g.Mode);
+                    continue;
+                }
                 if (f is ModifierFeature mod)
                 {
                     if (current is null) throw new InvalidOperationException("no hay nada antes que modificar");
                     current = mod.Apply(_kernel, current);
                     continue;
                 }
-                var s = f.Build(_kernel);
-                current = (current, f.Mode) switch
-                {
-                    (null, CombineMode.Solido) => s,
-                    (null, _) => null, // un hueco o intersección sin nada antes no aporta material
-                    (_, CombineMode.Solido) => _kernel.Union(current, s),
-                    (_, CombineMode.Hueco) => _kernel.Subtract(current, s),
-                    (_, CombineMode.Interseccion) => _kernel.Intersect(current, s),
-                    _ => current,
-                };
+                current = Combine(current, f.Build(_kernel), f.Mode);
+                built.Add(f);
             }
             catch (Exception ex)
             {
@@ -101,6 +103,16 @@ public sealed class DocumentEvaluator
         }
         return current;
     }
+
+    private ISolid? Combine(ISolid? current, ISolid s, CombineMode mode) => (current, mode) switch
+    {
+        (null, CombineMode.Solido) => s,
+        (null, _) => null, // un hueco o intersección sin nada antes no aporta material
+        (_, CombineMode.Solido) => _kernel.Union(current, s),
+        (_, CombineMode.Hueco) => _kernel.Subtract(current, s),
+        (_, CombineMode.Interseccion) => _kernel.Intersect(current, s),
+        _ => current,
+    };
 
     /// <summary>
     /// Evalúa en un hilo con pila grande: los árboles BSP son recursivos y las piezas complejas los hacen profundos.

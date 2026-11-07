@@ -155,3 +155,80 @@ public class ExamplesTests
         Assert.True(Polygon2D.SignedArea(Polygon2D.Normalize(pts)) > 0);
     }
 }
+
+public class PatternTests
+{
+    private static double Volume(Part part)
+    {
+        var r = new DocumentEvaluator(new Simulador.Cad3D.Geometry.Csg.MeshKernel()).Evaluate(part);
+        Assert.Empty(r.Errors);
+        Assert.Equal(0, r.Mesh!.CountOpenEdges());
+        return r.Mesh!.Volume();
+    }
+
+    private static Part Plate() => new() { Features = { new BoxFeature { SizeX = 100, SizeY = 50, SizeZ = 5 } } };
+
+    [Fact]
+    public void RowOfHolesRemovesEachCopy()
+    {
+        var part = Plate();
+        part.Features.Add(new BoxFeature { Mode = CombineMode.Hueco, SizeX = 4, SizeY = 4, SizeZ = 10, Position = new Vec3(5, 5, -1) });
+        part.Features.Add(new PatternFeature { Kind = PatternKind.Fila, Count = 5, Spacing = 10 });
+        Assert.Equal(100 * 50 * 5 - 5 * 16 * 5, Volume(part), 6);
+    }
+
+    [Fact]
+    public void GridAndGroupRepeatSeveralOperations()
+    {
+        var part = Plate();
+        part.Features.Add(new BoxFeature { Mode = CombineMode.Hueco, SizeX = 4, SizeY = 4, SizeZ = 10, Position = new Vec3(5, 5, -1) });
+        part.Features.Add(new BoxFeature { SizeX = 2, SizeY = 2, SizeZ = 3, Position = new Vec3(20, 30, 5) });
+        part.Features.Add(new PatternFeature { Kind = PatternKind.Rejilla, Operations = 2, Count = 3, Spacing = 8, Rows = 2, RowSpacing = 6 });
+        // 6 huecos de 4×4×5 y 6 tetones de 2×2×3.
+        Assert.Equal(100 * 50 * 5 - 6 * 80 + 6 * 12, Volume(part), 6);
+    }
+
+    [Fact]
+    public void CircularPatternPlacesCopiesAroundCenter()
+    {
+        var p = new PatternFeature { Kind = PatternKind.Circular, Count = 4, CenterX = 10, CenterY = 0 };
+        var pts = p.CopyTransforms().Select(t => t.Apply(new Vec3(20, 0, 0))).ToList();
+        Assert.Equal(3, pts.Count);
+        Assert.Equal(10, pts[0].X, 9); Assert.Equal(10, pts[0].Y, 9);
+        Assert.Equal(0, pts[1].X, 9); Assert.Equal(0, pts[1].Y, 9);
+        Assert.Equal(10, pts[2].X, 9); Assert.Equal(-10, pts[2].Y, 9);
+        // Arco de 90° con 3 copias: 0°, 45°, 90°.
+        var arc = new PatternFeature { Kind = PatternKind.Circular, Count = 3, Angle = 90 };
+        var q = arc.CopyTransforms().Select(t => t.Apply(new Vec3(1, 0, 0))).ToList();
+        Assert.Equal(Math.Sqrt(0.5), q[0].X, 9);
+        Assert.Equal(1, q[1].Y, 9);
+    }
+
+    [Fact]
+    public void MirrorDoublesHalfPart()
+    {
+        var part = new Part { Features = { new BoxFeature { SizeX = 10, SizeY = 20, SizeZ = 5 }, new MirrorFeature { Normal = Axis.X, Offset = 10 } } };
+        Assert.Equal(2 * 10 * 20 * 5, Volume(part), 6);
+        var bounds = new DocumentEvaluator(new Simulador.Cad3D.Geometry.Csg.MeshKernel()).Evaluate(part).Mesh!.Bounds();
+        Assert.Equal(20, bounds.Max.X, 9);
+    }
+
+    [Fact]
+    public void PatternWithoutPreviousOperationReportsError()
+    {
+        var part = new Part { Features = { new PatternFeature() } };
+        var r = new DocumentEvaluator(new Simulador.Cad3D.Geometry.Csg.MeshKernel()).Evaluate(part);
+        Assert.NotEmpty(r.Errors);
+    }
+
+    [Fact]
+    public void PatternAndMirrorSurviveSaveAndOpen()
+    {
+        var doc = Simulador.Cad3D.Geometry.Templates.Examples.DrillHolder(false);
+        var again = CadDocument.FromJson(doc.ToJson());
+        var p = again.Parts[0].Features.OfType<PatternFeature>().Single();
+        Assert.Equal(PatternKind.Rejilla, p.Kind);
+        Assert.Equal(3, p.Rows);
+        Assert.Equal(Axis.Y, again.Parts[0].Features.OfType<MirrorFeature>().Single().Normal);
+    }
+}

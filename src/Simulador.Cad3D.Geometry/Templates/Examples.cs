@@ -20,6 +20,8 @@ public static class Examples
         new CadExample("Maceta", "Maceta cónica de 90 mm con plato y agujero de drenaje.", Planter),
         new CadExample("Separador hexagonal M3", "Separador de 10 mm entre caras y 15 mm de alto para tornillo M3.", HexStandoff),
         new CadExample("Soporte para móvil", "Atril de escritorio para teléfono, con ranura para el cable.", PhoneStand),
+        new CadExample("Tapa redonda ventilada", "Tapa de 60 mm con 12 ranuras y 4 taladros avellanados hechos con «Repetir» en círculo.", VentedRoundLid),
+        new CadExample("Portabrocas", "Bloque con 2 × 6 agujeros: se dibuja la mitad con «Repetir» en rejilla y «Simetría» la completa.", DrillHolder),
         new CadExample("Abrazadera de tubo 20 mm", "Abrazadera para fijar a la pared un tubo de 20 mm; el perfil usa arcos.", PipeClamp),
     };
 
@@ -215,5 +217,33 @@ public static class Examples
             part.Features.Add(new CylinderFeature { Name = "Avellanado", Mode = CombineMode.Hueco, Diameter = 4.5, TopDiameter = 9.5, Height = 2.5, Position = new Vec3(x, width / 2, baseH - 2.5 + 0.01) });
         }
         return new CadDocument { Name = "Abrazadera de tubo", Parts = { part } };
+    }
+
+    public static CadDocument VentedRoundLid(bool exact)
+    {
+        var part = new Part { Name = "Tapa", Color = "#5BBF6A" };
+        part.Features.Add(new CylinderFeature { Name = "Disco", Diameter = 60, Height = 3, Segments = 96 });
+        part.Features.Add(new CylinderFeature { Name = "Reborde", Diameter = 54, Height = 6, Segments = 96 });
+        part.Features.Add(new CylinderFeature { Name = "Hueco del reborde", Mode = CombineMode.Hueco, Diameter = 50, Height = 10, Position = new Vec3(0, 0, 3), Segments = 96 });
+        // Una ranura radial y 11 copias más alrededor del centro.
+        part.Features.Add(new BoxFeature { Name = "Ranura", Mode = CombineMode.Hueco, SizeX = 10, SizeY = 2.5, SizeZ = 10, Position = new Vec3(6, -1.25, -1) });
+        part.Features.Add(new PatternFeature { Name = "Ranuras en círculo", Kind = PatternKind.Circular, Count = 12 });
+        // Taladro avellanado repetido 4 veces (se repiten las dos operaciones).
+        part.Features.Add(new CylinderFeature { Name = "Taladro", Mode = CombineMode.Hueco, Diameter = 3.4, Height = 10, Position = new Vec3(21, 0, -1), Segments = 32 });
+        part.Features.Add(new CylinderFeature { Name = "Avellanado", Mode = CombineMode.Hueco, Diameter = 3.4, TopDiameter = 6.5, Height = 1.6, Position = new Vec3(21, 0, 1.41), Segments = 32 });
+        part.Features.Add(new PatternFeature { Name = "Taladros en círculo", Kind = PatternKind.Circular, Count = 4, Operations = 2 });
+        return new CadDocument { Name = "Tapa redonda ventilada", Parts = { part } };
+    }
+
+    public static CadDocument DrillHolder(bool exact)
+    {
+        var part = new Part { Name = "Portabrocas", Color = "#C9534F" };
+        // Se dibuja la mitad (Y de 0 a 42) y la simetría completa la otra mitad.
+        part.Features.Add(new BoxFeature { Name = "Medio bloque", SizeX = 40, SizeY = 42, SizeZ = 25 });
+        part.Features.Add(new BoxFeature { Name = "Esquina achaflanada", Mode = CombineMode.Hueco, SizeX = 8, SizeY = 8, SizeZ = 30, Position = new Vec3(0, -5.66, -1), Rotation = new Vec3(0, 0, 45) });
+        part.Features.Add(new CylinderFeature { Name = "Agujero de broca", Mode = CombineMode.Hueco, Diameter = 6.5, Height = 22, Position = new Vec3(12, 12, 5), Segments = 32 });
+        part.Features.Add(new PatternFeature { Name = "Rejilla de agujeros", Kind = PatternKind.Rejilla, Direction = Axis.X, Count = 2, Spacing = 16, Rows = 3, RowSpacing = 12 });
+        part.Features.Add(new MirrorFeature { Name = "Simetría", Normal = Axis.Y, Offset = 42 });
+        return new CadDocument { Name = "Portabrocas", Parts = { part } };
     }
 }
