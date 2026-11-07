@@ -3,9 +3,59 @@ namespace Simulador.Arduino.Runtime.Blocks;
 /// <summary>Ejemplo de bloques con su montaje. <see cref="Build"/> da una copia nueva cada vez.</summary>
 public sealed record BlockExample(string Name, string Description, Func<BlockProgram> Build, IReadOnlyList<PartSpec> Parts);
 
-/// <summary>Programas de bloques de ejemplo, de más fácil a más difícil. Todos valen para Uno, Nano y Mega.</summary>
-public static class BlockExamples
+/// <summary>
+/// Programas de bloques de ejemplo, de más fácil a más difícil. Están escritos para Uno, Nano y Mega; con
+/// <see cref="For"/> se pasan a los pines equivalentes del ESP32 o de la Pico (y entonces generan MicroPython).
+/// </summary>
+public static partial class BlockExamples
 {
+    /// <summary>Pin del Arduino → pin equivalente: LED integrado, pulsador, PWM, semáforo, zumbador y ADC.</summary>
+    private static readonly Dictionary<string, int> Esp32Pins = new()
+    {
+        ["D13"] = 2, ["D2"] = 4, ["D9"] = 18, ["D10"] = 25, ["D11"] = 26, ["D12"] = 27, ["D8"] = 19, ["A0"] = 34,
+    };
+
+    private static readonly Dictionary<string, int> PicoPins = new()
+    {
+        ["D13"] = 25, ["D2"] = 14, ["D9"] = 15, ["D10"] = 13, ["D11"] = 12, ["D12"] = 11, ["D8"] = 18, ["A0"] = 26,
+    };
+
+    /// <summary>Pin equivalente en la placa a uno del Arduino (D13 → GPIO2 en el ESP32, GP25 en la Pico).</summary>
+    public static string PinFor(ArduinoBoard board, string arduinoPin)
+    {
+        var map = board == ArduinoBoard.Esp32 ? Esp32Pins : board == ArduinoBoard.Pico ? PicoPins : null;
+        return map is not null && map.TryGetValue(arduinoPin, out int n) ? board.PinName(n) : arduinoPin;
+    }
+
+    /// <summary>Ejemplos con los pines de la placa: los mismos de <see cref="All"/> en las placas Arduino.</summary>
+    public static IReadOnlyList<BlockExample> For(ArduinoBoard board)
+    {
+        var map = board == ArduinoBoard.Esp32 ? Esp32Pins : board == ArduinoBoard.Pico ? PicoPins : null;
+        if (map is null) return All;
+        string Pin(string arduino) => map.TryGetValue(arduino, out int n) ? board.PinName(n) : arduino;
+        return All.Select(e => new BlockExample(
+            e.Name,
+            PinNumbers().Replace(e.Description, m => Pin("D" + m.Value)).Replace(" A0", " " + Pin("A0")),
+            () =>
+            {
+                var p = e.Build();
+                foreach (var b in p.Walk())
+                {
+                    if (b.Fields.TryGetValue("pin", out var pin)) b.Fields["pin"] = Pin(pin);
+                    if (b.Op == "print_text") b.Fields["text"] = b.Field("text").Replace("A0", Pin("A0"));
+                    // LM35: 1023 son 5 V (500 °C) en Arduino, pero 3,3 V (330 °C) en el ESP32 y la Pico.
+                    if (b.Op == "map" && b.Inputs.TryGetValue("toHi", out var hi) && hi.Op == "num" && hi.Field("n") == "500")
+                        hi.Fields["n"] = ((int)Math.Round(board.Vcc * 100)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                return p;
+            },
+            e.Parts.Select(s => s with { Pin = Pin(s.Pin) }).ToList())).ToList();
+    }
+
+    // Números de pin en las descripciones: «el pin 13», «los pines 12, 11 y 10».
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<=\bpin(?:es)? (?:\d+(?:, | y ))*)\d+")]
+    private static partial System.Text.RegularExpressions.Regex PinNumbers();
+
     /// <summary>
     /// Crea un bloque. Cada argumento es (nombre, valor): un <c>string</c> va a un campo, un <c>int</c> o un
     /// <see cref="Block"/> a un hueco y un <c>Block[]</c> a una lista de dentro.

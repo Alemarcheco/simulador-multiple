@@ -44,7 +44,7 @@ internal sealed class BlockEditor : UserControl
         _examples.SelectionChanged += (_, _) =>
         {
             if (_examples.SelectedIndex < 0) return;
-            var e = BlockExamples.All[_examples.SelectedIndex];
+            var e = BlockExamples.For(_board)[_examples.SelectedIndex];
             _description.Text = e.Description;
             Load(e.Build());
             ExampleChosen?.Invoke(e);
@@ -103,15 +103,28 @@ internal sealed class BlockEditor : UserControl
 
     public string Description => _description.Text ?? "";
 
-    public BlockExample? CurrentExample => _examples.SelectedIndex >= 0 ? BlockExamples.All[_examples.SelectedIndex] : null;
+    public BlockExample? CurrentExample => _examples.SelectedIndex >= 0 ? BlockExamples.For(_board)[_examples.SelectedIndex] : null;
 
     public ArduinoBoard Board
     {
         get => _board;
         set
         {
+            bool samePins = value.PinPrefix == _board.PinPrefix;
             _board = value;
-            Render();
+            if (!samePins)
+            {
+                _palette.Children.Clear();
+                BuildPalette();
+            }
+            // Un ejemplo se vuelve a cargar con los pines de la nueva placa (D13 en Arduino, GPIO2 en el ESP32…).
+            if (!samePins && CurrentExample is { } e)
+            {
+                _description.Text = e.Description;
+                Load(e.Build());
+                ExampleChosen?.Invoke(e);
+            }
+            else Render();
         }
     }
 
@@ -168,7 +181,7 @@ internal sealed class BlockEditor : UserControl
             _palette.Children.Add(new TextBlock { Text = cat.Name, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8, 0, 2), Foreground = Brush(cat.Color) });
             foreach (var def in BlockCatalog.In(cat))
             {
-                var sample = Block.Create(def.Op);
+                var sample = NewBlock(def.Op);
                 var view = def.IsStatement ? StatementView(sample, interactive: false) : ValueView(sample, interactive: false);
                 var holder = new Border { Child = view, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent };
                 ToolTip.SetTip(holder, def.Help + (def.IsStatement ? "\nClic: añadir debajo del bloque seleccionado." : "\nClic: poner en el hueco seleccionado."));
@@ -178,12 +191,20 @@ internal sealed class BlockEditor : UserControl
         }
     }
 
+    /// <summary>Bloque nuevo con un pin por defecto que exista en la placa elegida.</summary>
+    private Block NewBlock(string op)
+    {
+        var b = Block.Create(op);
+        if (b.Fields.TryGetValue("pin", out var pin)) b.Fields["pin"] = BlockExamples.PinFor(_board, pin);
+        return b;
+    }
+
     // ---- Edición ----
 
     private void Insert(string op)
     {
         var def = BlockCatalog.Get(op);
-        var block = Block.Create(op);
+        var block = NewBlock(op);
         if (def.IsStatement)
         {
             if (_selected is not null && Find(_selected) is var (list, i))
