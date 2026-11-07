@@ -120,7 +120,7 @@ public sealed class EdificacionView : DockPanel
         bar.Children.Add(Btn("Abrir…", () => _ = OpenAsync()));
         bar.Children.Add(Btn("Guardar", () => _ = SaveAsync(false)));
         bar.Children.Add(Btn("Guardar como…", () => _ = SaveAsync(true)));
-        bar.Children.Add(Btn("🖨 Exportar plano…", () => _ = ExportPlanAsync()));
+        bar.Children.Add(Btn("🖨 Exportar (PDF, DXF, IFC)…", () => _ = ExportPlanAsync()));
         bar.Children.Add(Sep());
         bar.Children.Add(Btn("↶ Deshacer", _doc.Undo));
         bar.Children.Add(Btn("↷ Rehacer", _doc.Redo));
@@ -768,7 +768,7 @@ public sealed class EdificacionView : DockPanel
     private async Task ExportPlanAsync()
     {
         if (TopLevel.GetTopLevel(this) is not Window owner) return;
-        var format = new ComboBox { ItemsSource = new[] { "PDF (para imprimir, a escala)", "DXF (para AutoCAD y otros CAD)" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var format = new ComboBox { ItemsSource = new[] { "PDF (para imprimir, a escala)", "DXF (para AutoCAD y otros CAD)", "IFC (modelo BIM 3D: Revit, ArchiCAD, BIMvision)" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         var paper = new ComboBox { ItemsSource = Paper.All.Select(p => p.Name).ToArray(), SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         var scale = new ComboBox
         {
@@ -779,12 +779,17 @@ public sealed class EdificacionView : DockPanel
         var dims = new CheckBox { Content = "Cotas", IsChecked = true };
         var rooms = new CheckBox { Content = "Nombres y superficies", IsChecked = true };
         var inst = new CheckBox { Content = "Instalaciones", IsChecked = true };
-        format.SelectionChanged += (_, _) => paper.IsEnabled = scale.IsEnabled = format.SelectedIndex == 0;
+        format.SelectionChanged += (_, _) =>
+        {
+            paper.IsEnabled = scale.IsEnabled = format.SelectedIndex == 0;
+            // IFC lleva el edificio entero en 3D: no hay papel, escala ni capas que elegir.
+            levels.IsEnabled = dims.IsEnabled = rooms.IsEnabled = inst.IsEnabled = format.SelectedIndex != 2;
+        };
 
         bool accepted = false;
         var dlg = new Window
         {
-            Title = "Exportar plano", Width = 380, SizeToContent = SizeToContent.Height, CanResize = false,
+            Title = "Exportar", Width = 380, SizeToContent = SizeToContent.Height, CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
         var ok = new Button { Content = "Exportar…", IsDefault = true };
@@ -805,6 +810,7 @@ public sealed class EdificacionView : DockPanel
         await dlg.ShowDialog(owner);
         if (!accepted) return;
 
+        if (format.SelectedIndex == 2) { await ExportIfcAsync(owner); return; }
         bool pdf = format.SelectedIndex == 0;
         var options = new PlanOptions(dims.IsChecked == true, rooms.IsChecked == true, inst.IsChecked == true);
         var ids = levels.SelectedIndex == 1 ? _doc.Levels.OrderBy(l => l.Elevation).Select(l => l.Id).ToList() : [_plan.LevelId];
@@ -828,6 +834,27 @@ public sealed class EdificacionView : DockPanel
                 ? $"{drawings.Count} hoja(s) {sheet.Name}, escala 1:{fixedScale ?? PlanExport.AutoScale(drawings[0], sheet)}"
                 : $"{drawings.Count} nivel(es), en metros";
             _host.SetStatus($"Plano exportado: {file.Name} ({detail}).");
+        }
+        catch (Exception ex)
+        {
+            _host.SetStatus($"No se pudo exportar: {ex.Message}");
+        }
+    }
+
+    private async Task ExportIfcAsync(Window owner)
+    {
+        if (_doc.Walls.Count == 0) { _host.SetStatus("No hay muros que exportar a IFC."); return; }
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Exportar modelo IFC", SuggestedFileName = _doc.Name + ".ifc", DefaultExtension = ".ifc",
+            FileTypeChoices = [new FilePickerFileType("IFC4") { Patterns = ["*.ifc"] }],
+        });
+        if (file is null) return;
+        try
+        {
+            var bytes = IfcExport.ToIfcBytes(_doc);
+            await using (var s = await file.OpenWriteAsync()) await s.WriteAsync(bytes);
+            _host.SetStatus($"Modelo IFC exportado: {file.Name} ({_doc.Levels.Count} planta(s), {_doc.Walls.Count} muros, {_doc.Openings.Count} huecos).");
         }
         catch (Exception ex)
         {

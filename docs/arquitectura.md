@@ -87,6 +87,10 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   en primitivas 2D en metros por capas (MUROS, HUECOS, ESCALERAS, HABITACIONES, COTAS, ELECTRICIDAD, HIDRAULICA) con
   cotas totales y de fachada. Sale a DXF R12 en metros (ANSI 1252, un nivel al lado de otro) o a PDF vectorial a
   escala normalizada (automática o elegida) con cajetín y barra de escala, una hoja por nivel, sin dependencias.
+- **IFC** (`Export/IfcExport.cs`): el edificio entero a IFC4 (STEP de texto, en metros) para programas BIM: plantas,
+  muros con material, huecos (IfcOpeningElement) con su puerta o ventana, forjados y cubierta, escaleras (recta, L, U),
+  habitaciones con superficie (Qto_SpaceBaseQuantities) e instalaciones como IfcBuildingElementProxy con la designación
+  del banco de pruebas. GlobalId estables derivados del id de cada elemento. Comprobado con IfcOpenShell (0 errores).
 - **Recorrido en primera persona** (`Model/Walkthrough.cs`, botón «Recorrer por dentro» de la vista 3D): se empieza
   delante de la puerta de entrada; W A S D o flechas para andar, ratón para mirar, Esc para salir. `Walker` choca con
   muros y ventanas (cuerpo de 25 cm de radio, deslizando), pasa por las puertas, sube y baja escaleras peldaño a
