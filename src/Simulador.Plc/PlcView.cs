@@ -102,19 +102,15 @@ internal sealed class PlcView : UserControl
             () => _cpu.Profile.Format(_cpu.Profile.OutputAddress(0)));
         _ladderExamples = new ComboBox { ItemsSource = Examples.Ladder.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 220 };
         _ladderExamples.SelectionChanged += (_, _) => ShowLadderExample();
-        var newLadder = new Button { Content = "Nuevo" };
-        newLadder.Click += (_, _) => { _ladder.Document = new LadderDocument(); _ladderExamples.SelectedIndex = -1; };
-        var openLadder = new Button { Content = "Abrir…" };
-        openLadder.Click += async (_, _) => await OpenLadderAsync();
-        var saveLadder = new Button { Content = "Guardar…" };
-        saveLadder.Click += async (_, _) => await SaveLadderAsync();
-        var ldPanel = new DockPanel();
+        var ldPanel = new MenuPanel(() =>
+        [
+            new MenuCommand("Nuevo programa", () => { _ladder.Document = new LadderDocument(); _ladderExamples.SelectedIndex = -1; }),
+            new MenuCommand("Abrir programa…", () => _ = OpenLadderAsync()),
+            new MenuCommand("Guardar programa…", () => _ = SaveLadderAsync()),
+        ]);
         var ldTop = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
         ldTop.Children.Add(Label("Ejemplo:"));
         ldTop.Children.Add(_ladderExamples);
-        ldTop.Children.Add(newLadder);
-        ldTop.Children.Add(openLadder);
-        ldTop.Children.Add(saveLadder);
         DockPanel.SetDock(ldTop, Dock.Top);
         ldPanel.Children.Add(ldTop);
         ldPanel.Children.Add(_ladder);
@@ -125,19 +121,15 @@ internal sealed class PlcView : UserControl
             () => _cpu.Profile.Format(_cpu.Profile.OutputAddress(0)));
         _fbdExamples = new ComboBox { ItemsSource = Examples.Fbd.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 220 };
         _fbdExamples.SelectionChanged += (_, _) => ShowFbdExample();
-        var newFbd = new Button { Content = "Nuevo" };
-        newFbd.Click += (_, _) => { _fbd.Program = new FbdProgram(); _fbdExamples.SelectedIndex = -1; };
-        var openFbd = new Button { Content = "Abrir…" };
-        openFbd.Click += async (_, _) => await OpenFbdAsync();
-        var saveFbd = new Button { Content = "Guardar…" };
-        saveFbd.Click += async (_, _) => await SaveFbdAsync();
-        var fbdPanel = new DockPanel();
+        var fbdPanel = new MenuPanel(() =>
+        [
+            new MenuCommand("Nuevo programa", () => { _fbd.Program = new FbdProgram(); _fbdExamples.SelectedIndex = -1; }),
+            new MenuCommand("Abrir programa…", () => _ = OpenFbdAsync()),
+            new MenuCommand("Guardar programa…", () => _ = SaveFbdAsync()),
+        ]);
         var fbdTop = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
         fbdTop.Children.Add(Label("Ejemplo:"));
         fbdTop.Children.Add(_fbdExamples);
-        fbdTop.Children.Add(newFbd);
-        fbdTop.Children.Add(openFbd);
-        fbdTop.Children.Add(saveFbd);
         DockPanel.SetDock(fbdTop, Dock.Top);
         fbdPanel.Children.Add(fbdTop);
         fbdPanel.Children.Add(_fbd);
@@ -601,4 +593,10 @@ internal sealed class PlcView : UserControl
         foreach (var c in rest) row.Children.Add(c);
         return row;
     }
+}
+
+/// <summary>Panel que aporta sus propias órdenes a la barra de menús de arriba (sólo cuando está a la vista).</summary>
+internal sealed class MenuPanel(Func<IEnumerable<MenuCommand>> commands) : DockPanel, IMenuSource
+{
+    public IEnumerable<MenuCommand> GetMenuCommands() => commands();
 }

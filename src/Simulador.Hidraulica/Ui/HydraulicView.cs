@@ -14,7 +14,7 @@ using Simulador.Hidraulica.View3D;
 namespace Simulador.Hidraulica.Ui;
 
 /// <summary>Vista raíz de la pestaña Hidráulica: barra de herramientas, paleta, lienzo, propiedades y tendencias.</summary>
-public sealed class HydraulicView : UserControl
+public sealed class HydraulicView : UserControl, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly NetworkCanvas _canvas = new();
@@ -45,12 +45,6 @@ public sealed class HydraulicView : UserControl
         _canvas.Network = _net;
 
         var toolbar = new WrapPanel { Margin = new Thickness(6), Orientation = Orientation.Horizontal };
-        toolbar.Children.Add(ToolbarButton("Nuevo", New));
-        toolbar.Children.Add(ToolbarButton("Abrir…", () => _ = Open()));
-        toolbar.Children.Add(ToolbarButton("Guardar", () => _ = Save(false)));
-        toolbar.Children.Add(ToolbarButton("Guardar como…", () => _ = Save(true)));
-        toolbar.Children.Add(ExamplesButton());
-        toolbar.Children.Add(Separator());
         _run.Click += (_, _) => Run();
         _pause.Click += (_, _) => Pause();
         _stop.Click += (_, _) => Stop();
@@ -60,7 +54,6 @@ public sealed class HydraulicView : UserControl
         toolbar.Children.Add(_clock);
         toolbar.Children.Add(Separator());
         toolbar.Children.Add(ToolbarButton("Comprobar diseño", Check));
-        toolbar.Children.Add(ToolbarButton("Informe…", () => _ = ExportReport()));
 
         BuildPalette();
 
@@ -354,32 +347,21 @@ public sealed class HydraulicView : UserControl
 
     // ---------------------------------------------------------------- Ejemplos y vista 3D
 
-    private Button ExamplesButton()
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
     {
-        var menu = new MenuFlyout();
-        foreach (var sample in Samples.All)
+        yield return new MenuCommand("Nuevo", New);
+        yield return new MenuCommand("Abrir…", () => _ = Open());
+        yield return new MenuCommand("Guardar", () => _ = Save(false));
+        yield return new MenuCommand("Guardar como…", () => _ = Save(true));
+        yield return MenuCommand.Submenu("Ejemplos", Samples.All.Select(sample => new MenuCommand(sample.Name, () =>
         {
-            var item = new MenuItem
-            {
-                Header = new StackPanel
-                {
-                    Spacing = 2,
-                    Children =
-                    {
-                        new TextBlock { Text = sample.Name, FontWeight = FontWeight.SemiBold },
-                        new TextBlock { Text = sample.Summary, Opacity = 0.7, FontSize = 12, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
-                    },
-                },
-            };
-            item.Click += (_, _) =>
-            {
-                var net = sample.Create();
-                Load(net, null);
-                _messages.Text = net.Description;
-            };
-            menu.Items.Add(item);
-        }
-        return new Button { Content = "Ejemplos ▾", Margin = new Thickness(2), Flyout = menu };
+            var net = sample.Create();
+            Load(net, null);
+            _messages.Text = net.Description;
+        }) { ToolTip = sample.Summary })) with { SeparatorBefore = true };
+        yield return new MenuCommand("Informe…", () => _ = ExportReport()) { SeparatorBefore = true };
+        yield return new MenuCommand("Comprobar diseño", Check) { Menu = MenuNames.Tools };
     }
 
     private Control Build3DPanel()

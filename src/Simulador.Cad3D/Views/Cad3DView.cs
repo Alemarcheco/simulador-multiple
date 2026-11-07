@@ -14,7 +14,7 @@ using Simulador.Core.Modules;
 namespace Simulador.Cad3D.Views;
 
 /// <summary>Vista principal del módulo: barra de herramientas, árbol de piezas y operaciones, visor 3D y propiedades.</summary>
-internal sealed class Cad3DView : DockPanel
+internal sealed class Cad3DView : DockPanel, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly IGeometryKernel _kernel;
@@ -90,19 +90,9 @@ internal sealed class Cad3DView : DockPanel
             Orientation = Orientation.Horizontal,
             Children =
             {
-                S("Nuevo", () => LoadDocument(new CadDocument { Parts = { new Part { Name = "Pieza 1" } } }, null)),
-                B("Abrir…", OpenAsync),
-                B("Guardar…", SaveAsync),
-                new Separator { Width = 12 },
-                ExamplesButton(),
                 B("Caja con tapa…", NewEnclosureAsync, "Encapsulado para electrónica: caja, tapa con reborde, postes y ventilación"),
                 B("Caja para placa…", BoxForBoardAsync, "Abre una placa (.placa) del módulo de circuitos y crea una caja a su medida"),
-                new Separator { Width = 12 },
-                B("Exportar STL…", ExportStlAsync, "Todas las piezas visibles en un único STL"),
-                B("Exportar 3MF…", Export3mfAsync, "Una pieza por objeto, con nombre y color"),
-                B("Exportar STEP…", ExportStepAsync, "Geometría exacta para otros programas CAD (necesita OpenCASCADE)"),
-                B("Importar STEP…", ImportStepAsync, "Añade un modelo STEP a la pieza seleccionada (p. ej. modelos 3D de KiCad)"),
-                new Separator { Width = 12 },
+                new Border { Width = 1, Height = 22, Background = Brushes.Gray, Opacity = 0.4, Margin = new Thickness(4, 0, 10, 6) },
                 S("Encuadrar", _viewport.FitAll),
                 S("Iso", () => _viewport.SetView(-55, 30)),
                 S("Frente", () => _viewport.SetView(-90, 0)),
@@ -182,23 +172,32 @@ internal sealed class Cad3DView : DockPanel
 
     private static Control Docked(Control c, Dock dock) { SetDock(c, dock); return c; }
 
-    private Control ExamplesButton()
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
     {
-        var menu = new MenuFlyout();
-        foreach (var ex in Examples.All)
+        Action Safe(Func<Task> action) => async () =>
         {
-            var item = new MenuItem { Header = ex.Name };
-            ToolTip.SetTip(item, ex.Description);
-            item.Click += (_, _) =>
-            {
-                LoadDocument(ex.Create(_kernel is IExactKernel), null);
-                _host.SetStatus($"Ejemplo: {ex.Name}. {ex.Description}");
-            };
-            menu.Items.Add(item);
-        }
-        var b = new Button { Content = "Ejemplos ▾", Flyout = menu, Margin = new Thickness(0, 0, 6, 6) };
-        ToolTip.SetTip(b, "Piezas prediseñadas para abrir, cambiar e imprimir");
-        return b;
+            try { await action(); }
+            catch (Exception ex) { _host.SetStatus($"Diseño 3D: {ex.Message}"); }
+        };
+
+        yield return new MenuCommand("Nuevo", () => LoadDocument(new CadDocument { Parts = { new Part { Name = "Pieza 1" } } }, null));
+        yield return new MenuCommand("Abrir…", Safe(OpenAsync));
+        yield return new MenuCommand("Guardar…", Safe(SaveAsync));
+        yield return MenuCommand.Submenu("Ejemplos", Examples.All.Select(ex => new MenuCommand(ex.Name, () =>
+        {
+            LoadDocument(ex.Create(_kernel is IExactKernel), null);
+            _host.SetStatus($"Ejemplo: {ex.Name}. {ex.Description}");
+        }) { ToolTip = ex.Description })) with { SeparatorBefore = true };
+        yield return new MenuCommand("Exportar STL…", Safe(ExportStlAsync)) { SeparatorBefore = true, ToolTip = "Todas las piezas visibles en un único STL" };
+        yield return new MenuCommand("Exportar 3MF…", Safe(Export3mfAsync)) { ToolTip = "Una pieza por objeto, con nombre y color" };
+        yield return new MenuCommand("Exportar STEP…", Safe(ExportStepAsync)) { ToolTip = "Geometría exacta para otros programas CAD (necesita OpenCASCADE)" };
+        yield return new MenuCommand("Importar STEP…", Safe(ImportStepAsync)) { ToolTip = "Añade un modelo STEP a la pieza seleccionada (p. ej. modelos 3D de KiCad)" };
+        yield return new MenuCommand("Encuadrar", _viewport.FitAll) { Menu = MenuNames.View };
+        yield return new MenuCommand("Vista isométrica", () => _viewport.SetView(-55, 30)) { Menu = MenuNames.View, SeparatorBefore = true };
+        yield return new MenuCommand("Vista de frente", () => _viewport.SetView(-90, 0)) { Menu = MenuNames.View };
+        yield return new MenuCommand("Vista desde arriba", () => _viewport.SetView(-90, 89)) { Menu = MenuNames.View };
+        yield return new MenuCommand("Vista lateral", () => _viewport.SetView(0, 0)) { Menu = MenuNames.View };
     }
 
     // ---------- Documento ----------

@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
-using Simulador.App.Tema;
 using Simulador.Core.Modules;
 
 namespace Simulador.App;
@@ -42,7 +41,22 @@ public sealed class MainWindow : Window, IModuleHost
 
         var root = new DockPanel();
         root.Children.Add(statusBar);
-        root.Children.Add(modules.Count == 0 ? EmptyState() : BuildTabs(modules));
+        if (modules.Count == 0)
+        {
+            root.Children.Add(EmptyState());
+        }
+        else
+        {
+            var tabs = BuildTabs(modules);
+            // Barra de menús arriba (Archivo, Editar…): sus órdenes vienen del simulador que se está viendo.
+            var menus = new BarraMenus(() => tabs.SelectedContent as Control, () => tabs.SelectedIndex = 0, this);
+            DockPanel.SetDock(menus, Dock.Top);
+            root.Children.Add(menus);
+            root.Children.Add(tabs);
+            // Cualquier cambio de pestaña o sub-pestaña puede cambiar las órdenes disponibles.
+            AddHandler(Avalonia.Controls.Primitives.SelectingItemsControl.SelectionChangedEvent, (_, _) => menus.Refresh());
+            menus.Refresh();
+        }
         Content = root;
 
         SetStatus(loadErrors.Count == 0
@@ -94,11 +108,7 @@ public sealed class MainWindow : Window, IModuleHost
                 if (item is TabItem t && ReferenceEquals(t.Tag, module)) { tabs.SelectedItem = t; return; }
         }
 
-        // La primera pestaña es el propio logotipo: lleva a la pantalla de inicio.
-        var home = new TabItem { Header = Brand(), Content = new HomeView(modules, Open) };
-        home.Classes.Add("brand");
-        ToolTip.SetTip(home, "Inicio");
-        tabs.Items.Add(home);
+        tabs.Items.Add(new TabItem { Header = TabHeader("🏠", "Inicio"), Content = new HomeView(modules, Open) });
         foreach (var module in modules)
         {
             tabs.Items.Add(new TabItem
@@ -120,25 +130,6 @@ public sealed class MainWindow : Window, IModuleHost
         {
             new TextBlock { Text = icon, VerticalAlignment = VerticalAlignment.Center },
             new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center },
-        },
-    };
-
-    /// <summary>Logotipo y nombre de la aplicación, a la izquierda de la cabecera.</summary>
-    private static Control Brand() => new StackPanel
-    {
-        Orientation = Orientation.Horizontal,
-        Spacing = 10,
-        Margin = new Thickness(2, 0, 6, 0),
-        Children =
-        {
-            Logo.Create(26),
-            new TextBlock
-            {
-                Text = "Simulador múltiple",
-                FontSize = 15,
-                FontWeight = FontWeight.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
         },
     };
 

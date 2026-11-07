@@ -15,7 +15,7 @@ using Simulador.Core.Modules;
 namespace Simulador.Civil.Views;
 
 /// <summary>Vista raíz de la pestaña Edificación.</summary>
-public sealed class EdificacionView : DockPanel
+public sealed class EdificacionView : DockPanel, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly BuildingDocument _doc;
@@ -122,26 +122,6 @@ public sealed class EdificacionView : DockPanel
     {
         var bar = new WrapPanel { Margin = new Thickness(6), Orientation = Orientation.Horizontal };
 
-        var templates = new Button { Content = "Plantillas ▾" };
-        var menu = new MenuFlyout();
-        foreach (var (name, create) in BuildingTemplates.All)
-        {
-            var item = new MenuItem { Header = name };
-            item.Click += (_, _) => { _doc.LoadFrom(create()); _filePath = null; AfterLoad(); };
-            menu.Items.Add(item);
-        }
-        templates.Flyout = menu;
-
-        bar.Children.Add(Btn("Nuevo", () => { _doc.LoadFrom(new BuildingDocument()); _filePath = null; AfterLoad(); }));
-        bar.Children.Add(templates);
-        bar.Children.Add(Btn("Abrir…", () => _ = OpenAsync()));
-        bar.Children.Add(Btn("Guardar", () => _ = SaveAsync(false)));
-        bar.Children.Add(Btn("Guardar como…", () => _ = SaveAsync(true)));
-        bar.Children.Add(Btn("🖨 Exportar (PDF, DXF, IFC)…", () => _ = ExportPlanAsync()));
-        bar.Children.Add(Sep());
-        bar.Children.Add(Btn("↶ Deshacer", _doc.Undo));
-        bar.Children.Add(Btn("↷ Rehacer", _doc.Redo));
-        bar.Children.Add(Sep());
         bar.Children.Add(new TextBlock { Text = "Nivel:", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0) });
         _levelBox.SelectionChanged += (_, _) =>
         {
@@ -166,8 +146,22 @@ public sealed class EdificacionView : DockPanel
             _doc.Edit(e => added = e.DuplicateLevel(_plan.LevelId));
             SelectLevel(added!.Id);
         }));
-        bar.Children.Add(Btn("Encuadrar", _plan.ZoomToFit));
         return bar;
+    }
+
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
+    {
+        yield return new MenuCommand("Nuevo", () => { _doc.LoadFrom(new BuildingDocument()); _filePath = null; AfterLoad(); });
+        yield return MenuCommand.Submenu("Plantillas", BuildingTemplates.All.Select(t =>
+            new MenuCommand(t.Item1, () => { _doc.LoadFrom(t.Item2()); _filePath = null; AfterLoad(); })));
+        yield return new MenuCommand("Abrir…", () => _ = OpenAsync()) { SeparatorBefore = true };
+        yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
+        yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
+        yield return new MenuCommand("Exportar (PDF, DXF, IFC)…", () => _ = ExportPlanAsync()) { SeparatorBefore = true };
+        yield return new MenuCommand("Deshacer", _doc.Undo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Z" };
+        yield return new MenuCommand("Rehacer", _doc.Redo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Y" };
+        yield return new MenuCommand("Encuadrar el plano", _plan.ZoomToFit) { Menu = MenuNames.View };
     }
 
     private static Button Btn(string text, Action click)

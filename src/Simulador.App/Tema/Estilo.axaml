@@ -121,7 +121,7 @@
     <Setter Property="Foreground" Value="{StaticResource SimHeaderTextBrush}" />
     <Setter Property="Template">
       <ControlTemplate>
-        <Border Name="PART_Chip" Background="Transparent" Padding="{TemplateBinding Padding}" Height="44"
+        <Border Name="PART_Chip" Background="Transparent" Padding="{TemplateBinding Padding}" Height="38"
                 BorderThickness="0,0,0,3" BorderBrush="Transparent">
           <ContentPresenter Name="PART_ContentPresenter" VerticalAlignment="Center"
                             Content="{TemplateBinding Header}"
@@ -146,11 +146,36 @@
     <Setter Property="BorderBrush" Value="#4C8DFF" />
   </Style>
 
-  <!-- La pestaña del logotipo (Inicio): siempre en blanco y algo más separada -->
-  <Style Selector="TabControl.shell > TabItem.brand">
+  <!-- ===================== Barra de menús (Archivo, Editar…) ===================== -->
+  <Style Selector="Border.menubar">
+    <Setter Property="Background" Value="#0F1A31" />
+    <Setter Property="Height" Value="32" />
+  </Style>
+  <Style Selector="Border.menubar Menu">
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Border.menubar Menu > MenuItem">
+    <Setter Property="Foreground" Value="{StaticResource SimHeaderTextBrush}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="Height" Value="32" />
+  </Style>
+  <Style Selector="Border.menubar Menu > MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="#22365F" />
+  </Style>
+  <Style Selector="Border.menubar Menu > MenuItem:open /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="#22365F" />
+  </Style>
+  <Style Selector="Border.menubar Menu > MenuItem:pointerover /template/ ContentPresenter#PART_HeaderPresenter">
     <Setter Property="Foreground" Value="White" />
-    <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="Margin" Value="0,0,10,0" />
+  </Style>
+  <Style Selector="Border.menubar Menu > MenuItem:open /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="White" />
+  </Style>
+  <!-- Los submenús vuelven al aspecto claro normal -->
+  <Style Selector="Border.menubar Menu MenuItem MenuItem">
+    <Setter Property="Foreground" Value="{StaticResource SimInkBrush}" />
+    <Setter Property="FontSize" Value="13" />
   </Style>
 
   <!-- ===================== Barra de estado ===================== -->

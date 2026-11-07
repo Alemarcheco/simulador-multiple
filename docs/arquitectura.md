@@ -28,7 +28,12 @@ Por eso `IModule.CreateRootView` devuelve `object`; en la práctica debe ser un 
 - Colores reutilizables desde código con `FindResource`: `SimAccentBrush`, `SimAccentSoftBrush`, `SimWindowBrush`,
   `SimSurfaceBrush`, `SimLineBrush`, `SimInkBrush`, `SimMutedBrush`.
 - Los lienzos de dibujo (esquemas, planos) siguen siendo "papel" blanco; las vistas 3D y la PCB, fondo oscuro.
-- La primera pestaña (logotipo) es la pantalla de inicio. El logotipo está en `Tema/Logo.cs` y `Assets/logo.svg`;
+- **Barra de menús** (Archivo, Editar, Ver, Herramientas, Ayuda) arriba del todo: lo poco usado (Nuevo, Abrir, Guardar,
+  Ejemplos, Plantillas, Importar/Exportar, Deshacer/Rehacer, encuadres) va ahí, no en la barra de herramientas.
+  Una vista lo aporta implementando `Simulador.Core.Modules.IMenuSource` (lista de `MenuCommand`); la ventana sólo
+  pregunta a las vistas que estén a la vista, así que cada sub-pestaña (Esquemático, PCB, Ladder…) tiene sus órdenes.
+  En el PLC, `MenuPanel` sirve para un panel suelto. Los atajos de teclado los sigue gestionando cada vista.
+- La primera pestaña (Inicio) es la pantalla de inicio. El logotipo está en `Tema/Logo.cs` y `Assets/logo.svg`;
   `Assets/icono.ico` es el icono del .exe y de la ventana.
 
 ## Contratos compartidos

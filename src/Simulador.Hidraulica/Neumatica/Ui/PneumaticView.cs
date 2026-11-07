@@ -13,7 +13,7 @@ using Simulador.Hidraulica.View3D;
 namespace Simulador.Hidraulica.Neumatica.Ui;
 
 /// <summary>Vista raíz de la pestaña Neumática: barra, paleta, esquema / vista 3D, propiedades y gráfica de posiciones.</summary>
-public sealed class PneumaticView : UserControl
+public sealed class PneumaticView : UserControl, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly PneumaticCanvas _canvas = new();
@@ -44,12 +44,6 @@ public sealed class PneumaticView : UserControl
         _canvas.Circuit = _circuit;
 
         var toolbar = new WrapPanel { Margin = new Thickness(6), Orientation = Orientation.Horizontal };
-        toolbar.Children.Add(ToolbarButton("Nuevo", New));
-        toolbar.Children.Add(ToolbarButton("Abrir…", () => _ = Open()));
-        toolbar.Children.Add(ToolbarButton("Guardar", () => _ = Save(false)));
-        toolbar.Children.Add(ToolbarButton("Guardar como…", () => _ = Save(true)));
-        toolbar.Children.Add(ExamplesButton());
-        toolbar.Children.Add(Separator());
         _run.Click += (_, _) => Run();
         _pause.Click += (_, _) => Pause();
         _stop.Click += (_, _) => Stop();
@@ -59,7 +53,6 @@ public sealed class PneumaticView : UserControl
         toolbar.Children.Add(_clock);
         toolbar.Children.Add(Separator());
         toolbar.Children.Add(ToolbarButton("Comprobar circuito", Check));
-        toolbar.Children.Add(ToolbarButton("Lista de materiales…", () => _ = ExportBom()));
 
         BuildPalette();
 
@@ -335,32 +328,21 @@ public sealed class PneumaticView : UserControl
 
     // ---------------------------------------------------------------- Ejemplos y vista 3D
 
-    private Button ExamplesButton()
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
     {
-        var menu = new MenuFlyout();
-        foreach (var sample in PneumaticSamples.All)
+        yield return new MenuCommand("Nuevo", New);
+        yield return new MenuCommand("Abrir…", () => _ = Open());
+        yield return new MenuCommand("Guardar", () => _ = Save(false));
+        yield return new MenuCommand("Guardar como…", () => _ = Save(true));
+        yield return MenuCommand.Submenu("Ejemplos", PneumaticSamples.All.Select(sample => new MenuCommand(sample.Name, () =>
         {
-            var item = new MenuItem
-            {
-                Header = new StackPanel
-                {
-                    Spacing = 2,
-                    Children =
-                    {
-                        new TextBlock { Text = sample.Name, FontWeight = FontWeight.SemiBold },
-                        new TextBlock { Text = sample.Summary, Opacity = 0.7, FontSize = 12, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
-                    },
-                },
-            };
-            item.Click += (_, _) =>
-            {
-                var c = sample.Create();
-                Load(c, null);
-                _messages.Text = c.Description;
-            };
-            menu.Items.Add(item);
-        }
-        return new Button { Content = "Ejemplos ▾", Margin = new Thickness(2), Flyout = menu };
+            var c = sample.Create();
+            Load(c, null);
+            _messages.Text = c.Description;
+        }) { ToolTip = sample.Summary })) with { SeparatorBefore = true };
+        yield return new MenuCommand("Lista de materiales…", () => _ = ExportBom()) { SeparatorBefore = true };
+        yield return new MenuCommand("Comprobar circuito", Check) { Menu = MenuNames.Tools };
     }
 
     private Control Build3DPanel()
