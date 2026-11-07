@@ -98,8 +98,57 @@ public sealed class MeshKernel : IGeometryKernel
         return FromFaces(faces);
     }
 
+    public ISolid ExtrudeRegion(IReadOnlyList<Vec2> outer, IReadOnlyList<IReadOnlyList<Vec2>> holes, double height)
+    {
+        var o = Polygon2D.Normalize(outer);
+        var hs = holes.Select(h => { var n = Polygon2D.Normalize(h); n.Reverse(); return n; }).Where(h => h.Count >= 3).ToList();
+        if (hs.Count == 0) return Extrude(o, height);
+        // Tapas: un solo polígono con puentes hacia los huecos, triangulado por orejas.
+        var merged = Polygon2D.MergeHoles(o, hs);
+        var faces = new List<IReadOnlyList<Vec3>>();
+        foreach (var (a, b, c) in Polygon2D.Triangulate(merged))
+        {
+            faces.Add(new[] { new Vec3(merged[a].X, merged[a].Y, height), new Vec3(merged[b].X, merged[b].Y, height), new Vec3(merged[c].X, merged[c].Y, height) });
+            faces.Add(new[] { new Vec3(merged[c].X, merged[c].Y, 0), new Vec3(merged[b].X, merged[b].Y, 0), new Vec3(merged[a].X, merged[a].Y, 0) });
+        }
+        // Paredes: exterior antihoraria (hacia fuera) y huecos en sentido horario (hacia dentro del hueco).
+        foreach (var ring in hs.Prepend(o))
+            for (int i = 0; i < ring.Count; i++)
+            {
+                var p = ring[i];
+                var q = ring[(i + 1) % ring.Count];
+                faces.Add(new[] { new Vec3(p.X, p.Y, 0), new Vec3(q.X, q.Y, 0), new Vec3(q.X, q.Y, height), new Vec3(p.X, p.Y, height) });
+            }
+        return FromFaces(faces);
+    }
+
     public ISolid Transform(ISolid solid, Transform3 transform) => new Solid(Get(solid).Transformed(transform));
-    public ISolid Union(ISolid a, ISolid b) => new Solid(Get(a).Union(Get(b)));
+
+    public ISolid Union(ISolid a, ISolid b)
+    {
+        var ca = Get(a); var cb = Get(b);
+        // Sólidos separados (p. ej. letras o copias de una repetición): basta con juntar sus caras,
+        // sin pasar por los árboles BSP (más rápido y sin cortes que dejen uniones en T).
+        if (!BoundsOverlap(ca, cb)) return new Solid(new CsgSolid(ca.Clone().Polygons.Concat(cb.Clone().Polygons).ToList()));
+        return new Solid(ca.Union(cb));
+    }
+
+
+    private static bool BoundsOverlap(CsgSolid a, CsgSolid b)
+    {
+        static (Vec3 Min, Vec3 Max) B(CsgSolid s)
+        {
+            var min = new Vec3(double.MaxValue, double.MaxValue, double.MaxValue);
+            var max = new Vec3(double.MinValue, double.MinValue, double.MinValue);
+            foreach (var p in s.Polygons) foreach (var v in p.Vertices) { min = Vec3.Min(min, v); max = Vec3.Max(max, v); }
+            return (min, max);
+        }
+        if (a.Polygons.Count == 0 || b.Polygons.Count == 0) return false;
+        var (amin, amax) = B(a); var (bmin, bmax) = B(b);
+        const double gap = 1e-6; // si se tocan, mejor la unión de verdad (comparten caras)
+        return amin.X <= bmax.X + gap && bmin.X <= amax.X + gap && amin.Y <= bmax.Y + gap && bmin.Y <= amax.Y + gap
+            && amin.Z <= bmax.Z + gap && bmin.Z <= amax.Z + gap;
+    }
     public ISolid Subtract(ISolid a, ISolid b) => new Solid(Get(a).Subtract(Get(b)));
     public ISolid Intersect(ISolid a, ISolid b) => new Solid(Get(a).Intersect(Get(b)));
 

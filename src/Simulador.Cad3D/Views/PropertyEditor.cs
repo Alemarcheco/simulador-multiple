@@ -105,6 +105,25 @@ internal sealed class PropertyEditor : ScrollViewer
             Row(EnumLabel(prop.Name), combo);
         }
 
+        if (f is TextFeature tf)
+        {
+            var text = new TextBox { Text = tf.Text };
+            text.LostFocus += (_, _) => { if (text.Text != tf.Text) { tf.Text = text.Text ?? ""; Changed?.Invoke(); } };
+            text.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Enter) { tf.Text = text.Text ?? ""; Changed?.Invoke(); } };
+            Row("Texto", text);
+            var families = SkiaSharp.SKFontManager.Default.FontFamilies.Distinct().OrderBy(n => n).ToList();
+            if (!families.Contains(tf.FontFamily)) families.Insert(0, tf.FontFamily);
+            var font = new ComboBox { ItemsSource = families, SelectedItem = tf.FontFamily, HorizontalAlignment = HorizontalAlignment.Stretch, MaxDropDownHeight = 400 };
+            font.SelectionChanged += (_, _) => { if (font.SelectedItem is string name && name != tf.FontFamily) { tf.FontFamily = name; Changed?.Invoke(); } };
+            Row("Fuente", font);
+            Check("Negrita", tf.Bold, v => { tf.Bold = v; Changed?.Invoke(); });
+            _stack.Children.Add(new TextBlock
+            {
+                Text = "Modo Sólido: letras en relieve. Modo Hueco: letras grabadas (coloca el texto hundido en la cara con la posición Z). Para imprimir, usa letras de 5 mm o más y grosor de 0,6 mm o más.",
+                Opacity = 0.6, FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
+        }
+
         if (f is ExtrudeFeature ex)
             ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, ex.Bulges, (pts, bl) => { ex.Profile = pts; ex.Bulges = bl; }, revolve: false);
         if (f is RevolveFeature rev)
@@ -172,6 +191,7 @@ internal sealed class PropertyEditor : ScrollViewer
         "Kind" => "Tipo de repetición",
         "Direction" => "Dirección (fila / columnas)",
         "Normal" => "Espejo perpendicular al eje",
+        "Align" => "Alineación",
         _ => property,
     };
 

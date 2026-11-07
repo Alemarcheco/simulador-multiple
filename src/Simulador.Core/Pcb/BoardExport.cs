@@ -22,7 +22,11 @@ public sealed record BoardComponent(
     // Altura aproximada sobre la placa, para cajas. 0 si se desconoce.
     double HeightMm,
     // Ruta al modelo STEP/WRL (normalmente de las librerías KiCad), si existe.
-    string? Model3DPath);
+    string? Model3DPath,
+    // Rectángulo que ocupa la huella en la placa (mismas coordenadas, Y hacia arriba), si se conoce.
+    // El módulo 3D lo usa para que los huecos de la caja tengan el ancho real del conector.
+    PointMm? BoundsMin = null,
+    PointMm? BoundsMax = null);
 
 /// <summary>Pin de conector que sale de la placa (se expone como ISignalPort en co-simulación).</summary>
 public sealed record BoardConnectorPin(string ComponentRef, string PinNumber, string NetName, PointMm Position);

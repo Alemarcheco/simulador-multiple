@@ -6,6 +6,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
+    <!-- Biblioteca nativa de Skia para ejecutar las pruebas de texto en Linux (en la app la trae Avalonia). -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>

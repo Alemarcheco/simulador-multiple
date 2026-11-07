@@ -141,6 +141,7 @@ internal sealed class Cad3DView : DockPanel
                 Small("Vaciado", () => AddFeature(new ShellFeature { Name = "Vaciado" }), "Vacía lo anterior dejando la parte de arriba abierta (necesita OpenCASCADE)"),
                 Small("Repetir", () => AddFeature(new PatternFeature { Name = "Repetición" }), "Repite la operación anterior en fila, en rejilla o en círculo"),
                 Small("Simetría", () => AddFeature(new MirrorFeature { Name = "Simetría" }), "Añade la imagen en espejo de lo anterior"),
+                Small("Texto", () => AddFeature(new TextFeature { Name = "Texto" }), "Letras en relieve o grabadas (modo Hueco)"),
             },
         };
 

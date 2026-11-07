@@ -58,6 +58,35 @@ public class BoardEnclosureTests
     }
 
     [Fact]
+    public void Hueco_del_conector_mide_lo_que_su_huella()
+    {
+        var board = PcbBoardExport.ToBoardExport(Board());
+        var j1 = board.Components.Single(c => c.Reference == "J1");
+        Assert.NotNull(j1.BoundsMin);
+        Assert.NotNull(j1.BoundsMax);
+        double width = j1.BoundsMax!.Value.X - j1.BoundsMin!.Value.X;
+        Assert.InRange(width, 5, 15);
+        Assert.InRange(j1.BoundsMin.Value.Y, -2, 4); // pegado al borde frontal
+
+        var box = EnclosureTemplate.FromBoard(board).Parts[0];
+        var hueco = Assert.IsType<BoxFeature>(box.Features.Single(f => f.Name == "Hueco J1"));
+        Assert.Equal(width + 1, hueco.SizeX, 6);
+        Assert.Equal(j1.BoundsMin.Value.X + 2 + 2 - 0.5, hueco.Position.X, 6); // pared 2 + margen 2 - holgura
+        Assert.Equal(-1, hueco.Position.Y, 6); // pared frontal
+        Assert.Equal(j1.HeightMm + 1, hueco.SizeZ, 6);
+    }
+
+    [Fact]
+    public void Sin_huella_se_usa_el_hueco_generico()
+    {
+        var c = new BoardComponent("J9", "USB", "?", new PointMm(25, 1), 0, BoardSide.Top, 4, null);
+        var board = new BoardExport("P", new[] { new PointMm(0, 0), new PointMm(50, 0), new PointMm(50, 30), new PointMm(0, 30) },
+            Array.Empty<IReadOnlyList<PointMm>>(), 1.6, Array.Empty<BoardHole>(), new[] { c }, Array.Empty<BoardConnectorPin>());
+        var hueco = Assert.IsType<BoxFeature>(EnclosureTemplate.FromBoard(board).Parts[0].Features.Single(f => f.Name == "Hueco J9"));
+        Assert.Equal(12, hueco.SizeX, 6);
+    }
+
+    [Fact]
     public void Archivo_placa_se_abre_desde_disco()
     {
         var path = Path.Combine(Path.GetTempPath(), $"prueba-{Guid.NewGuid():N}{PcbDocument.FileExtension}");
