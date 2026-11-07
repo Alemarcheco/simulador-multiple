@@ -96,7 +96,12 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   muros y ventanas (cuerpo de 25 cm de radio, deslizando), pasa por las puertas, sube y baja escaleras peldaño a
   peldaño y cambia de planta. Los forjados se dibujan con el hueco de la escalera que llega desde abajo
   (`BuildingMesh.StairWellCut`, `Geo.SubtractConvex`).
-- **Siguiente**: estudio de soleamiento.
+- **Soleamiento** (`Model/SunStudy.cs`, `Rendering/SunShadows.cs`, botón «Sol y sombras» de la vista 3D): posición
+  del sol con el algoritmo de la NOAA (comprobado contra el SPA del NREL con pvlib), salida, puesta y horas de sol.
+  El lugar (ciudad o coordenadas, UTC) y el norte de la planta se guardan con el edificio (`BuildingDocument.Site`).
+  Sombras con mapa de profundidad visto desde el sol, suavizado 3×3 y separación según la normal; el rasterizador
+  común tiene para ello `PixelLight` (punto y normal de cada píxel) y `DepthAt`. Terreno alrededor que recibe las sombras.
+- **Siguiente**: lo que proponga el asistente o pida el usuario.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D
