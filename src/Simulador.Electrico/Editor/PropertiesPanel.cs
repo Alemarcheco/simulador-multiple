@@ -21,10 +21,13 @@ internal sealed class PropertiesPanel : ScrollViewer
     public event Action? Changed;
     /// <summary>Cambio de carga de motor durante la simulación (id, %).</summary>
     public event Action<Guid, double>? MotorLoadChanged;
+    public event Action<Guid, double>? TransmitterChanged;
     /// <summary>Cambio de consigna de un variador durante la simulación (id, Hz).</summary>
     public event Action<Guid, double>? VfdReferenceChanged;
     /// <summary>Texto de estado del PLC durante la simulación (lo da la vista, que es quien tiene la CPU).</summary>
     public Func<PlacedElement, string>? PlcStatus { get; set; }
+    /// <summary>Valor actual de un transmisor en la simulación (% del rango).</summary>
+    public Func<Guid, double>? TransmitterValue { get; set; }
 
     public PropertiesPanel(ElementCatalog catalog, Func<ManufacturerCatalog> presets)
     {
@@ -66,6 +69,23 @@ internal sealed class PropertiesPanel : ScrollViewer
                 _stack.Children.Add(slider);
                 _stack.Children.Add(value);
                 _stack.Children.Add(Note("Si el variador está en fallo, haz clic sobre él para rearmarlo."));
+            }
+            if (t.Behavior == Behavior.Transmitter)
+            {
+                var kind = ElementCatalog.TransmitterKinds[(int)Math.Clamp(e.Param(t, "magnitud"), 0, ElementCatalog.TransmitterKinds.Length - 1)];
+                _stack.Children.Add(Caption($"{kind.Name}: mueve el valor (salida de 0 a 10 V)"));
+                var slider = new Slider { Minimum = 0, Maximum = 100, Value = TransmitterValue?.Invoke(e.Id) ?? e.Param(t, "valor"), TickFrequency = 5 };
+                var value = new TextBlock();
+                void ShowValue() => value.Text = $"{slider.Value / 100 * kind.Full:0.#} {kind.Unit}  →  {slider.Value / 10:0.00} V";
+                ShowValue();
+                slider.PropertyChanged += (_, a) =>
+                {
+                    if (a.Property != Avalonia.Controls.Primitives.RangeBase.ValueProperty) return;
+                    ShowValue();
+                    TransmitterChanged?.Invoke(e.Id, slider.Value);
+                };
+                _stack.Children.Add(slider);
+                _stack.Children.Add(value);
             }
             if (t.Behavior == Behavior.Plc && PlcStatus is not null)
                 _stack.Children.Add(Note(PlcStatus(e)));

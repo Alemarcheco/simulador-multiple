@@ -448,7 +448,17 @@ internal sealed class SchematicCanvas : Control
                 if (st.Current > 0.005) lines.Add((FormatAmps(st.Current), Select));
             }
             else if (t.Behavior == Behavior.Plc)
+            {
                 lines.Add((st.Powered ? "RUN" : "sin 24 V", st.Powered ? Select : Fault));
+                for (var i = 0; i < st.AnalogInputs.Length; i++)
+                    if (st.AnalogInputs[i] > 0.01) lines.Add(($"AI{i + 1} {st.AnalogInputs[i]:0.00} V", Select));
+            }
+            else if (t.Behavior == Behavior.Transmitter)
+            {
+                var kind = ElementCatalog.TransmitterKinds[(int)Math.Clamp(e.Param(t, "magnitud"), 0, ElementCatalog.TransmitterKinds.Length - 1)];
+                lines.Add(($"{st.Percent / 100 * kind.Full:0.#} {kind.Unit}", Select));
+                lines.Add((st.Powered ? $"{st.Voltage:0.00} V" : "sin 24 V", st.Powered ? Select : Fault));
+            }
             else if (t.IsMotor)
             {
                 lines.Add(($"{Math.Abs(st.Rpm):0} rpm {(st.Rpm > 5 ? "↻" : st.Rpm < -5 ? "↺" : "")}", Select));

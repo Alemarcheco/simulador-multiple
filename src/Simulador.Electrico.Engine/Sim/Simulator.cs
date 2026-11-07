@@ -143,11 +143,16 @@ public sealed class Simulator
             e.PlcOut = Enumerable.Range(0, ElementCatalog.PlcOutputs)
                 .Select(i => new SignalPort($"{tag}.Q0.{i}", SignalKind.DI, SignalUnit.Bool, 24)).ToArray();
             foreach (var o in e.PlcOut) o.Changed += (_, _) => _dirty = true;
+            e.PlcAin = Enumerable.Range(0, Math.Max(0, e.Type.Terminals.Count - PlcFirstAnalog))
+                .Select(i => new SignalPort($"{tag}.IW{64 + 2 * i}", SignalKind.AO, SignalUnit.Volt, 10)).ToArray();
+            _signals.AddRange(e.PlcAin);
             if (_signals.Any(x => x.Id == e.PlcIn[0].Id))
                 Log(EventSeverity.Warning, $"{tag}: hay dos PLC con la misma designación.");
             _signals.AddRange(e.PlcIn);
             _signals.AddRange(e.PlcOut);
         }
+
+        foreach (var e in _elems.Where(e => e.Type.Behavior == Behavior.Transmitter)) e.TxPercent = Math.Clamp(e.P("valor"), 0, 100);
 
         // Aparatos por designación.
         foreach (var group in _elems.GroupBy(e => NormalizeTag(e)))
@@ -337,6 +342,8 @@ public sealed class Simulator
         var outputs = controller.Signals.Where(x => x.Kind == SignalKind.DO).ToList();
         for (var i = 0; i < e.PlcIn.Length && i < inputs.Count; i++) warnings.AddRange(bus.Connect(e.PlcIn[i], inputs[i]).Warnings);
         for (var i = 0; i < e.PlcOut.Length && i < outputs.Count; i++) warnings.AddRange(bus.Connect(outputs[i], e.PlcOut[i]).Warnings);
+        var analog = controller.Signals.Where(x => x.Kind == SignalKind.AI).ToList();
+        for (var i = 0; i < e.PlcAin.Length && i < analog.Count; i++) warnings.AddRange(bus.Connect(e.PlcAin[i], analog[i]).Warnings);
         var period = cycleSeconds ?? e.P("ciclo") / 1000;
         _controllers.Add((controller, bus, Math.Max(period, DefaultStep)));
         return warnings;
@@ -734,6 +741,14 @@ public sealed class Simulator
                 var common = 2 + ElementCatalog.PlcInputs;
                 for (var k = 0; k < ElementCatalog.PlcOutputs; k++)
                     if (e.Paths.Length > k && e.Paths[k]) m.Y(n[common], n[common + 1 + k], ContactConductance);
+                for (var k = PlcFirstAnalog; k < n.Length; k++) m.Y(n[k], n[1], 1 / AnalogInputResistance);
+                break;
+            }
+            case Behavior.Transmitter: // L+, OUT, M
+            {
+                m.Y(n[0], n[2], 1 / TransmitterSupplyResistance);
+                m.Y(n[1], n[2], 1 / TransmitterOutputResistance);
+                if (!ac && e.TxPowered) m.Src(n[1], n[2], TransmitterVolts(e) / TransmitterOutputResistance);
                 break;
             }
             case Behavior.Motor3 or Behavior.Motor6:
@@ -763,6 +778,22 @@ public sealed class Simulator
 
     private const double VfdOutputImpedance = 0.05;
     private const double ControlInputResistance = 4700;
+    /// <summary>Entrada analógica de 0-10 V: alta impedancia, como la de un PLC o una placa de E/S.</summary>
+    private const double AnalogInputResistance = 100_000;
+    private const double TransmitterSupplyResistance = 1200; // unos 20 mA a 24 V
+    private const double TransmitterOutputResistance = 50;
+    /// <summary>Índice del primer borne analógico de un PLC (tras L+, M, 8 entradas, común y 8 salidas).</summary>
+    private const int PlcFirstAnalog = 3 + ElementCatalog.PlcInputs + ElementCatalog.PlcOutputs;
+
+    private static double TransmitterVolts(Elem e) => 10 * Math.Clamp(e.TxPercent, 0, 100) / 100;
+
+    /// <summary>Cambia el valor de un transmisor de 0-10 V durante la simulación (% del rango).</summary>
+    public void SetTransmitter(Guid id, double percent)
+    {
+        if (!_byId.TryGetValue(id, out var e) || e.Type.Behavior != Behavior.Transmitter) return;
+        e.TxPercent = Math.Clamp(percent, 0, 100);
+        _dirty = true;
+    }
 
     /// <summary>
     /// Devanado de transformador: transformador ideal de relación n = V1/V2 con la impedancia de cortocircuito
@@ -1129,6 +1160,27 @@ public sealed class Simulator
                         var v = Rms(ia, id);
                         e.PlcIn[i].Value = Math.Round(id >= 0 ? v : -v, 2);
                     }
+                    for (var i = 0; i < e.PlcAin.Length; i++)
+                    {
+                        var (_, ad) = Across(e, PlcFirstAnalog + i, 1);
+                        e.PlcAin[i].Value = Math.Round(e.PlcPowered ? ad : 0, 3);
+                    }
+                    break;
+                }
+                case Behavior.Transmitter:
+                {
+                    var (_, sd) = Across(e, 0, 2);
+                    var powered = sd >= 18;
+                    if (powered != e.TxPowered)
+                    {
+                        e.TxPowered = powered;
+                        _dirty = true;
+                        if (!powered) Log(EventSeverity.Warning, $"{e.Device.Tag}: transmisor sin 24 V DC entre L+ y M; su salida queda a 0 V.");
+                    }
+                    else if (powered && Math.Abs(TransmitterVolts(e) - e.TxSolved) > 1e-6) _dirty = true;
+                    e.TxSolved = TransmitterVolts(e);
+                    var (_, od) = Across(e, 1, 2);
+                    e.Voltage = od;
                     break;
                 }
                 case Behavior.Motor3 or Behavior.Motor6:
@@ -1340,7 +1392,15 @@ public sealed class Simulator
             Fault = e.VfdFault,
             State = e.VfdState,
             Inputs = e.PlcIn.Select(p => e.PlcPowered && p.Value >= 15).ToArray(),
-            Powered = e.Type.Behavior == Behavior.Plc ? e.PlcPowered : e.Type.Behavior == Behavior.Vfd && e.VfdPowered,
+            AnalogInputs = e.PlcAin.Select(p => p.Value).ToArray(),
+            Percent = e.TxPercent,
+            Powered = e.Type.Behavior switch
+            {
+                Behavior.Plc => e.PlcPowered,
+                Behavior.Vfd => e.VfdPowered,
+                Behavior.Transmitter => e.TxPowered,
+                _ => false,
+            },
         };
     }
 
@@ -1437,6 +1497,10 @@ public sealed class ElementStatus
     public string State { get; init; } = "";
     /// <summary>PLC: LED de cada entrada.</summary>
     public bool[] Inputs { get; init; } = [];
+    /// <summary>Microcontrolador: tensión de cada entrada de 0-10 V.</summary>
+    public double[] AnalogInputs { get; init; } = [];
+    /// <summary>Transmisor de 0-10 V: valor en % del rango.</summary>
+    public double Percent { get; init; }
     /// <summary>PLC o variador alimentado.</summary>
     public bool Powered { get; init; }
 }
@@ -1515,6 +1579,10 @@ public sealed class Elem
     internal SignalPort[] PlcIn { get; set; } = [];
     internal SignalPort[] PlcOut { get; set; } = [];
     internal bool PlcPowered { get; set; }
+    internal SignalPort[] PlcAin { get; set; } = [];
+    internal double TxPercent { get; set; }
+    internal double TxSolved { get; set; }
+    internal bool TxPowered { get; set; }
 
     internal double P(string key) => Placed.Param(Type, key);
 }
