@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Simulador.Electrico.Engine\Simulador.Electrico.Engine.csproj" />
     <ProjectReference Include="..\..\src\Simulador.Plc.Runtime\Simulador.Plc.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Simulador.Arduino.Runtime\Simulador.Arduino.Runtime.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\Simulador.Electrico\Catalogos\*.csv" Link="Catalogos\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

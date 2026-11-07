@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Simulador.Arduino.Runtime;
 using Simulador.Electrico.Engine.Catalog;
 using Simulador.Electrico.Engine.Model;
 using Simulador.Electrico.Engine.Sim;
@@ -117,7 +118,19 @@ internal sealed class PropertiesPanel : ScrollViewer
                 var combo = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
                 foreach (var o in p.Options) combo.Items.Add(o);
                 combo.SelectedIndex = (int)Math.Clamp(Math.Round(current), 0, p.Options.Length - 1);
-                combo.SelectionChanged += (_, _) => { e.Params[p.Key] = combo.SelectedIndex; Changed?.Invoke(); };
+                combo.SelectionChanged += (_, _) =>
+                {
+                    var before = e.Param(t, p.Key);
+                    e.Params[p.Key] = combo.SelectedIndex;
+                    Changed?.Invoke();
+                    // Al cambiar de placa, si el programa es el de ejemplo, se pone el de la placa nueva.
+                    if (t.Id == ElementCatalog.McuTypeId && p.Key == "placa" && (int)before != combo.SelectedIndex)
+                    {
+                        if (e.Text(McuProgramKeys.Code).Length == 0 || e.Text(McuProgramKeys.Code) == McuIoBoard.Template(McuProgramKeys.Board((int)before)))
+                            e.Texts.Remove(McuProgramKeys.Code);
+                        Show(e, false);
+                    }
+                };
                 _stack.Children.Add(combo);
             }
             else
@@ -143,11 +156,52 @@ internal sealed class PropertiesPanel : ScrollViewer
             label.TextChanged += (_, _) => { e.Texts["Rótulo"] = label.Text ?? ""; Changed?.Invoke(); };
             _stack.Children.Add(label);
         }
-        if (t.Behavior == Behavior.Plc) AddPlcProgram(e);
+        if (t.Id == ElementCatalog.McuTypeId) AddMcuProgram(e, t);
+        else if (t.Behavior == Behavior.Plc) AddPlcProgram(e);
         _stack.Children.Add(Caption("Referencia de fabricante"));
         var reference = new TextBox { Text = e.Text("Referencia"), Watermark = "Opcional" };
         reference.TextChanged += (_, _) => { e.Texts["Referencia"] = reference.Text ?? ""; Changed?.Invoke(); };
         _stack.Children.Add(reference);
+    }
+
+    /// <summary>Programa del microcontrolador: C++ de Arduino o MicroPython, según la placa elegida.</summary>
+    private void AddMcuProgram(PlacedElement e, ElementType t)
+    {
+        var board = McuProgramKeys.Board((int)e.Param(t, "placa"));
+        _stack.Children.Add(Caption(board.IsPython ? $"Programa en MicroPython para {board.Name}" : $"Sketch de Arduino (C++) para {board.Name}"));
+        _stack.Children.Add(Note(McuIoBoard.MappingText(board)));
+        var program = new TextBox
+        {
+            Text = e.Text(McuProgramKeys.Code, McuIoBoard.Template(board)),
+            AcceptsReturn = true,
+            AcceptsTab = !board.IsPython,
+            TextWrapping = TextWrapping.NoWrap,
+            FontFamily = new FontFamily("Consolas, Menlo, monospace"),
+            FontSize = 11,
+            MinHeight = 220,
+            MaxHeight = 420,
+        };
+        program.TextChanged += (_, _) => { e.Texts[McuProgramKeys.Code] = program.Text ?? ""; Changed?.Invoke(); };
+        _stack.Children.Add(program);
+        var load = new Button { Content = board.IsPython ? "Cargar archivo .py…" : "Cargar sketch .ino…" };
+        ToolTip.SetTip(load, "Un programa guardado desde la pestaña Arduino del módulo PLC");
+        load.Click += async (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
+            var files = await sp.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Cargar programa del microcontrolador",
+                FileTypeFilter =
+                [
+                    new Avalonia.Platform.Storage.FilePickerFileType(board.IsPython ? "MicroPython" : "Sketch de Arduino") { Patterns = board.IsPython ? ["*.py"] : ["*.ino", "*.cpp"] },
+                    Avalonia.Platform.Storage.FilePickerFileTypes.All,
+                ],
+            });
+            if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+            program.Text = (await File.ReadAllTextAsync(path)).Replace("\r\n", "\n");
+        };
+        _stack.Children.Add(load);
+        _stack.Children.Add(Note("Los cambios se aplican al pulsar Simular. Mientras simula, el estado de la placa y la línea que se ejecuta aparecen arriba."));
     }
 
     /// <summary>Programa del PLC: texto estructurado escrito aquí, o un Ladder guardado desde el módulo PLC.</summary>
@@ -226,6 +280,15 @@ internal sealed class PropertiesPanel : ScrollViewer
     private static TextBlock Title(string s) => new() { Text = s, FontSize = 16, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     private static TextBlock Caption(string s) => new() { Text = s, FontSize = 12, Opacity = 0.75, Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap };
     private static TextBlock Note(string s) => new() { Text = s, FontSize = 12, Opacity = 0.85, TextWrapping = TextWrapping.Wrap };
+}
+
+/// <summary>Dónde guarda su programa el microcontrolador del esquema.</summary>
+internal static class McuProgramKeys
+{
+    public const string Code = "codigo";
+
+    /// <summary>Placa según el índice del parámetro «placa» (mismo orden que <see cref="ElementCatalog.McuBoards"/>).</summary>
+    public static ArduinoBoard Board(int index) => ArduinoBoard.Everything[Math.Clamp(index, 0, ArduinoBoard.Everything.Count - 1)];
 }
 
 /// <summary>Claves de <see cref="PlacedElement.Texts"/> donde el PLC del esquema guarda su programa.</summary>
