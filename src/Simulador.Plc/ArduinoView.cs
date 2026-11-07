@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Simulador.Arduino.Runtime;
+using Simulador.Arduino.Runtime.Avr;
 using Simulador.Arduino.Runtime.Blocks;
 using Simulador.Arduino.Runtime.Sketch;
 using Simulador.Core.Modules;
@@ -38,6 +39,11 @@ internal sealed partial class ArduinoView : UserControl
     private readonly TabItem _blocksTab;
     private IReadOnlyDictionary<int, Block>? _lineToBlock;
     private Grid? _mainGrid;
+    private readonly ComboBox _engine;
+    private static readonly Lazy<ArduinoToolchain> Toolchain = new(ArduinoToolchain.Detect);
+    private (string Source, ArduinoBoard Board, string Hex)? _compiled;
+    private (string Name, string Hex)? _openedHex;
+    private bool _busy;
     private readonly StackPanel _inputs = new() { Spacing = 4 };
     private readonly TextBlock _outputs = new() { FontFamily = Mono, FontSize = 12 };
     private readonly TextBox _serial = new() { IsReadOnly = true, FontFamily = Mono, FontSize = 12, Height = 150, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
@@ -64,11 +70,17 @@ internal sealed partial class ArduinoView : UserControl
         _examples = new ComboBox { ItemsSource = ArduinoExamples.All.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
         _examples.SelectionChanged += (_, _) => ShowExample();
 
+        _engine = new ComboBox { ItemsSource = new[] { "Intérprete", "Chip real (ATmega328P)" }, SelectedIndex = 0, MinWidth = 170 };
+        ToolTip.SetTip(_engine,
+            "Intérprete: arranca al instante y marca la línea que se ejecuta; admite lo más usado de Arduino.\n" +
+            "Chip real: compila con el compilador de Arduino (avr-gcc) y ejecuta el programa instrucción a instrucción en un " +
+            "ATmega328P emulado a 16 MHz, como la placa de verdad. Necesita el Arduino IDE instalado. Solo Uno y Nano.");
+        _engine.SelectionChanged += (_, _) => { _mcu.Stop(); UpdateStatus(); };
         var verify = new Button { Content = "✔ Verificar" };
         ToolTip.SetTip(verify, "Comprueba que el código está bien escrito");
-        verify.Click += (_, _) => Compile();
+        verify.Click += async (_, _) => await CompileAsync();
         var run = new Button { Content = "▶ Ejecutar" };
-        run.Click += (_, _) => RunSketch();
+        run.Click += async (_, _) => await RunSketchAsync();
         var stop = new Button { Content = "■ Detener" };
         stop.Click += (_, _) => { _mcu.Stop(); UpdateStatus(); };
         var open = new Button { Content = "Abrir…" };
@@ -77,7 +89,7 @@ internal sealed partial class ArduinoView : UserControl
         save.Click += async (_, _) => await SaveAsync();
 
         var toolbar = new WrapPanel { Margin = new Thickness(8, 8, 8, 4) };
-        foreach (var c in new Control[] { Label("Placa:"), _boardBox, Label("Ejemplo:"), _examples, verify, run, stop, open, save })
+        foreach (var c in new Control[] { Label("Placa:"), _boardBox, Label("Ejemplo:"), _examples, Label("Motor:"), _engine, verify, run, stop, open, save })
         {
             c.Margin = new Thickness(0, 0, 8, 4);
             toolbar.Children.Add(c);
@@ -203,6 +215,7 @@ internal sealed partial class ArduinoView : UserControl
         if (_examples.SelectedIndex < 0) return;
         var e = ArduinoExamples.All[_examples.SelectedIndex];
         _mcu.Stop();
+        _openedHex = null;
         if (_modeTabs is not null) _modeTabs.SelectedIndex = 0;
         _lineToBlock = null;
         _editor.Text = e.Source.Replace("\r\n", "\n");
@@ -250,6 +263,61 @@ internal sealed partial class ArduinoView : UserControl
 
     private Block? BlockAt(int line) => _lineToBlock is not null && _lineToBlock.TryGetValue(line, out var b) ? b : null;
 
+    private bool ChipMode => _engine.SelectedIndex == 1;
+
+    /// <summary>Compila con el intérprete o, en modo chip, con avr-gcc (en segundo plano).</summary>
+    private async Task<bool> CompileAsync()
+    {
+        if (!ChipMode) return Compile();
+        if (_busy) return false;
+        if (!ArduinoMcu.SupportsChip(_mcu.Board))
+        {
+            _status.Text = $"El modo chip real de momento es para Arduino Uno y Nano (ATmega328P). Para {_mcu.Board.Name} usa el intérprete.";
+            return false;
+        }
+        if (_openedHex is { } opened)
+        {
+            _mcu.LoadHex(opened.Hex);
+            _status.Text = $"Programa compilado {opened.Name} cargado en el chip.";
+            return true;
+        }
+        if (BlocksMode && !GenerateFromBlocks()) return false;
+        string source = _editor.Text ?? "";
+        var board = _mcu.Board;
+        try
+        {
+            if (_compiled is { } c && c.Source == source && c.Board == board)
+            {
+                _mcu.LoadHex(c.Hex);
+                return true;
+            }
+            _busy = true;
+            _status.Text = $"Compilando para {board.Name} con el compilador de Arduino… (la primera vez tarda un poco)";
+            var result = await Task.Run(() => Toolchain.Value.CompileAsync(source, board));
+            if (!result.Success)
+            {
+                if (result.ErrorLine is { } line) ShowError("Error de compilación", result.ErrorMessage ?? "", line);
+                else _status.Text = "Error de compilación: " + result.ErrorMessage;
+                _host.SetStatus(_status.Text ?? "");
+                return false;
+            }
+            _compiled = (source, board, result.Hex!);
+            _mcu.LoadHex(result.Hex!);
+            _status.Text = $"Compilado para {board.Name} con {Toolchain.Value.Description}.";
+            _host.SetStatus("Sketch compilado para el chip.");
+            return true;
+        }
+        catch (Exception ex) when (ex is FormatException or NotSupportedException or IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _status.Text = "No se pudo compilar: " + ex.Message;
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     private bool Compile()
     {
         if (BlocksMode && !GenerateFromBlocks()) return false;
@@ -267,9 +335,9 @@ internal sealed partial class ArduinoView : UserControl
         }
     }
 
-    private void RunSketch()
+    private async Task RunSketchAsync()
     {
-        if (!Compile()) return;
+        if (!await CompileAsync()) return;
         _mcu.ClearSerialOutput();
         _serial.Text = "";
         _mcu.Start();
@@ -479,37 +547,58 @@ internal sealed partial class ArduinoView : UserControl
     {
         string state = _mcu.State switch
         {
+            McuState.Running when _mcu.IsChipMode => $"EJECUTANDO en el chip (16 MHz) · {_mcu.Uptime.TotalSeconds:0.0} s",
             McuState.Running => $"EJECUTANDO · {_mcu.Uptime.TotalSeconds:0.0} s · línea {_mcu.CurrentLine}",
+            McuState.Fault when _mcu.FaultLine is null or 0 => $"DETENIDO POR ERROR: {_mcu.FaultMessage}",
             McuState.Fault => $"DETENIDO POR ERROR en la línea {_mcu.FaultLine}: {_mcu.FaultMessage}",
             _ => "DETENIDO",
         };
         var text = $"{_mcu.Board.Name} ({_mcu.Board.Chip}) · {state}";
         if (_mcu.Diagnostics.Count > 0) text += " · Aviso: " + _mcu.Diagnostics[^1];
-        if (_status.Text != text && !(_mcu.State == McuState.Stopped && _status.Text?.StartsWith("Error de compilación", StringComparison.Ordinal) == true))
+        if (_busy) return;
+        if (_status.Text != text && !(_mcu.State == McuState.Stopped && (_status.Text?.StartsWith("Error", StringComparison.Ordinal) == true
+            || _status.Text?.StartsWith("Compilado", StringComparison.Ordinal) == true || _status.Text?.StartsWith("El modo chip", StringComparison.Ordinal) == true
+            || _status.Text?.StartsWith("No se pudo", StringComparison.Ordinal) == true || _status.Text?.StartsWith("Programa compilado", StringComparison.Ordinal) == true)))
             _status.Text = text;
     }
 
     // ---- Archivos .ino ----
 
     private static readonly FilePickerFileType InoType = new("Sketch de Arduino") { Patterns = ["*.ino", "*.cpp", "*.c"] };
+    private static readonly FilePickerFileType HexType = new("Programa compilado (chip real)") { Patterns = ["*.hex"] };
 
     private async Task OpenAsync()
     {
         var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
         if (storage is null) return;
-        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Abrir sketch", FileTypeFilter = [InoType] });
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Abrir sketch o programa compilado", FileTypeFilter = [InoType, HexType] });
         if (files.Count == 0) return;
         try
         {
             await using var stream = await files[0].OpenReadAsync();
             using var reader = new StreamReader(stream);
             _mcu.Stop();
-            _editor.Text = (await reader.ReadToEndAsync()).Replace("\r\n", "\n");
+            string text = await reader.ReadToEndAsync();
+            if (files[0].Name.EndsWith(".hex", StringComparison.OrdinalIgnoreCase))
+            {
+                IntelHex.Parse(text); // comprueba que es un .hex válido
+                _openedHex = (files[0].Name, text);
+                _engine.SelectedIndex = 1;
+                if (_modeTabs is not null) _modeTabs.SelectedIndex = 0;
+                _examples.SelectedIndex = -1;
+                _openedHex = (files[0].Name, text);
+                _editor.Text = $"// Programa compilado: {files[0].Name}\n// No hay código fuente: se ejecuta tal cual en el chip emulado. Pulsa ▶ Ejecutar.\n";
+                _description.Text = files[0].Name;
+                _host.SetStatus($"Abierto {files[0].Name}.");
+                return;
+            }
+            _openedHex = null;
+            _editor.Text = text.Replace("\r\n", "\n");
             _examples.SelectedIndex = -1;
             _description.Text = files[0].Name;
             _host.SetStatus($"Abierto {files[0].Name}.");
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or FormatException)
         {
             _host.SetStatus("No se pudo abrir: " + ex.Message);
         }

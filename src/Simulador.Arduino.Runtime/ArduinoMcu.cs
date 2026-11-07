@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Simulador.Arduino.Runtime.Avr;
 using Simulador.Arduino.Runtime.Sketch;
 using Simulador.Core.CoSim;
 using Simulador.Core.Signals;
@@ -39,6 +40,12 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     private TimeSpan _lastAdvance;
     private long _serialActivity = -1_000_000_000;
 
+    // Modo chip real: programa compilado (.hex) que ejecuta el ATmega328P emulado.
+    private ushort[]? _firmware;
+    private Atmega328? _chip;
+    private List<PinEdge>[] _history = [];
+    private readonly Decoder _utf8 = Encoding.UTF8.GetDecoder();
+
     public ArduinoMcu(string id, ArduinoBoard board)
     {
         Id = id;
@@ -66,7 +73,13 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     public McuState State { get; private set; } = McuState.Stopped;
     public string? FaultMessage { get; private set; }
     public int? FaultLine { get; private set; }
-    public bool HasProgram => _program is not null;
+    public bool HasProgram => _program is not null || _firmware is not null;
+
+    /// <summary>true si ejecuta un programa compilado en el chip emulado (en vez del intérprete).</summary>
+    public bool IsChipMode => _firmware is not null;
+
+    /// <summary>Placas que admite el modo chip real (las del ATmega328P).</summary>
+    public static bool SupportsChip(ArduinoBoard board) => board == ArduinoBoard.Uno || board == ArduinoBoard.Nano;
 
     /// <summary>Tiempo transcurrido desde el arranque del sketch (lo que devuelve millis()).</summary>
     public TimeSpan Uptime => TimeSpan.FromTicks(_now);
@@ -98,10 +111,27 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         var program = Parser.Parse(source, Board.IntBits);
         Stop();
         _program = program;
+        _firmware = null;
+    }
+
+    /// <summary>Carga un programa compilado (Intel HEX) para ejecutarlo en el chip emulado.</summary>
+    public void LoadHex(string hex)
+    {
+        if (!SupportsChip(Board)) throw new NotSupportedException($"El modo chip real de momento funciona con Arduino Uno y Nano (ATmega328P), no con {Board.Name}.");
+        var words = IntelHex.Parse(hex);
+        if (words.Length > 16384) throw new FormatException("El programa ocupa más de 32 KB: no cabe en un ATmega328P.");
+        Stop();
+        _firmware = words;
+        _program = null;
     }
 
     public void Start()
     {
+        if (_firmware is not null)
+        {
+            StartChip(_firmware);
+            return;
+        }
         if (_program is null) throw new InvalidOperationException("No hay ningún sketch cargado.");
         Stop();
         foreach (var p in _pins) p.ResetHardware();
@@ -135,6 +165,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
             _thread.Join();
         }
         _thread = null;
+        _chip = null;
         if (State == McuState.Running) State = McuState.Stopped;
         foreach (var p in _pins) p.ResetHardware();
     }
@@ -179,6 +210,12 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     public void Advance(TimeSpan until)
     {
         _lastAdvance = until;
+        if (State == McuState.Running && _chip is not null)
+        {
+            _epoch ??= until;
+            AdvanceChip((until - _epoch.Value).Ticks);
+            return;
+        }
         if (State != McuState.Running || _thread is null) return;
         _epoch ??= until;
         _target = (until - _epoch.Value).Ticks;
@@ -214,6 +251,181 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         }
     }
 
+    // ---- Chip real ----
+
+    private const long EdgeWindowCycles = 40 * Atmega328.Frequency / 1000;            // 40 ms para medir PWM, tonos y servos
+
+    private void StartChip(ushort[] firmware)
+    {
+        Stop();
+        foreach (var p in _pins) p.ResetHardware();
+        Array.Clear(_lastRead);
+        lock (_serialLock) _serialIn.Clear();
+        _utf8.Reset();
+        _now = 0;
+        _serialActivity = -1_000_000_000;
+        _epoch = null;
+        FaultMessage = null;
+        FaultLine = null;
+        _interpreter = null;
+        var chip = new Atmega328(firmware, ChipInput, ChipAnalog);
+        chip.Usart.ByteTransmitted += ChipSerialByte;
+        chip.PinConfigured += ChipPinConfigured;
+        _history = new List<PinEdge>[_pins.Length];
+        for (int i = 0; i < _history.Length; i++) _history[i] = [];
+        _chip = chip;
+        State = McuState.Running;
+    }
+
+    private bool ChipInput(int pin)
+    {
+        var p = _pins[pin];
+        double vcc = Board.Vcc, v = p.Value;
+        bool state = v >= vcc * HighThreshold || (v > vcc * LowThreshold && _lastRead[pin]);
+        _lastRead[pin] = state;
+        return state;
+    }
+
+    private double ChipAnalog(int channel) =>
+        channel < Board.AnalogCount ? Math.Clamp(_pins[Board.FirstAnalog + channel].Value, 0, Board.Vcc) : 0;
+
+    private void ChipPinConfigured(int pin)
+    {
+        if (_chip is null || pin >= _pins.Length) return;
+        var p = _pins[pin];
+        p.Configured = true;
+        p.Mode = _chip.IsOutput(pin) ? Runtime.PinMode.Output : _chip.PortBit(pin) ? Runtime.PinMode.InputPullup : Runtime.PinMode.Input;
+        if (p.Mode != Runtime.PinMode.Output)
+        {
+            p.OutputVolts = 0;
+            p.Duty = null;
+            p.ToneHz = null;
+            p.ServoAngle = null;
+        }
+        p.Notify();
+    }
+
+    private void ChipSerialByte(byte b)
+    {
+        Span<byte> one = [b];
+        Span<char> chars = stackalloc char[2];
+        int n = _utf8.GetChars(one, chars, false);
+        lock (_serialLock)
+        {
+            _serialOut.Append(chars[..n]);
+            if (_serialOut.Length > 64_000) _serialOut.Remove(0, _serialOut.Length - 48_000);
+        }
+        _serialActivity = _now;
+    }
+
+    private void AdvanceChip(long targetTicks)
+    {
+        var chip = _chip!;
+        long targetCycles = (long)(targetTicks * (double)Atmega328.Frequency / TimeSpan.TicksPerSecond);
+        try
+        {
+            while (chip.Cpu.Cycles < targetCycles)
+            {
+                // Pasos de 1 ms: entre uno y otro llegan los bytes del monitor serie y se miran INT0/INT1.
+                lock (_serialLock)
+                    if (_serialIn.Count > 0 && chip.Usart.WriteByte((byte)_serialIn.Peek())) _serialIn.Dequeue();
+                chip.CheckExternalInterrupts();
+                chip.RunUntil(Math.Min(targetCycles, chip.Cpu.Cycles + Atmega328.Frequency / 1000));
+                _now = (long)(chip.Cpu.Cycles * (double)TimeSpan.TicksPerSecond / Atmega328.Frequency);
+            }
+        }
+        catch (IndexOutOfRangeException)
+        {
+            Fail("El programa ha accedido fuera de la memoria del ATmega328P (pila desbordada o puntero mal usado) y se ha detenido.", 0);
+            return;
+        }
+        SerialBaud = (chip.Cpu.Data[0xc1] & 0x8) != 0 ? NominalBaud(chip.Usart.BaudRate) : 0;
+        UpdateChipOutputs(chip);
+    }
+
+    /// <summary>Pasa el estado de los puertos y temporizadores a los pines: nivel, PWM, tono o impulso de servo.</summary>
+    private void UpdateChipOutputs(Atmega328 chip)
+    {
+        long now = chip.Cpu.Cycles, from = now - EdgeWindowCycles;
+        double vcc = Board.Vcc;
+        for (int pin = 0; pin < Math.Min(_pins.Length, 20); pin++)
+        {
+            var p = _pins[pin];
+            var h = _history[pin];
+            h.AddRange(chip.Edges[pin]);
+            chip.Edges[pin].Clear();
+            int old = h.FindIndex(e => e.Cycle >= from);
+            if (old < 0) h.Clear();
+            else if (old > 0) h.RemoveRange(0, old);
+            if (!chip.IsOutput(pin)) continue;
+
+            double? hw = pin switch
+            {
+                6 => chip.Timer0.PwmDuty(true),
+                5 => chip.Timer0.PwmDuty(false),
+                9 => chip.Timer1.PwmDuty(true),
+                10 => chip.Timer1.PwmDuty(false),
+                11 => chip.Timer2.PwmDuty(true),
+                3 => chip.Timer2.PwmDuty(false),
+                _ => null,
+            };
+            p.ToneHz = null;
+            p.ServoAngle = null;
+            p.Duty = null;
+            if (hw is { } duty)
+            {
+                p.OutputVolts = vcc * duty;
+                p.Duty = duty;
+            }
+            else if (MeasurePulses(h) is { } pulses)
+            {
+                double periodMs = pulses.Period * 1000.0 / Atmega328.Frequency, widthUs = pulses.Width * 1e6 / Atmega328.Frequency;
+                double d = Math.Clamp(pulses.Width / pulses.Period, 0, 1);
+                p.OutputVolts = vcc * d;
+                if (periodMs is >= 10 and <= 30 && widthUs is >= 400 and <= 2700)
+                    p.ServoAngle = Math.Clamp((widthUs - 544) / (2400 - 544) * 180, 0, 180);
+                else if (periodMs <= 50)
+                {
+                    p.ToneHz = Math.Round(1000 / periodMs, 1);
+                    p.Duty = d;
+                }
+                else p.OutputVolts = chip.PortBit(pin) ? vcc : 0;
+            }
+            else p.OutputVolts = chip.PortBit(pin) ? vcc : 0;
+            p.Notify();
+        }
+    }
+
+    private static readonly long[] StandardBauds = [300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 31250, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 1000000, 2000000];
+
+    /// <summary>El divisor del USART no da la velocidad exacta (9600 → 9615): se muestra la estándar más cercana.</summary>
+    private static long NominalBaud(long actual)
+    {
+        long best = StandardBauds.MinBy(b => Math.Abs(b - actual));
+        return Math.Abs(best - actual) <= best * 0.035 ? best : actual;
+    }
+
+    /// <summary>Periodo y anchura media del impulso en alto (en ciclos) si en la ventana hay al menos dos flancos de subida.</summary>
+    private static (double Period, double Width)? MeasurePulses(List<PinEdge> edges)
+    {
+        long firstRise = -1, lastRise = -1, widthSum = 0;
+        int rises = 0, widths = 0;
+        for (int i = 0; i < edges.Count; i++)
+        {
+            if (!edges[i].High) continue;
+            if (firstRise < 0) firstRise = edges[i].Cycle;
+            lastRise = edges[i].Cycle;
+            rises++;
+            if (i + 1 < edges.Count && !edges[i + 1].High)
+            {
+                widthSum += edges[i + 1].Cycle - edges[i].Cycle;
+                widths++;
+            }
+        }
+        if (rises < 2 || widths == 0) return null;
+        return ((lastRise - firstRise) / (double)(rises - 1), widthSum / (double)widths);
+    }
+
     // ---- Puerto serie ----
 
     public string SerialOutput
@@ -237,7 +449,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
 
     public IReadOnlyList<SketchVariable> Variables()
     {
-        if (_interpreter is null) return [];
+        if (_interpreter is null || _chip is not null) return [];
         return _interpreter.Globals
             .Where(kv => !kv.Value.IsConst || !Host.Constants.ContainsKey(kv.Key))
             .Select(kv => new SketchVariable(kv.Key, kv.Value.Type.Name + (kv.Value.Value.K == VK.Arr ? "[]" : ""), Format(kv.Value.Value)))

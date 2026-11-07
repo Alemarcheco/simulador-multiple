@@ -12,6 +12,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Programas compilados con el núcleo de Arduino (ver Fixtures/sketches/*.ino): las pruebas no necesitan avr-gcc. -->
+    <None Include="Fixtures\sketches\*.hex" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Simulador.Arduino.Runtime\Simulador.Arduino.Runtime.csproj" />
   </ItemGroup>
 </Project>
