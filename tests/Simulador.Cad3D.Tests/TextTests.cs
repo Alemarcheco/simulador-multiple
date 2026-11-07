@@ -26,8 +26,10 @@ public class TextTests
     {
         var left = TextOutline.Contours("HOLA", "Arial", true, 10, TextAlign.Izquierda).SelectMany(x => x).ToList();
         var center = TextOutline.Contours("HOLA", "Arial", true, 10, TextAlign.Centro).SelectMany(x => x).ToList();
-        Assert.True(left.Min(p => p.X) >= -0.01);
-        Assert.Equal(0, (center.Min(p => p.X) + center.Max(p => p.X)) / 2, 0);
+        var right = TextOutline.Contours("HOLA", "Arial", true, 10, TextAlign.Derecha).SelectMany(x => x).ToList();
+        Assert.InRange(left.Min(p => p.X), -0.05, 0.05);
+        Assert.InRange((center.Min(p => p.X) + center.Max(p => p.X)) / 2, -0.05, 0.05);
+        Assert.InRange(right.Max(p => p.X), -0.05, 0.05);
     }
 
     [Fact]

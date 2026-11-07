@@ -67,8 +67,9 @@ public static class TextOutline
 
         double tol = toleranceMm / scale;
         var raw = Flatten(path, tol);
-        double width = path.TightBounds.Right;
-        double shift = align switch { TextAlign.Centro => -width / 2, TextAlign.Derecha => -width, _ => 0 };
+        // Se alinea con la tinta (sin el margen lateral de la fuente), para que X = 0 sea el borde o el centro real.
+        var ink = path.TightBounds;
+        double shift = align switch { TextAlign.Centro => -(ink.Left + ink.Right) / 2, TextAlign.Derecha => -ink.Right, _ => -ink.Left };
         foreach (var c in raw)
         {
             // Skia tiene Y hacia abajo: se invierte y se pasa a mm.
