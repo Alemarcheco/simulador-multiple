@@ -7,7 +7,6 @@ using Avalonia.Threading;
 using Simulador.Banco.Scenarios;
 using Simulador.Core.CoSim;
 using Simulador.Core.Modules;
-using Simulador.Hidraulica.Ui;
 
 namespace Simulador.Banco.Ui;
 
@@ -22,7 +21,7 @@ public sealed class BancoView : UserControl
 
     private readonly IModuleHost _host;
     private readonly PlantCanvas _canvas = new();
-    private readonly TrendChart _chart = new() { Height = 170 };
+    private readonly HistoryChart _chart = new() { Height = 200 };
     private readonly ComboBox _scenarios = new() { MinWidth = 330 };
     private readonly ComboBox _speed = new() { ItemsSource = Speeds.Select(s => s.Label).ToArray(), SelectedIndex = 2, MinWidth = 70 };
     private readonly Button _play = new() { Content = "▶ Marcha" };
@@ -40,7 +39,6 @@ public sealed class BancoView : UserControl
     private Scenario? _scenario;
     private SimRunner? _runner;
     private DateTime _last = DateTime.UtcNow;
-    private double _lastSample = double.NegativeInfinity;
 
     public BancoView(IModuleHost host)
     {
@@ -77,7 +75,25 @@ public sealed class BancoView : UserControl
         var root = new DockPanel();
         DockPanel.SetDock(top, Dock.Top);
         root.Children.Add(top);
-        var bottom = new Border { BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0, 1, 0, 0), Child = _chart };
+        var chartBar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6, 4, 6, 0) };
+        var live = new Button { Content = "● En vivo", Padding = new Thickness(8, 2) };
+        var all = new Button { Content = "↔ Ver todo el proceso", Padding = new Thickness(8, 2) };
+        live.Click += (_, _) => _chart.GoLive();
+        all.Click += (_, _) => _chart.ShowAll();
+        chartBar.Children.Add(new TextBlock { Text = "Tendencias", FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        var popChart = new Button { Content = "⧉ Abrir gráfica en otra ventana", Padding = new Thickness(8, 2) };
+        var popPlant = new Button { Content = "⧉ Abrir planta en otra ventana", Padding = new Thickness(8, 2) };
+        popChart.Click += (_, _) => OpenChartWindow();
+        popPlant.Click += (_, _) => OpenPlantWindow();
+        chartBar.Children.Add(live);
+        chartBar.Children.Add(all);
+        chartBar.Children.Add(popChart);
+        chartBar.Children.Add(popPlant);
+        var chartPanel = new DockPanel();
+        DockPanel.SetDock(chartBar, Dock.Top);
+        chartPanel.Children.Add(chartBar);
+        chartPanel.Children.Add(_chart);
+        var bottom = new Border { BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(0, 1, 0, 0), Child = chartPanel };
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(bottom);
         var sideBorder = new Border { BorderBrush = Brushes.LightGray, BorderThickness = new Thickness(1, 0, 0, 0), Child = side };
@@ -96,6 +112,43 @@ public sealed class BancoView : UserControl
         new() { Header = new TextBlock { Text = header, FontSize = 14 }, Content = content, Padding = new Thickness(8, 4) };
 
     private HashSet<string> _wired = [];
+    private readonly List<HistoryChart> _extraCharts = [];
+    private readonly List<PlantCanvas> _extraPlants = [];
+
+    /// <summary>La misma gráfica (mismo historial) en una ventana suelta, para llevarla a otra pantalla.</summary>
+    private void OpenChartWindow()
+    {
+        var chart = new HistoryChart(_chart.History);
+        _extraCharts.Add(chart);
+        var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6) };
+        var live = new Button { Content = "● En vivo" };
+        var all = new Button { Content = "↔ Ver todo el proceso" };
+        live.Click += (_, _) => chart.GoLive();
+        all.Click += (_, _) => chart.ShowAll();
+        bar.Children.Add(live);
+        bar.Children.Add(all);
+        var panel = new DockPanel();
+        DockPanel.SetDock(bar, Dock.Top);
+        panel.Children.Add(bar);
+        panel.Children.Add(chart);
+        ShowDetached($"Tendencias · {_scenario?.Name}", panel, 1100, 520, () => _extraCharts.Remove(chart));
+    }
+
+    /// <summary>La vista animada de la planta en una ventana suelta; sigue al montaje que esté cargado.</summary>
+    private void OpenPlantWindow()
+    {
+        var plant = new PlantCanvas { Scenario = _scenario };
+        if (_runner is not null) plant.Update(_runner.Latest, 0);
+        _extraPlants.Add(plant);
+        ShowDetached($"Planta · {_scenario?.Name}", plant, 1200, 720, () => _extraPlants.Remove(plant));
+    }
+
+    private void ShowDetached(string title, Control content, double w, double h, Action closed)
+    {
+        var win = new Window { Title = $"Banco de pruebas · {title}", Width = w, Height = h, Content = content, Background = Brushes.White };
+        win.Closed += (_, _) => closed();
+        if (TopLevel.GetTopLevel(this) is Window owner) win.Show(owner); else win.Show();
+    }
 
     private void Load(int index)
     {
@@ -103,8 +156,17 @@ public sealed class BancoView : UserControl
         _runner?.Dispose();
         _scenario = Scenario.All[index].Create();
         _runner = new SimRunner(_scenario.Scheduler) { Speed = Speeds[Math.Max(0, _speed.SelectedIndex)].Factor };
+        var trends = _scenario.Trends;
+        _chart.History.Clear(trends.Select(t => t.Name).ToList());
+        // Se muestrea en el hilo de la simulación, en tiempo simulado: a ×60 o a velocidad máxima no se salta nada.
+        _runner.FramePublished += (_, fr) => _chart.History.Offer(fr.Time.TotalSeconds,
+            () => trends.Select(t => Math.Clamp(t.Percent(fr), 0, 110)).ToArray());
+        _chart.History.Offer(0, () => trends.Select(t => Math.Clamp(t.Percent(_runner.Latest), 0, 110)).ToArray());
+        _chart.GoLive();
         _runner.Faulted += (_, ex) => Dispatcher.UIThread.Post(() => { SetRunning(false); _host.SetStatus($"Simulación detenida: {ex.Message}"); });
         _canvas.Scenario = _scenario;
+        foreach (var pl in _extraPlants) { pl.Scenario = _scenario; pl.Update(_runner.Latest, 0); }
+        foreach (var ch in _extraCharts) ch.GoLive();
         _description.Text = _scenario.Description;
         _program.Text = _scenario switch
         {
@@ -117,8 +179,6 @@ public sealed class BancoView : UserControl
             $"── {g.Key} ──\n" + string.Join("\n", g.Select(w => $"{w.Terminal,-14} {w.From} → {w.To}\n{"",-14} {w.Detail}"))));
         _wired = _scenario.Wiring.SelectMany(w => new[] { w.From, w.To }).ToHashSet();
         BuildControls();
-        _chart.Clear();
-        _lastSample = double.NegativeInfinity;
         SetRunning(false);
         _canvas.Update(_runner.Latest, 0);
         _host.SetStatus($"Banco de pruebas: {_scenario.Name}");
@@ -159,8 +219,8 @@ public sealed class BancoView : UserControl
         var sc = _scenario;
         _runner.Pause();
         _runner.Reset(sc.AfterReset);
-        _chart.Clear();
-        _lastSample = double.NegativeInfinity;
+        _chart.History.Clear();
+        _chart.GoLive();
         SetRunning(false);
         BuildControls();
     }
@@ -183,12 +243,9 @@ public sealed class BancoView : UserControl
         _canvas.Update(frame, turning ? wall : 0);
 
         double t = frame.Time.TotalSeconds;
-        if (t < _lastSample) { _chart.Clear(); _lastSample = double.NegativeInfinity; }
-        if (t - _lastSample >= 0.5)
-        {
-            _lastSample = t;
-            foreach (var tr in _scenario.Trends) _chart.Add(tr.Name, t, Math.Clamp(tr.Percent(frame), 0, 110));
-        }
+        _chart.Refresh();
+        foreach (var ch in _extraCharts) ch.Refresh();
+        foreach (var pl in _extraPlants) pl.Update(frame, turning ? wall : 0);
         _clock.Text = $"t = {TimeSpan.FromSeconds(t):hh\\:mm\\:ss\\.f}";
         _values.Text = string.Join("\n", frame.Components.Select(c =>
             $"{c.ComponentId}\n" + string.Join("\n", c.Values.Where(kv => Show(c.ComponentId, kv.Key))
