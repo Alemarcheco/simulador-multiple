@@ -17,11 +17,14 @@ public sealed class MainWindow : Window, IModuleHost
     {
         Modules = modules;
         Title = "Simulador múltiple";
-        Width = 1280;
-        Height = 800;
-        MinWidth = 800;
-        MinHeight = 500;
+        // Ventana normal de Windows: barra de título con minimizar, maximizar/restaurar y cerrar,
+        // redimensionable, y abierta maximizada dentro del área de trabajo (sin tapar la barra de tareas).
+        SystemDecorations = SystemDecorations.Full;
+        ExtendClientAreaToDecorationsHint = false;
+        CanResize = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        FitToScreen();
+        WindowState = WindowState.Maximized;
 
         var statusBar = new Border
         {
@@ -39,6 +42,37 @@ public sealed class MainWindow : Window, IModuleHost
         SetStatus(loadErrors.Count == 0
             ? $"{modules.Count} simulador(es) cargado(s)."
             : $"Avisos al cargar módulos: {string.Join(" | ", loadErrors)}");
+    }
+
+    /// <summary>
+    /// Ajusta el tamaño "restaurado" y los mínimos a la pantalla, para que en portátiles pequeños
+    /// o con escala de 125–150 % la ventana nunca sea más grande que la pantalla y los botones
+    /// de la barra de título queden siempre a la vista.
+    /// </summary>
+    private void FitToScreen()
+    {
+        const double preferredWidth = 1280, preferredHeight = 800;
+        const double preferredMinWidth = 800, preferredMinHeight = 500;
+
+        var screens = Screens;
+        var screen = screens?.ScreenFromWindow(this) ?? screens?.Primary;
+        if (screen is null)
+        {
+            Width = preferredWidth;
+            Height = preferredHeight;
+            MinWidth = preferredMinWidth;
+            MinHeight = preferredMinHeight;
+            return;
+        }
+
+        var scaling = screen.Scaling > 0 ? screen.Scaling : 1;
+        var availableWidth = screen.WorkingArea.Width / scaling;
+        var availableHeight = screen.WorkingArea.Height / scaling;
+
+        MinWidth = Math.Min(preferredMinWidth, availableWidth * 0.6);
+        MinHeight = Math.Min(preferredMinHeight, availableHeight * 0.6);
+        Width = Math.Max(MinWidth, Math.Min(preferredWidth, availableWidth * 0.9));
+        Height = Math.Max(MinHeight, Math.Min(preferredHeight, availableHeight * 0.9));
     }
 
     private TabControl BuildTabs(IReadOnlyList<IModule> modules)
