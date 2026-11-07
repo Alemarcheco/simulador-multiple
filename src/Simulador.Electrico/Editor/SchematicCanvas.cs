@@ -9,6 +9,7 @@ using Simulador.Electrico.Engine.Catalog;
 using Simulador.Electrico.Engine.Model;
 using Simulador.Electrico.Engine.Sim;
 using static Simulador.Electrico.Editor.SymbolPainter;
+using Vector = Avalonia.Vector;
 
 namespace Simulador.Electrico.Editor;
 
