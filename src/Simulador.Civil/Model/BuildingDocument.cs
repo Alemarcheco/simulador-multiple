@@ -24,6 +24,7 @@ public sealed class BuildingDocument : IBuildingModel
     private readonly List<SpaceTag> _tags = [];
     private readonly List<PlacedFixture> _fixtures = [];
     private readonly List<Route> _routes = [];
+    private readonly List<Underlay> _underlays = [];
     private List<Space> _spaces = [];
     private readonly Stack<string> _undo = new();
     private readonly Stack<string> _redo = new();
@@ -43,12 +44,40 @@ public sealed class BuildingDocument : IBuildingModel
     public IReadOnlyList<Space> Spaces => _spaces;
     public IReadOnlyList<PlacedFixture> Fixtures => _fixtures;
     public IReadOnlyList<Route> Routes => _routes;
+    /// <summary>Planos de referencia (DXF o escaneados) bajo cada nivel. No entran en deshacer/rehacer.</summary>
+    public IReadOnlyList<Underlay> Underlays => _underlays;
 
     public event EventHandler? Changed;
 
     public BuildingDocument()
     {
         _levels.Add(new Level("N0", "Planta baja", 0, 3.0));
+    }
+
+    // ---------------------------------------------------------------- calcos
+
+    /// <summary>Añade un plano de referencia. Los calcos no pasan por deshacer: son una ayuda, no parte del edificio.</summary>
+    public Underlay AddUnderlay(Underlay u)
+    {
+        var id = u.Id;
+        for (int n = _underlays.Count + 1; string.IsNullOrEmpty(id) || _underlays.Any(x => x.Id == id); n++) id = $"C{n}";
+        u = u with { Id = id };
+        _underlays.Add(u);
+        OnChanged();
+        return u;
+    }
+
+    public void ReplaceUnderlay(Underlay u)
+    {
+        int i = _underlays.FindIndex(x => x.Id == u.Id);
+        if (i < 0) return;
+        _underlays[i] = u;
+        OnChanged();
+    }
+
+    public void RemoveUnderlay(string id)
+    {
+        if (_underlays.RemoveAll(x => x.Id == id) > 0) OnChanged();
     }
 
     public bool CanUndo => _undo.Count > 0;
@@ -59,7 +88,7 @@ public sealed class BuildingDocument : IBuildingModel
     /// <summary>Aplica un cambio guardando el estado anterior para poder deshacerlo.</summary>
     public void Edit(Action<Editor> change)
     {
-        _undo.Push(ToJson());
+        _undo.Push(Snapshot());
         _redo.Clear();
         change(new Editor(this));
         OnChanged();
@@ -68,16 +97,16 @@ public sealed class BuildingDocument : IBuildingModel
     public void Undo()
     {
         if (_undo.Count == 0) return;
-        _redo.Push(ToJson());
-        LoadJson(_undo.Pop());
+        _redo.Push(Snapshot());
+        LoadJson(_undo.Pop(), keepUnderlays: true);
         OnChanged();
     }
 
     public void Redo()
     {
         if (_redo.Count == 0) return;
-        _undo.Push(ToJson());
-        LoadJson(_redo.Pop());
+        _undo.Push(Snapshot());
+        LoadJson(_redo.Pop(), keepUnderlays: true);
         OnChanged();
     }
 
@@ -321,12 +350,17 @@ public sealed class BuildingDocument : IBuildingModel
     private sealed record FileDto(
         int Version, string Name, BuildingType Type,
         List<Level> Levels, List<Wall> Walls, List<Opening> Openings, List<Slab> Slabs, List<Stair> Stairs,
-        List<SpaceTag> SpaceTags, List<PlacedFixture> Fixtures, List<Route> Routes, AdvisorSettings? Advisor = null);
+        List<SpaceTag> SpaceTags, List<PlacedFixture> Fixtures, List<Route> Routes, AdvisorSettings? Advisor = null,
+        List<Underlay>? Underlays = null);
 
     public const int FileVersion = 1;
     public const string FileExtension = ".edif.json";
 
     public string ToJson() => JsonSerializer.Serialize(
+        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, _underlays), JsonOpts);
+
+    /// <summary>Estado para deshacer: sin los calcos, que pueden ser grandes y no se deshacen.</summary>
+    private string Snapshot() => JsonSerializer.Serialize(
         new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor), JsonOpts);
 
     public static BuildingDocument FromJson(string json)
@@ -337,7 +371,7 @@ public sealed class BuildingDocument : IBuildingModel
         return d;
     }
 
-    private void LoadJson(string json)
+    private void LoadJson(string json, bool keepUnderlays = false)
     {
         var dto = JsonSerializer.Deserialize<FileDto>(json, JsonOpts) ?? throw new InvalidDataException("Archivo de edificio vacío.");
         if (dto.Version > FileVersion) throw new InvalidDataException($"El archivo es de una versión más nueva ({dto.Version}).");
@@ -347,6 +381,7 @@ public sealed class BuildingDocument : IBuildingModel
         Replace(_slabs, dto.Slabs); Replace(_stairs, dto.Stairs); Replace(_tags, dto.SpaceTags);
         Replace(_fixtures, dto.Fixtures); Replace(_routes, dto.Routes);
         Advisor = dto.Advisor ?? new AdvisorSettings();
+        if (!keepUnderlays) Replace(_underlays, dto.Underlays);
         if (_levels.Count == 0) _levels.Add(new Level("N0", "Planta baja", 0, 3.0));
     }
 

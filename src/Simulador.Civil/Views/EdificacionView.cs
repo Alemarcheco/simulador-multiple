@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Simulador.Civil.Import;
 using Simulador.Civil.Model;
 using Simulador.Core.Building;
 using Simulador.Core.Modules;
@@ -25,6 +26,8 @@ public sealed class EdificacionView : DockPanel
     private readonly StackPanel _checks = new() { Spacing = 4 };
     private readonly TextBlock _summary = new() { TextWrapping = TextWrapping.Wrap };
     private readonly List<ToggleButton> _toolButtons = [];
+    private readonly StackPanel _calcos = new() { Spacing = 6 };
+    private bool _editingUnderlay;
     private string? _filePath;
     private bool _syncingLevels;
 
@@ -38,6 +41,7 @@ public sealed class EdificacionView : DockPanel
         _plan.Status += (_, s) => _host.SetStatus(s);
         _plan.SelectionChanged += (_, _) => RefreshProps();
         _plan.AskSpaceName = AskSpaceNameAsync;
+        _plan.AskRealDistance = AskRealDistanceAsync;
         _doc.Changed += (_, _) => RefreshAll();
 
         var toolbar = BuildToolbar();
@@ -117,6 +121,7 @@ public sealed class EdificacionView : DockPanel
             _plan.LevelId = id;
             _plan.CancelCurrent();
             _plan.Select(null);
+            RefreshCalcos();
             _plan.InvalidateVisual();
         };
         bar.Children.Add(_levelBox);
@@ -186,6 +191,20 @@ public sealed class EdificacionView : DockPanel
         p.Children.Add(new TextBlock
         {
             Text = "Los elementos quedan enlazados con el esquema del módulo eléctrico o hidráulico por su designación (X1, PA1…).",
+            TextWrapping = TextWrapping.Wrap, Opacity = 0.65, FontSize = 11,
+        });
+
+        p.Children.Add(Header("Calco (plano de referencia)"));
+        p.Children.Add(Btn("📐 Importar DXF…", () => _ = ImportDxfAsync()));
+        p.Children.Add(Btn("🖼 Importar plano escaneado…", () => _ = ImportImageAsync()));
+        p.Children.Add(ToolButton("↔ Escalar con una medida", PlanTool.CalibrateUnderlay));
+        p.Children.Add(ToolButton("✥ Mover calco", PlanTool.MoveUnderlay));
+        p.Children.Add(ToolButton("⟲ Girar calco", PlanTool.RotateUnderlay));
+        p.Children.Add(Btn("🧱 Crear muros desde el DXF", ConvertUnderlayToWalls));
+        p.Children.Add(_calcos);
+        p.Children.Add(new TextBlock
+        {
+            Text = "Al dibujar muros, el cursor se pega a los extremos de las líneas del calco.",
             TextWrapping = TextWrapping.Wrap, Opacity = 0.65, FontSize = 11,
         });
         return p;
@@ -259,6 +278,7 @@ public sealed class EdificacionView : DockPanel
     private void RefreshAll()
     {
         RefreshLevels();
+        if (!_editingUnderlay) RefreshCalcos();
         RefreshProps();
         RefreshRooms();
         RefreshChecks();
@@ -282,6 +302,7 @@ public sealed class EdificacionView : DockPanel
     {
         _plan.LevelId = id;
         RefreshLevels();
+        RefreshCalcos();
         _plan.Select(null);
         _plan.InvalidateVisual();
     }
@@ -537,6 +558,194 @@ public sealed class EdificacionView : DockPanel
             Children =
             {
                 new TextBlock { Text = "Nombre" }, name, new TextBlock { Text = "Uso" }, use,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { cancel, ok } },
+            },
+        };
+        if (TopLevel.GetTopLevel(this) is Window owner) await dlg.ShowDialog(owner);
+        return result;
+    }
+
+    // ------------------------------------------------------------ calcos
+
+    private void RefreshCalcos()
+    {
+        _calcos.Children.Clear();
+        var list = _doc.Underlays.Where(u => u.LevelId == _plan.LevelId).ToList();
+        if (list.Count == 0)
+        {
+            _calcos.Children.Add(new TextBlock { Text = "Este nivel no tiene calco.", Opacity = 0.6, FontSize = 12 });
+            return;
+        }
+        var active = list.FirstOrDefault(u => u.Id == _plan.ActiveUnderlayId) ?? list[0];
+        _plan.ActiveUnderlayId = active.Id;
+        foreach (var u in list)
+        {
+            string id = u.Id;
+            var box = new StackPanel { Spacing = 3 };
+            var pick = new RadioButton { GroupName = "calco", IsChecked = u.Id == active.Id, Content = u.Name, FontWeight = FontWeight.SemiBold };
+            pick.IsCheckedChanged += (_, _) => { if (pick.IsChecked == true) _plan.ActiveUnderlayId = id; };
+            box.Children.Add(pick);
+            string info = u.Kind == UnderlayKind.Dxf
+                ? $"DXF · {u.Segments.Count} líneas · escala ×{u.Scale:0.####}"
+                : $"Imagen {u.PixelWidth}×{u.PixelHeight} px · {u.Scale * 1000:0.###} mm/px";
+            box.Children.Add(new TextBlock { Text = info, FontSize = 11, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+
+            var visible = new CheckBox { Content = "Visible", IsChecked = u.Visible };
+            visible.IsCheckedChanged += (_, _) => EditUnderlay(id, x => x with { Visible = visible.IsChecked == true });
+            var del = new Button { Content = "Quitar", Padding = new Thickness(6, 2) };
+            del.Click += (_, _) => _doc.RemoveUnderlay(id);
+            box.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { visible, del } });
+
+            var opacity = new Slider { Minimum = 0.1, Maximum = 1, Value = u.Opacity, HorizontalAlignment = HorizontalAlignment.Stretch };
+            opacity.ValueChanged += (_, e) => EditUnderlay(id, x => x with { Opacity = e.NewValue });
+            box.Children.Add(new TextBlock { Text = "Opacidad", FontSize = 11, Opacity = 0.7 });
+            box.Children.Add(opacity);
+
+            if (u.Kind == UnderlayKind.Dxf)
+            {
+                var layers = new StackPanel { Spacing = 1 };
+                foreach (var layer in u.Segments.Select(x => x.Layer).Distinct().Order())
+                {
+                    int count = u.Segments.Count(x => x.Layer == layer);
+                    var cb = new CheckBox { Content = $"{layer} ({count})", IsChecked = !u.HiddenLayers.Contains(layer), FontSize = 11 };
+                    cb.IsCheckedChanged += (_, _) => EditUnderlay(id, x =>
+                    {
+                        var hidden = new List<string>(x.HiddenLayers);
+                        hidden.Remove(layer);
+                        if (cb.IsChecked != true) hidden.Add(layer);
+                        return x with { HiddenLayers = hidden };
+                    });
+                    layers.Children.Add(cb);
+                }
+                box.Children.Add(new Expander { Header = "Capas", Content = layers, HorizontalAlignment = HorizontalAlignment.Stretch });
+            }
+            _calcos.Children.Add(new Border
+            {
+                BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(0, 4), Child = box,
+            });
+        }
+    }
+
+    /// <summary>Cambia un calco sin reconstruir el panel (para no cortar el arrastre del deslizador).</summary>
+    private void EditUnderlay(string id, Func<Underlay, Underlay> change)
+    {
+        var u = _doc.Underlays.FirstOrDefault(x => x.Id == id);
+        if (u is null) return;
+        _editingUnderlay = true;
+        try { _doc.ReplaceUnderlay(change(u)); }
+        finally { _editingUnderlay = false; }
+    }
+
+    private static readonly FilePickerFileType DxfType = new("Plano DXF") { Patterns = ["*.dxf", "*.DXF"] };
+    private static readonly FilePickerFileType ImageType = new("Imagen") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.PNG", "*.JPG", "*.JPEG"] };
+
+    private async Task<IStorageFile?> PickAsync(string title, FilePickerFileType type)
+    {
+        var top = TopLevel.GetTopLevel(this);
+        if (top is null) return null;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title, AllowMultiple = false, FileTypeFilter = [type, FilePickerFileTypes.All],
+        });
+        return files.Count == 0 ? null : files[0];
+    }
+
+    private async Task ImportDxfAsync()
+    {
+        try
+        {
+            var file = await PickAsync("Importar plano DXF", DxfType);
+            if (file is null) return;
+            string text;
+            await using (var s = await file.OpenReadAsync())
+            using (var r = new StreamReader(s))
+                text = await r.ReadToEndAsync();
+            var dxf = DxfReader.Parse(text);
+            if (dxf.Segments.Count == 0) { _host.SetStatus("El DXF no tiene líneas que se puedan calcar."); return; }
+            var u = _doc.AddUnderlay(Underlay.FromDxf("", _plan.LevelId, Path.GetFileNameWithoutExtension(file.Name), dxf));
+            _plan.ActiveUnderlayId = u.Id;
+            RefreshCalcos();
+            _plan.ZoomToFit();
+            var (min, max) = dxf.Extents;
+            string skipped = dxf.Skipped.Count == 0 ? "" : " · sin dibujar: " + string.Join(", ", dxf.Skipped.Select(kv => $"{kv.Key} {kv.Value}"));
+            _host.SetStatus($"DXF importado: {dxf.Segments.Count} líneas, {max.X - min.X:0.00} × {max.Y - min.Y:0.00} m (unidad {dxf.UnitSource}){skipped}. Si la medida no cuadra, usa «Escalar con una medida».");
+        }
+        catch (Exception ex)
+        {
+            _host.SetStatus($"No se pudo leer el DXF: {ex.Message}");
+        }
+    }
+
+    private async Task ImportImageAsync()
+    {
+        try
+        {
+            var file = await PickAsync("Importar plano escaneado", ImageType);
+            if (file is null) return;
+            var path = file.TryGetLocalPath();
+            if (path is null) { _host.SetStatus("La imagen tiene que estar en una carpeta del equipo."); return; }
+            int w, h;
+            using (var bmp = new Avalonia.Media.Imaging.Bitmap(path)) { w = bmp.PixelSize.Width; h = bmp.PixelSize.Height; }
+            var u = _doc.AddUnderlay(Underlay.FromImage("", _plan.LevelId, Path.GetFileNameWithoutExtension(file.Name), path, w, h));
+            _plan.ActiveUnderlayId = u.Id;
+            RefreshCalcos();
+            _plan.ZoomToFit();
+            SetTool(PlanTool.CalibrateUnderlay);
+            _host.SetStatus("Plano importado con una escala provisional (20 m de ancho). Marca los extremos de una medida conocida para escalarlo.");
+        }
+        catch (Exception ex)
+        {
+            _host.SetStatus($"No se pudo abrir la imagen: {ex.Message}");
+        }
+    }
+
+    private void ConvertUnderlayToWalls()
+    {
+        var u = _doc.Underlays.FirstOrDefault(x => x.Id == _plan.ActiveUnderlayId && x.LevelId == _plan.LevelId)
+            ?? _doc.Underlays.FirstOrDefault(x => x.LevelId == _plan.LevelId && x.Kind == UnderlayKind.Dxf);
+        if (u is null || u.Kind != UnderlayKind.Dxf)
+        {
+            _host.SetStatus("Hace falta un calco DXF en este nivel (en un plano escaneado los muros se dibujan a mano encima).");
+            return;
+        }
+        var found = WallDetector.Detect(u.PlanSegments());
+        if (found.Count == 0)
+        {
+            _host.SetStatus("No se encontraron muros (parejas de líneas paralelas de 7 a 45 cm). Oculta las capas que no sean muros o dibújalos a mano.");
+            return;
+        }
+        double height = _doc.GetLevel(_plan.LevelId).Height - 0.2;
+        _doc.Edit(e =>
+        {
+            foreach (var w in found) e.AddWall(_plan.LevelId, w.A, w.B, w.Thickness, Math.Max(2.2, height));
+        });
+        _host.SetStatus($"Creados {found.Count} muros desde el DXF. Revísalos: se puede deshacer con Ctrl+Z.");
+    }
+
+    private async Task<double?> AskRealDistanceAsync(double measured)
+    {
+        var input = new NumericUpDown
+        {
+            Value = (decimal)Math.Round(measured, 3), Minimum = 0.01m, Maximum = 10000, Increment = 0.05m,
+            FormatString = "0.000", HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        double? result = null;
+        var dlg = new Window
+        {
+            Title = "Escalar calco", Width = 340, SizeToContent = SizeToContent.Height, CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+        var ok = new Button { Content = "Aceptar", IsDefault = true };
+        var cancel = new Button { Content = "Cancelar", IsCancel = true };
+        ok.Click += (_, _) => { if (input.Value is { } v && v > 0) result = (double)v; dlg.Close(); };
+        cancel.Click += (_, _) => dlg.Close();
+        dlg.Content = new StackPanel
+        {
+            Margin = new Thickness(16), Spacing = 8,
+            Children =
+            {
+                new TextBlock { Text = $"En el calco ese tramo mide {measured:0.000} m. ¿Cuánto mide en realidad (m)?", TextWrapping = TextWrapping.Wrap },
+                input,
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { cancel, ok } },
             },
         };

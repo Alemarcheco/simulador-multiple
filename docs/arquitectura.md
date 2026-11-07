@@ -78,7 +78,12 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   perímetro y mínimos por uso, luminarias, interruptores, ventanas ≥ 1/8 del piso, agua por persona y tanque elevado,
   presión mínima, distancia de evacuación); botón Aplicar que coloca lo que falta (tomas, luces, interruptores,
   tanque, puntos de agua, tablero y rutas); materiales y presupuesto con precios editables y copia para Excel.
-- **Siguiente**: escaleras en L/U, importar DXF y planos escaneados como calco, exportar planos PDF/DXF.
+- **Calco** (`Import/DxfReader.cs`, `Model/Underlay.cs`, `Import/WallDetector.cs`): planos de referencia por nivel,
+  DXF de texto (líneas, polilíneas con arcos, círculos, arcos, elipses y bloques; unidad de `$INSUNITS` o deducida
+  del tamaño) o imagen escaneada; opacidad, capas, escalar con una medida conocida, mover y girar; imán a los
+  extremos de sus líneas al dibujar; crear muros desde las parejas de líneas paralelas del DXF (prefiere las capas
+  con nombre de muro). Los calcos se guardan en el proyecto (las imágenes, por ruta) y no entran en deshacer.
+- **Siguiente**: exportar planos PDF/DXF con cotas.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D (plan)

@@ -3,12 +3,13 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Simulador.Civil.Model;
 using Simulador.Core.Building;
 
 namespace Simulador.Civil.Views;
 
-public enum PlanTool { Select, Wall, Room, Door, Window, Stair, Fixture, Route, Rename }
+public enum PlanTool { Select, Wall, Room, Door, Window, Stair, Fixture, Route, Rename, CalibrateUnderlay, MoveUnderlay, RotateUnderlay }
 
 /// <summary>
 /// Planta 2D editable de un nivel. Ratón: izquierdo dibuja/selecciona, derecho termina o cancela,
@@ -24,6 +25,8 @@ public sealed class PlanCanvas : Control
     private Point? _panStart;
     private string? _routeFrom;
     private bool _spaceDown;
+    private Point2? _secondPoint;         // giro del calco: pivote → punto de partida → destino
+    private readonly Dictionary<string, Bitmap?> _images = [];
 
     public PlanCanvas(BuildingDocument doc)
     {
@@ -50,6 +53,15 @@ public sealed class PlanCanvas : Control
     public event EventHandler? SelectionChanged;
     /// <summary>Mensajes para la barra de estado (medidas, ayuda de la herramienta).</summary>
     public event EventHandler<string>? Status;
+    /// <summary>Calco sobre el que actúan escalar, mover y girar; null = el primero del nivel.</summary>
+    public string? ActiveUnderlayId { get; set; }
+    /// <summary>Pide la medida real (m) de un tramo que en el calco mide lo indicado.</summary>
+    public Func<double, Task<double?>>? AskRealDistance { get; set; }
+
+    private Underlay? ActiveUnderlay =>
+        _doc.Underlays.FirstOrDefault(u => u.Id == ActiveUnderlayId && u.LevelId == LevelId)
+        ?? _doc.Underlays.FirstOrDefault(u => u.LevelId == LevelId && u.Visible);
+
     /// <summary>Pide al usuario un nombre y uso para la habitación en un punto.</summary>
     public Func<Point2, Task<(string Name, string Use)?>>? AskSpaceName { get; set; }
 
@@ -63,6 +75,7 @@ public sealed class PlanCanvas : Control
     public void CancelCurrent()
     {
         _drawStart = null;
+        _secondPoint = null;
         _routeFrom = null;
         InvalidateVisual();
     }
@@ -71,6 +84,7 @@ public sealed class PlanCanvas : Control
     public void ZoomToFit()
     {
         var pts = _doc.Walls.Where(w => w.LevelId == LevelId).SelectMany(w => new[] { w.Start, w.End }).ToList();
+        pts.AddRange(_doc.Underlays.Where(u => u.LevelId == LevelId && u.Visible).SelectMany(u => u.Corners));
         if (pts.Count == 0 || Bounds.Width < 10) { _scale = 40; _pan = new(60, Bounds.Height - 60); InvalidateVisual(); return; }
         double minX = pts.Min(p => p.X), maxX = pts.Max(p => p.X), minY = pts.Min(p => p.Y), maxY = pts.Max(p => p.Y);
         double w = Math.Max(maxX - minX, 1), h = Math.Max(maxY - minY, 1);
@@ -93,6 +107,8 @@ public sealed class PlanCanvas : Control
             if (w.Start.DistanceTo(p) < tol) return w.Start;
             if (w.End.DistanceTo(p) < tol) return w.End;
         }
+        // Imán a los extremos de las líneas del calco: así se calca el plano con precisión.
+        if (SnapToUnderlay(p, tol) is { } u) return u;
         if (orthoFrom is { } o)
         {
             // Ortogonal si el ángulo está a menos de ~7° de un eje.
@@ -101,6 +117,27 @@ public sealed class PlanCanvas : Control
             else if (Math.Abs(d.X) < Math.Abs(d.Y) * 0.12) p = new(o.X, p.Y);
         }
         return new(Math.Round(p.X / GridStep) * GridStep, Math.Round(p.Y / GridStep) * GridStep);
+    }
+
+    /// <summary>Extremo de línea de un calco visible del nivel a menos de <paramref name="tol"/> metros.</summary>
+    private Point2? SnapToUnderlay(Point2 p, double tol)
+    {
+        Point2? best = null;
+        double bestD = tol;
+        foreach (var u in _doc.Underlays.Where(u => u.LevelId == LevelId && u.Visible && u.Kind == UnderlayKind.Dxf))
+        {
+            // Se busca en coordenadas locales para no transformar todo el dibujo en cada movimiento del ratón.
+            var local = u.ToLocal(p);
+            double lt = bestD / u.Scale;
+            foreach (var s in u.Segments)
+            {
+                if (u.HiddenLayers.Count > 0 && u.HiddenLayers.Contains(s.Layer)) continue;
+                double da = s.A.DistanceTo(local), db = s.B.DistanceTo(local);
+                if (da < lt) { lt = da; best = u.ToPlan(s.A); bestD = da * u.Scale; }
+                if (db < lt) { lt = db; best = u.ToPlan(s.B); bestD = db * u.Scale; }
+            }
+        }
+        return best;
     }
 
     // ------------------------------------------------------------ dibujo
@@ -128,6 +165,8 @@ public sealed class PlanCanvas : Control
         var level = _doc.Levels.FirstOrDefault(l => l.Id == LevelId);
         if (level is null) return;
 
+        foreach (var u in _doc.Underlays.Where(u => u.LevelId == LevelId && u.Visible)) DrawUnderlay(ctx, u);
+
         // Nivel inferior como calco tenue.
         var below = _doc.Levels.Where(l => l.Elevation < level.Elevation - 1e-6).MaxBy(l => l.Elevation);
         if (below is not null)
@@ -150,6 +189,51 @@ public sealed class PlanCanvas : Control
         }
 
         DrawPreview(ctx);
+    }
+
+    private static readonly IPen UnderlayPen = new Pen(new SolidColorBrush(Color.FromRgb(40, 90, 160)), 1);
+    private static readonly IPen ToolPen = new Pen(Brushes.MediumVioletRed, 1.5, new DashStyle([5, 3], 0));
+
+    private void DrawUnderlay(DrawingContext ctx, Underlay u)
+    {
+        using var _ = ctx.PushOpacity(Math.Clamp(u.Opacity, 0.05, 1));
+        if (u.Kind == UnderlayKind.Dxf)
+        {
+            // Solo lo que cae en pantalla, para que un plano grande no frene el dibujo.
+            var view = new Rect(Bounds.Size).Inflate(4);
+            foreach (var s in u.PlanSegments())
+            {
+                var a = ToScreen(s.A);
+                var b = ToScreen(s.B);
+                if (!view.Intersects(new Rect(a, b).Inflate(1))) continue;
+                ctx.DrawLine(UnderlayPen, a, b);
+            }
+            return;
+        }
+
+        var bmp = Image(u.ImagePath);
+        if (bmp is null)
+        {
+            var c = u.Corners.Select(ToScreen).ToList();
+            ctx.DrawGeometry(null, UnderlayPen, Poly(u.Corners));
+            DrawLabel(ctx, $"No se encuentra la imagen\n{u.ImagePath}", c[0] + new Point(8, 8), 12, Brushes.Firebrick, center: false);
+            return;
+        }
+        double a0 = u.Rotation * Math.PI / 180, cs = Math.Cos(a0), sn = Math.Sin(a0), k = _scale * u.Scale;
+        var m = new Matrix(k * cs, -k * sn, k * sn, k * cs, _pan.X + _scale * u.Origin.X, _pan.Y - _scale * u.Origin.Y);
+        using (ctx.PushTransform(m))
+            ctx.DrawImage(bmp, new Rect(0, 0, bmp.PixelSize.Width, bmp.PixelSize.Height));
+    }
+
+    private Bitmap? Image(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        if (_images.TryGetValue(path, out var cached)) return cached;
+        Bitmap? bmp = null;
+        try { if (File.Exists(path)) bmp = new Bitmap(path); }
+        catch (Exception) { bmp = null; }
+        _images[path] = bmp;
+        return bmp;
     }
 
     private void DrawGrid(DrawingContext ctx)
@@ -369,6 +453,25 @@ public sealed class PlanCanvas : Control
                     ToScreen(st) + new Point(10, 10), 12, Brushes.DarkOrange, center: false);
             }
         }
+        else if (_drawStart is { } u0 && Tool is PlanTool.CalibrateUnderlay or PlanTool.MoveUnderlay)
+        {
+            ctx.DrawLine(ToolPen, ToScreen(u0), cs);
+            DrawLabel(ctx, Tool == PlanTool.CalibrateUnderlay ? $"{u0.DistanceTo(c):0.000} m en el calco" : $"Δ {c.X - u0.X:0.00}, {c.Y - u0.Y:0.00} m",
+                ToScreen((u0 + c) * 0.5) + new Point(8, -16), 12, Brushes.MediumVioletRed, center: false);
+        }
+        else if (_drawStart is { } pivot && Tool == PlanTool.RotateUnderlay)
+        {
+            ctx.DrawEllipse(null, ToolPen, ToScreen(pivot), 5, 5);
+            if (_secondPoint is { } from)
+            {
+                ctx.DrawLine(ToolPen, ToScreen(pivot), ToScreen(from));
+                ctx.DrawLine(ToolPen, ToScreen(pivot), cs);
+                double deg = (Math.Atan2(c.Y - pivot.Y, c.X - pivot.X) - Math.Atan2(from.Y - pivot.Y, from.X - pivot.X)) * 180 / Math.PI;
+                deg = (deg + 540) % 360 - 180;
+                DrawLabel(ctx, $"{deg:0.0}°", cs + new Point(10, -16), 12, Brushes.MediumVioletRed, center: false);
+            }
+            else ctx.DrawLine(ToolPen, ToScreen(pivot), cs);
+        }
         else if (Tool == PlanTool.Route && _routeFrom is not null)
         {
             var f = _doc.Fixtures.FirstOrDefault(x => x.Id == _routeFrom);
@@ -497,6 +600,12 @@ public sealed class PlanCanvas : Control
                 RouteClick(raw);
                 break;
 
+            case PlanTool.CalibrateUnderlay:
+            case PlanTool.MoveUnderlay:
+            case PlanTool.RotateUnderlay:
+                await UnderlayClick(SnapToUnderlay(raw, 8 / _scale) ?? raw);
+                break;
+
             case PlanTool.Rename:
                 var space = _doc.SpaceAt(LevelId, raw);
                 if (space is null) { Status?.Invoke(this, "Haz clic dentro de una habitación cerrada."); break; }
@@ -516,7 +625,10 @@ public sealed class PlanCanvas : Control
             _pan = new Point(_pan.X + pos.X - ps.X, _pan.Y + pos.Y - ps.Y);
             _panStart = pos;
         }
-        _cursor = Snap(ToWorld(pos), _drawStart);
+        var world = ToWorld(pos);
+        _cursor = Tool is PlanTool.CalibrateUnderlay or PlanTool.MoveUnderlay or PlanTool.RotateUnderlay
+            ? SnapToUnderlay(world, 8 / _scale) ?? world
+            : Snap(world, _drawStart);
         Status?.Invoke(this, $"x = {_cursor.Value.X:0.00} m   y = {_cursor.Value.Y:0.00} m   ·   {ToolHelp()}");
         InvalidateVisual();
     }
@@ -542,8 +654,41 @@ public sealed class PlanCanvas : Control
         PlanTool.Fixture => $"Clic para colocar: {FixtureType.Name}.",
         PlanTool.Route => _routeFrom is null ? "Clic en el elemento de origen." : "Clic en el elemento de destino (la ruta va por el techo).",
         PlanTool.Rename => "Clic dentro de una habitación para ponerle nombre y uso.",
+        PlanTool.CalibrateUnderlay => _drawStart is null ? "Escalar calco: clic en un extremo de una medida conocida (una cota, una puerta…)." : "Clic en el otro extremo; luego escribe cuánto mide en realidad.",
+        PlanTool.MoveUnderlay => _drawStart is null ? "Mover calco: clic en un punto del calco." : "Clic donde debe quedar ese punto (por ejemplo, la esquina de un muro).",
+        PlanTool.RotateUnderlay => _drawStart is null ? "Girar calco: clic en el punto fijo." : _secondPoint is null ? "Clic en un punto del calco que marque la dirección actual." : "Clic hacia donde debe apuntar.",
         _ => "",
     };
+
+    private async Task UnderlayClick(Point2 p)
+    {
+        var u = ActiveUnderlay;
+        if (u is null) { Status?.Invoke(this, "Este nivel no tiene calco. Importa un DXF o un plano escaneado."); return; }
+        if (_drawStart is not { } first) { _drawStart = p; return; }
+        switch (Tool)
+        {
+            case PlanTool.CalibrateUnderlay:
+                _drawStart = null;
+                double measured = first.DistanceTo(p);
+                if (measured < 1e-6 || AskRealDistance is null) return;
+                if (await AskRealDistance(measured) is { } real && real > 0)
+                {
+                    _doc.ReplaceUnderlay(u.Calibrate(first, p, real));
+                    Status?.Invoke(this, $"Calco escalado ×{real / measured:0.####}.");
+                }
+                break;
+            case PlanTool.MoveUnderlay:
+                _drawStart = null;
+                _doc.ReplaceUnderlay(u.MoveBy(first, p));
+                break;
+            case PlanTool.RotateUnderlay:
+                if (_secondPoint is not { } from) { _secondPoint = p; return; }
+                _doc.ReplaceUnderlay(u.RotateTo(first, from, p));
+                _drawStart = null;
+                _secondPoint = null;
+                break;
+        }
+    }
 
     private void PlaceOpening(Point2 raw)
     {
