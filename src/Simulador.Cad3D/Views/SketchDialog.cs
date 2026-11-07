@@ -12,7 +12,7 @@ namespace Simulador.Cad3D.Views;
 /// Editor de bocetos 2D para el perfil de una extrusión o revolución: dibujo con el ratón sobre rejilla
 /// y tabla de puntos con cotas editables, tramos rectos o en arco. Devuelve el perfil nuevo o null si se cancela.
 /// </summary>
-internal sealed record SketchResult(List<Vec2> Points, List<double> Bulges);
+internal sealed record SketchResult(List<Vec2> Points, List<double> Bulges, List<SketchConstraint> Constraints);
 
 internal sealed class SketchDialog : Window
 {
@@ -20,11 +20,12 @@ internal sealed class SketchDialog : Window
 
     private readonly SketchCanvas _canvas;
     private readonly StackPanel _rows = new() { Spacing = 2 };
+    private readonly StackPanel _ruleList = new() { Spacing = 2 };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
     private readonly Button _ok;
     private readonly bool _revolve;
 
-    public SketchDialog(IEnumerable<Vec2> profile, IEnumerable<double>? bulges, bool revolve)
+    public SketchDialog(IEnumerable<Vec2> profile, IEnumerable<double>? bulges, bool revolve, IEnumerable<SketchConstraint>? constraints = null)
     {
         _revolve = revolve;
         Title = revolve ? "Boceto del perfil de revolución (X = radio, Y = altura)" : "Boceto del perfil de extrusión";
@@ -36,14 +37,21 @@ internal sealed class SketchDialog : Window
 
         _canvas = new SketchCanvas { Revolve = revolve };
         _canvas.SetProfile(profile, bulges);
+        _canvas.SetConstraints(constraints);
         _canvas.Edited += UpdateStatus;
         _canvas.Committed += RebuildRows;
 
         _ok = new Button { Content = "Aceptar", IsDefault = true, MinWidth = 90 };
         _ok.Click += (_, _) =>
         {
+            int before = _canvas.Points.Count;
+            bool reversed = Polygon2D.SignedArea(Sketch2D.Tessellate(_canvas.Points, _canvas.Bulges)) < 0;
             var (pts, bl) = Sketch2D.Normalize(_canvas.Points, _canvas.Bulges);
-            Close(new SketchResult(pts, bl));
+            // Si al limpiar el perfil se juntaron puntos repetidos, los números de tramo ya no cuadran.
+            var rules = pts.Count != before ? new List<SketchConstraint>()
+                : reversed ? SketchSolver.AfterReverse(_canvas.Constraints, pts.Count)
+                : _canvas.Constraints.ToList();
+            Close(new SketchResult(pts, bl, rules));
         };
         var cancel = new Button { Content = "Cancelar", IsCancel = true, MinWidth = 90 };
         cancel.Click += (_, _) => Close(null);
@@ -57,6 +65,7 @@ internal sealed class SketchDialog : Window
         side.Children.Add(SnapRow());
         side.Children.Add(ShapesPanel());
         side.Children.Add(FilletRow());
+        side.Children.Add(RulesPanel());
         side.Children.Add(new TextBlock { Text = "Puntos y cotas (mm)", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
         side.Children.Add(new TextBlock { Text = "Tramo: distancia en línea recta al punto siguiente (al cambiarla se mueve el punto siguiente en la misma dirección). Radio: vacío = tramo recto; escribe un radio para hacerlo arco.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7 });
         side.Children.Add(Header());
@@ -66,14 +75,14 @@ internal sealed class SketchDialog : Window
         buttons.Children.Add(_ok);
 
         var right = new DockPanel { Width = 360 };
-        DockPanel.SetDock(side, Dock.Top);
+        // Todo el lateral se desplaza junto: formas, reglas y tabla de puntos.
+        side.Children.Add(_rows);
         DockPanel.SetDock(buttons, Dock.Bottom);
         var statusBox = new Border { Child = _status, Margin = new Thickness(12, 0) };
         DockPanel.SetDock(statusBox, Dock.Bottom);
-        right.Children.Add(side);
         right.Children.Add(buttons);
         right.Children.Add(statusBox);
-        right.Children.Add(new ScrollViewer { Content = _rows, Margin = new Thickness(12, 0) });
+        right.Children.Add(new ScrollViewer { Content = side });
 
         var root = new DockPanel();
         DockPanel.SetDock(right, Dock.Right);
@@ -107,8 +116,17 @@ internal sealed class SketchDialog : Window
         var rect = new Button { Content = "Rectángulo" };
         rect.Click += (_, _) =>
         {
-            var (pts, bl) = Sketch2D.RoundedRectangle(Value(w, 40), Value(h, 20), TryNumber(cr.Text, out var r) ? Math.Max(0, r) : 0);
+            double radius = TryNumber(cr.Text, out var r) ? Math.Max(0, r) : 0;
+            var (pts, bl) = Sketch2D.RoundedRectangle(Value(w, 40), Value(h, 20), radius);
             Replace(pts, bl);
+            // Un rectángulo sin redondeos sigue siendo rectángulo al mover sus esquinas.
+            if (pts.Count == 4)
+            {
+                var rules = Enumerable.Range(0, 4).Select(i =>
+                    new SketchConstraint(Math.Abs(pts[(i + 1) % 4].Y - pts[i].Y) < 1e-9 ? ConstraintKind.Horizontal : ConstraintKind.Vertical, i));
+                _canvas.SetConstraints(rules);
+                RebuildRows();
+            }
         };
         panel.Children.Add(Line(rect, "ancho", w, "alto", h));
         var crRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(102, 0, 0, 0) };
@@ -137,8 +155,10 @@ internal sealed class SketchDialog : Window
         b.Click += (_, _) =>
         {
             if (_canvas.Selected < 0) { ShowProblem("Primero haz clic en el punto de la esquina que quieres redondear."); return; }
-            var problem = Sketch2D.FilletCorner(_canvas.Points, _canvas.Bulges, _canvas.Selected, Value(r, 3));
+            int corner = _canvas.Selected, before = _canvas.Points.Count;
+            var problem = Sketch2D.FilletCorner(_canvas.Points, _canvas.Bulges, corner, Value(r, 3));
             if (problem is not null) { ShowProblem(problem); return; }
+            _canvas.SetConstraints(_canvas.Points.Count == before + 1 ? SketchSolver.AfterFillet(_canvas.Constraints, corner, before) : null);
             _canvas.Select(-1);
             RebuildRows();
         };
@@ -148,6 +168,100 @@ internal sealed class SketchDialog : Window
         row.Children.Add(r);
         ToolTip.SetTip(b, "Redondea la esquina del punto seleccionado (haz clic antes en el punto).");
         return row;
+    }
+
+    private Control RulesPanel()
+    {
+        var panel = new StackPanel { Spacing = 4 };
+        panel.Children.Add(new TextBlock { Text = "Reglas", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 4, 0, 0) });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Elige tramos con un clic en su cuadradito central (dos para paralelo, perpendicular e iguales; Esc los suelta). Para fijar un punto, haz clic en él.",
+            TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7,
+        });
+        var wrap = new WrapPanel();
+        void Btn(string text, string tip, Action action)
+        {
+            var b = new Button { Content = text, Margin = new Thickness(0, 0, 4, 4), Padding = new Thickness(6, 2) };
+            ToolTip.SetTip(b, tip);
+            b.Click += (_, _) => action();
+            wrap.Children.Add(b);
+        }
+        Btn("Horizontal", "El tramo elegido queda horizontal.", () => OneSegment(ConstraintKind.Horizontal));
+        Btn("Vertical", "El tramo elegido queda vertical.", () => OneSegment(ConstraintKind.Vertical));
+        Btn("Paralelo", "Los dos tramos elegidos quedan paralelos.", () => TwoSegments(ConstraintKind.Paralelo));
+        Btn("Perpendicular", "Los dos tramos elegidos forman 90°.", () => TwoSegments(ConstraintKind.Perpendicular));
+        Btn("Iguales", "Los dos tramos elegidos miden lo mismo.", () => TwoSegments(ConstraintKind.IgualLongitud));
+        Btn("Fijar cota", "La longitud actual del tramo elegido no cambia al mover otros puntos.", () => OneSegment(ConstraintKind.Longitud));
+        Btn("Fijar punto", "El punto seleccionado no se mueve.", FixPoint);
+        panel.Children.Add(wrap);
+        panel.Children.Add(_ruleList);
+        return panel;
+    }
+
+    private void OneSegment(ConstraintKind kind)
+    {
+        if (_canvas.SelectedSegments.Count == 0) { ShowProblem("Primero haz clic en el cuadradito central del tramo."); return; }
+        int seg = _canvas.SelectedSegments[^1];
+        double value = kind == ConstraintKind.Longitud ? Sketch2D.SegmentLength(_canvas.Points, seg) : 0;
+        if (kind == ConstraintKind.Longitud && value < 1e-6) { ShowProblem("El tramo mide 0."); return; }
+        AddRule(new SketchConstraint(kind, seg, Value: value));
+    }
+
+    private void TwoSegments(ConstraintKind kind)
+    {
+        if (_canvas.SelectedSegments.Count < 2) { ShowProblem("Elige dos tramos: clic en el cuadradito central de cada uno."); return; }
+        AddRule(new SketchConstraint(kind, _canvas.SelectedSegments[0], _canvas.SelectedSegments[1]));
+    }
+
+    private void FixPoint()
+    {
+        if (_canvas.Selected < 0) { ShowProblem("Primero haz clic en el punto que quieres fijar."); return; }
+        AddRule(new SketchConstraint(ConstraintKind.Fijo, _canvas.Selected));
+    }
+
+    private void AddRule(SketchConstraint rule)
+    {
+        var rules = _canvas.Constraints;
+        if (rules.Any(r => SameRule(r, rule))) { ShowProblem("Esa regla ya está puesta."); return; }
+        var saved = _canvas.Points.ToList();
+        rules.Add(rule);
+        if (_canvas.ApplyRules() > 1e-3)
+        {
+            rules.RemoveAt(rules.Count - 1);
+            _canvas.Points.Clear();
+            _canvas.Points.AddRange(saved);
+            _canvas.ApplyRules();
+            RebuildRows();
+            ShowProblem($"No se puede: «{rule.Describe()}» choca con las otras reglas o con los puntos fijos.");
+            return;
+        }
+        _canvas.ClearSegmentSelection();
+        RebuildRows();
+    }
+
+    private static bool SameRule(SketchConstraint a, SketchConstraint b) =>
+        a.Kind == b.Kind && (a.A == b.A && a.B == b.B || a.TwoSegments && a.A == b.B && a.B == b.A);
+
+    private void FillRuleList()
+    {
+        _ruleList.Children.Clear();
+        var rules = _canvas.Constraints;
+        for (int k = 0; k < rules.Count; k++)
+        {
+            var rule = rules[k];
+            bool ok = SketchSolver.Error(_canvas.Points, rule) < 1e-3;
+            var row = new DockPanel();
+            var del = new Button { Content = "✕", Padding = new Thickness(6, 0), FontSize = 11 };
+            ToolTip.SetTip(del, "Quitar esta regla");
+            del.Click += (_, _) => { rules.Remove(rule); _canvas.ApplyRules(); RebuildRows(); };
+            DockPanel.SetDock(del, Dock.Right);
+            row.Children.Add(del);
+            var label = new TextBlock { Text = $"{k + 1}. {rule.Describe()}", FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+            if (!ok) label.Foreground = Brushes.OrangeRed;
+            row.Children.Add(label);
+            _ruleList.Children.Add(row);
+        }
     }
 
     private void ShowProblem(string text)
@@ -182,6 +296,7 @@ internal sealed class SketchDialog : Window
     private void Replace(List<Vec2> pts, List<double>? bulges = null)
     {
         _canvas.SetProfile(pts, bulges);
+        _canvas.SetConstraints(null);
         _canvas.Select(-1);
         _canvas.FitView();
         RebuildRows();
@@ -214,7 +329,7 @@ internal sealed class SketchDialog : Window
     {
         if (_rebuilding) return;
         _rebuilding = true;
-        try { FillRows(); }
+        try { FillRows(); FillRuleList(); }
         finally { _rebuilding = false; }
         UpdateStatus();
     }
@@ -228,15 +343,32 @@ internal sealed class SketchDialog : Window
             int idx = i;
             var g = RowGrid();
             Cell(g, 0, new TextBlock { Text = (i + 1).ToString(CultureInfo.InvariantCulture) });
-            Cell(g, 1, Field(pts[i].X, v => { pts[idx] = pts[idx] with { X = v }; return true; }));
-            Cell(g, 2, Field(pts[i].Y, v => { pts[idx] = pts[idx] with { Y = v }; return true; }));
-            Cell(g, 3, Field(Sketch2D.SegmentLength(pts, i), v => Sketch2D.SetSegmentLength(pts, idx, v), rebuild: true));
+            Cell(g, 1, Field(pts[i].X, v => { pts[idx] = pts[idx] with { X = v }; _canvas.ApplyRules(idx); return true; }, rebuild: _canvas.Constraints.Count > 0));
+            Cell(g, 2, Field(pts[i].Y, v => { pts[idx] = pts[idx] with { Y = v }; _canvas.ApplyRules(idx); return true; }, rebuild: _canvas.Constraints.Count > 0));
+            Cell(g, 3, Field(Sketch2D.SegmentLength(pts, i), v => SetLength(idx, v), rebuild: true));
             Cell(g, 4, RadiusField(idx));
             g.PointerPressed += (_, _) => _canvas.Select(idx);
             _rows.Children.Add(g);
         }
         if (pts.Count > MaxRows)
             _rows.Children.Add(new TextBlock { Text = $"… y {pts.Count - MaxRows} puntos más (edítalos en el dibujo).", FontSize = 12, Opacity = 0.7 });
+    }
+
+    /// <summary>Cambia la longitud del tramo; si tenía la cota fija, la cota pasa a ser la nueva.</summary>
+    private bool SetLength(int seg, double value)
+    {
+        var rules = _canvas.Constraints;
+        int k = rules.FindIndex(r => r.Kind == ConstraintKind.Longitud && r.A == seg);
+        if (k >= 0)
+        {
+            if (value <= 0) return false;
+            rules[k] = rules[k] with { Value = value };
+            _canvas.ApplyRules();
+            return true;
+        }
+        if (!Sketch2D.SetSegmentLength(_canvas.Points, seg, value)) return false;
+        _canvas.ApplyRules((seg + 1) % _canvas.Points.Count);
+        return true;
     }
 
     private TextBox Field(double value, Func<double, bool> apply, bool rebuild = false)
@@ -305,6 +437,12 @@ internal sealed class SketchDialog : Window
         double perimeter = Enumerable.Range(0, pts.Count).Sum(i => Sketch2D.PathLength(pts, bl, i));
         double w = outline.Max(p => p.X) - outline.Min(p => p.X), h = outline.Max(p => p.Y) - outline.Min(p => p.Y);
         int arcs = bl.Count(b => Math.Abs(b) > 1e-9);
+        if (_canvas.Constraints.Count > 0 && _canvas.RuleError > 1e-3)
+        {
+            _status.Text = "Hay reglas que no se cumplen (en rojo): quita alguna o mueve los puntos.";
+            _status.Foreground = Brushes.OrangeRed;
+            return;
+        }
         _status.Text = $"{pts.Count} puntos · {arcs} arco(s) · {SketchCanvas.Fmt(w)} × {SketchCanvas.Fmt(h)} mm · área {SketchCanvas.Fmt(area)} mm² · perímetro {SketchCanvas.Fmt(perimeter)} mm";
         _status.Foreground = Brushes.Gray;
     }
