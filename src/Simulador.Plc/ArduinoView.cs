@@ -31,6 +31,7 @@ internal sealed partial class ArduinoView : UserControl
     private readonly TextBlock _description = new() { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, FontSize = 12 };
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly ContentControl _boardHost = new();
+    private readonly PartsPanel _parts = new();
     private readonly StackPanel _inputs = new() { Spacing = 4 };
     private readonly TextBlock _outputs = new() { FontFamily = Mono, FontSize = 12 };
     private readonly TextBox _serial = new() { IsReadOnly = true, FontFamily = Mono, FontSize = 12, Height = 150, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
@@ -123,7 +124,9 @@ internal sealed partial class ArduinoView : UserControl
             Text = "Rojo: salida en HIGH (más tenue = PWM). Verde: entrada que recibe 5 V. Azul: servo o tono. Clic en un pin de entrada para cambiarlo.",
             FontSize = 11, Opacity = 0.7, TextWrapping = TextWrapping.Wrap,
         });
-        right.Children.Add(Title("Entradas"));
+        right.Children.Add(Title("Montaje"));
+        right.Children.Add(_parts);
+        right.Children.Add(Title("Otras entradas"));
         right.Children.Add(_inputs);
         right.Children.Add(Title("Salidas"));
         right.Children.Add(_outputs);
@@ -172,6 +175,8 @@ internal sealed partial class ArduinoView : UserControl
         _mcu.Stop();
         _editor.Text = e.Source.Replace("\r\n", "\n");
         _description.Text = e.Description;
+        _parts.SetSpecs(e.Setup);
+        _inputSignature = "";
         _mcu.ClearSerialOutput();
         _serial.Text = "";
         UpdateStatus();
@@ -243,6 +248,7 @@ internal sealed partial class ArduinoView : UserControl
     {
         _board = new ArduinoBoardView(_mcu, TogglePin);
         _boardHost.Content = _board;
+        _parts.Attach(_mcu);
         _board.Refresh();
     }
 
@@ -277,8 +283,9 @@ internal sealed partial class ArduinoView : UserControl
 
     private void BuildInputs()
     {
-        var digital = _mcu.Pins.Where(p => !p.IsOutput && p.Configured).ToList();
-        var analog = UsedAnalogPins().ToList();
+        var driven = _parts.DrivenPins;
+        var digital = _mcu.Pins.Where(p => !p.IsOutput && p.Configured && !driven.Contains(p)).ToList();
+        var analog = UsedAnalogPins().Where(p => !driven.Contains(p)).ToList();
         string signature = string.Join(",", digital.Select(p => p.Name + p.Mode)) + "|" + string.Join(",", analog.Select(p => p.Name));
         if (signature == _inputSignature) return;
         _inputSignature = signature;
@@ -317,7 +324,7 @@ internal sealed partial class ArduinoView : UserControl
             _inputs.Children.Add(row);
         }
         if (_inputs.Children.Count == 0)
-            _inputs.Children.Add(new TextBlock { Text = "El sketch no usa entradas (o aún no se ha ejecutado).", Opacity = 0.6, FontSize = 12 });
+            _inputs.Children.Add(new TextBlock { Text = "Ninguna: las entradas que usa el sketch ya tienen su pieza en el montaje.", Opacity = 0.6, FontSize = 12 });
     }
 
     // ---- Puerto serie ----
@@ -341,7 +348,9 @@ internal sealed partial class ArduinoView : UserControl
             // Si el PC no da abasto, la simulación va más lenta en lugar de saltar.
             if (dt > TimeSpan.FromMilliseconds(100)) dt = TimeSpan.FromMilliseconds(100);
             _simTime += dt;
+            _parts.Apply();
             _mcu.Advance(_simTime);
+            _parts.Animate(dt);
         }
         Refresh();
     }
@@ -349,6 +358,7 @@ internal sealed partial class ArduinoView : UserControl
     private void Refresh()
     {
         _board?.Refresh();
+        _parts.Refresh();
         BuildInputs();
         var serial = _mcu.SerialOutput;
         if (serial != _serial.Text)
