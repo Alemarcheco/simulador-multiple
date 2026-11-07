@@ -87,7 +87,12 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   en primitivas 2D en metros por capas (MUROS, HUECOS, ESCALERAS, HABITACIONES, COTAS, ELECTRICIDAD, HIDRAULICA) con
   cotas totales y de fachada. Sale a DXF R12 en metros (ANSI 1252, un nivel al lado de otro) o a PDF vectorial a
   escala normalizada (automática o elegida) con cajetín y barra de escala, una hoja por nivel, sin dependencias.
-- **Siguiente**: IFC, recorrido en primera persona, estudio de soleamiento.
+- **Recorrido en primera persona** (`Model/Walkthrough.cs`, botón «Recorrer por dentro» de la vista 3D): se empieza
+  delante de la puerta de entrada; W A S D o flechas para andar, ratón para mirar, Esc para salir. `Walker` choca con
+  muros y ventanas (cuerpo de 25 cm de radio, deslizando), pasa por las puertas, sube y baja escaleras peldaño a
+  peldaño y cambia de planta. Los forjados se dibujan con el hueco de la escalera que llega desde abajo
+  (`BuildingMesh.StairWellCut`, `Geo.SubtractConvex`).
+- **Siguiente**: estudio de soleamiento.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D

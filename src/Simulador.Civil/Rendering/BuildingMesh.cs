@@ -65,7 +65,8 @@ public sealed class BuildingMesh
         {
             var lvl = doc.GetLevel(s.LevelId);
             if (s.Kind == SlabKind.Floor)
-                m.AddBox(s.Outline, lvl.Elevation - s.Thickness, lvl.Elevation, FloorColor);
+                foreach (var piece in StairWellCut(doc, lvl, s.Outline))
+                    m.AddBox(piece, lvl.Elevation - s.Thickness, lvl.Elevation, FloorColor);
             else if (s.Kind == SlabKind.Roof && showRoof && lvl == topShown && lvl == topAll)
                 m.AddBox(s.Outline, lvl.Elevation + lvl.Height - s.Thickness, lvl.Elevation + lvl.Height, RoofColor);
         }
@@ -108,6 +109,29 @@ public sealed class BuildingMesh
     }
 
     /// <summary>Prisma de base <paramref name="b"/> entre z0 y z1 con caras orientadas hacia fuera.</summary>
+    /// <summary>
+    /// Forjado sin el hueco de las escaleras que suben hasta él desde la planta de abajo (cada tramo y descanso se
+    /// recorta por separado, así una escalera en L no deja un agujero en la esquina vacía).
+    /// </summary>
+    public static IEnumerable<IReadOnlyList<Point2>> StairWellCut(BuildingDocument doc, Level lvl, IReadOnlyList<Point2> outline)
+    {
+        var pieces = new List<IReadOnlyList<Point2>> { outline };
+        foreach (var hole in StairWells(doc, lvl))
+            pieces = pieces.SelectMany(p => Geo.SubtractConvex(p, hole)).Cast<IReadOnlyList<Point2>>().ToList();
+        return pieces;
+    }
+
+    /// <summary>Tramos y descansos de las escaleras que llegan a esta planta desde la de abajo (huecos del forjado).</summary>
+    public static IEnumerable<IReadOnlyList<Point2>> StairWells(BuildingDocument doc, Level lvl)
+    {
+        foreach (var st in doc.Stairs)
+        {
+            double z0 = doc.GetLevel(st.LevelId).Elevation;
+            if (z0 >= lvl.Elevation - 1e-6 || Math.Abs(z0 + st.Rise - lvl.Elevation) > 0.3) continue;
+            foreach (var part in st.Parts) yield return part;
+        }
+    }
+
     public void AddBox(IReadOnlyList<Point2> b, double z0, double z1, uint argb)
     {
         if (z1 - z0 < 1e-6 || b.Count < 3) return;
