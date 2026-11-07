@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Simulador.Arduino.Runtime;
+using Simulador.Arduino.Runtime.Blocks;
 using Simulador.Arduino.Runtime.Sketch;
 using Simulador.Core.Modules;
 
@@ -32,6 +33,11 @@ internal sealed partial class ArduinoView : UserControl
     private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly ContentControl _boardHost = new();
     private readonly PartsPanel _parts = new();
+    private readonly BlockEditor _blocks = new();
+    private readonly TabControl _modeTabs;
+    private readonly TabItem _blocksTab;
+    private IReadOnlyDictionary<int, Block>? _lineToBlock;
+    private Grid? _mainGrid;
     private readonly StackPanel _inputs = new() { Spacing = 4 };
     private readonly TextBlock _outputs = new() { FontFamily = Mono, FontSize = 12 };
     private readonly TextBox _serial = new() { IsReadOnly = true, FontFamily = Mono, FontSize = 12, Height = 150, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };
@@ -96,11 +102,34 @@ internal sealed partial class ArduinoView : UserControl
         editorGrid.Children.Add(_editor);
         var editorScroll = new ScrollViewer { Content = editorGrid, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
         var editorBox = new Border { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = editorScroll };
-        var left = new DockPanel { Margin = new Thickness(8, 0, 4, 0) };
+        var codePanel = new DockPanel();
         DockPanel.SetDock(_description, Dock.Top);
         _description.Margin = new Thickness(0, 0, 0, 6);
-        left.Children.Add(_description);
-        left.Children.Add(editorBox);
+        codePanel.Children.Add(_description);
+        codePanel.Children.Add(editorBox);
+
+        // --- Bloques: el código se genera solo y aparece en la pestaña Código ---
+        _blocks.Changed += () => GenerateFromBlocks();
+        _blocks.ExampleChosen += e => { if (_modeTabs?.SelectedItem == _blocksTab) MountBlockExample(e); };
+        _blocksTab = new TabItem { Header = "Bloques", Content = _blocks };
+        _modeTabs = new TabControl
+        {
+            Margin = new Thickness(8, 0, 4, 0),
+            ItemsSource = new[] { new TabItem { Header = "Código", Content = codePanel }, _blocksTab },
+        };
+        _modeTabs.SelectionChanged += (_, e) =>
+        {
+            if (e.Source != _modeTabs) return;
+            // Los bloques necesitan más anchura que el código.
+            if (_mainGrid is not null) _mainGrid.ColumnDefinitions[0].Width = new GridLength(BlocksMode ? 8 : 5, GridUnitType.Star);
+            if (_modeTabs.SelectedItem == _blocksTab)
+            {
+                if (_blocks.CurrentExample is { } ex) MountBlockExample(ex);
+                GenerateFromBlocks();
+            }
+            else _lineToBlock = null;
+        };
+        var left = _modeTabs;
 
         // --- Panel derecho ---
         var send = new Button { Content = "Enviar" };
@@ -137,6 +166,7 @@ internal sealed partial class ArduinoView : UserControl
         right.Children.Add(_variables);
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("5*,Auto,6*") };
+        _mainGrid = grid;
         grid.Children.Add(left);
         var split = new GridSplitter { Width = 4, Background = Brushes.Transparent };
         Grid.SetColumn(split, 1);
@@ -173,6 +203,8 @@ internal sealed partial class ArduinoView : UserControl
         if (_examples.SelectedIndex < 0) return;
         var e = ArduinoExamples.All[_examples.SelectedIndex];
         _mcu.Stop();
+        if (_modeTabs is not null) _modeTabs.SelectedIndex = 0;
+        _lineToBlock = null;
         _editor.Text = e.Source.Replace("\r\n", "\n");
         _description.Text = e.Description;
         _parts.SetSpecs(e.Setup);
@@ -182,8 +214,45 @@ internal sealed partial class ArduinoView : UserControl
         UpdateStatus();
     }
 
+    private bool BlocksMode => _modeTabs.SelectedItem == _blocksTab;
+
+    private void MountBlockExample(BlockExample e)
+    {
+        _mcu.Stop();
+        _parts.SetSpecs(e.Parts);
+        _inputSignature = "";
+        _mcu.ClearSerialOutput();
+        _serial.Text = "";
+        _description.Text = "Generado desde los bloques: " + e.Description;
+        UpdateStatus();
+    }
+
+    /// <summary>Pasa los bloques a código. Si algún bloque está mal, lo marca en rojo.</summary>
+    private bool GenerateFromBlocks()
+    {
+        if (_modeTabs is null || !BlocksMode) return false;
+        try
+        {
+            var code = BlockCodeGenerator.Generate(_blocks.Program, _mcu.Board);
+            _lineToBlock = code.LineToBlock;
+            if (_editor.Text != code.Source) _editor.Text = code.Source;
+            _blocks.MarkError(null, null);
+            return true;
+        }
+        catch (BlockException ex)
+        {
+            _lineToBlock = null;
+            _blocks.MarkError(ex.Block, ex.Message);
+            _status.Text = "Error en los bloques: " + ex.Message;
+            return false;
+        }
+    }
+
+    private Block? BlockAt(int line) => _lineToBlock is not null && _lineToBlock.TryGetValue(line, out var b) ? b : null;
+
     private bool Compile()
     {
+        if (BlocksMode && !GenerateFromBlocks()) return false;
         try
         {
             _mcu.Load(_editor.Text ?? "");
@@ -216,6 +285,7 @@ internal sealed partial class ArduinoView : UserControl
         _status.Text = $"{title} en la línea {line}: {message}";
         _host.SetStatus(_status.Text);
         SelectLine(line);
+        if (BlocksMode) _blocks.MarkError(BlockAt(line), message);
     }
 
     private void SelectLine(int line)
@@ -239,7 +309,9 @@ internal sealed partial class ArduinoView : UserControl
         if (_boardBox.SelectedItem is not ArduinoBoard b || b == _mcu.Board) return;
         _mcu.Dispose();
         _mcu = new ArduinoMcu("ARD1", b);
+        _blocks.Board = b;
         BuildBoard();
+        GenerateFromBlocks();
         _inputSignature = "";
         UpdateStatus();
     }
@@ -380,6 +452,11 @@ internal sealed partial class ArduinoView : UserControl
         if (_variables.Text.Length == 0) _variables.Text = "(sin variables globales)";
         UpdateGutter();
         UpdateStatus();
+        if (BlocksMode)
+        {
+            _blocks.MarkRunning(_mcu.State == McuState.Running ? BlockAt(_mcu.CurrentLine) : null);
+            if (_mcu.State == McuState.Fault && _mcu.FaultLine is { } fl) _blocks.MarkError(BlockAt(fl), _mcu.FaultMessage);
+        }
     }
 
     private void UpdateGutter()
