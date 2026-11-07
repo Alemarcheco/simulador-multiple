@@ -31,6 +31,8 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\SimuladorMultiple.exe
+; Icono del propio instalador (el mismo logotipo que la aplicación).
+SetupIconFile=..\src\Simulador.App\Assets\icono.ico
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
