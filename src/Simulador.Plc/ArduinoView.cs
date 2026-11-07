@@ -69,7 +69,7 @@ internal sealed partial class ArduinoView : UserControl
         _mcu = new ArduinoMcu("ARD1", ArduinoBoard.Uno);
 
         _boardBox = new ComboBox { ItemsSource = ArduinoBoard.Everything, SelectedIndex = 0, MinWidth = 180 };
-        ToolTip.SetTip(_boardBox, "Arduino se programa en C++ (y con bloques). ESP32 y Raspberry Pi Pico se programan en MicroPython.");
+        ToolTip.SetTip(_boardBox, "Arduino se programa en C++ y ESP32 y Raspberry Pi Pico en MicroPython. Con bloques se puede programar cualquiera: generan el código de la placa.");
         _boardBox.SelectionChanged += (_, _) => ChangeBoard();
         _exampleList = ArduinoExamples.All;
         _examples = new ComboBox { ItemsSource = _exampleList.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
@@ -217,9 +217,11 @@ internal sealed partial class ArduinoView : UserControl
 
     // ---- Programa ----
 
+    private bool _keepBlocks;
+
     private void ShowExample()
     {
-        if (_examples.SelectedIndex < 0) return;
+        if (_examples.SelectedIndex < 0 || _keepBlocks) return;
         var e = _exampleList[_examples.SelectedIndex];
         _mcu.Stop();
         _openedHex = null;
@@ -383,18 +385,12 @@ internal sealed partial class ArduinoView : UserControl
     {
         if (_boardBox.SelectedItem is not ArduinoBoard b || b == _mcu.Board) return;
         bool languageChanged = b.Language != _mcu.Board.Language;
+        bool blocks = BlocksMode;
         _mcu.Dispose();
         _mcu = new ArduinoMcu("ARD1", b);
         _compiled = null;
         _openedHex = null;
-        if (b.IsPython)
-        {
-            // MicroPython: ni bloques ni chip real (de momento).
-            if (BlocksMode) _modeTabs.SelectedIndex = 0;
-            _engine.SelectedIndex = 0;
-        }
-        else _blocks.Board = b;
-        _blocksTab.IsEnabled = !b.IsPython;
+        if (b.IsPython) _engine.SelectedIndex = 0; // MicroPython: sin chip real
         _engine.IsEnabled = !b.IsPython;
         _serialTitle.Text = b.IsPython ? "Consola (print e input)" : "Monitor serie";
         BuildBoard();
@@ -403,10 +399,14 @@ internal sealed partial class ArduinoView : UserControl
         {
             int index = languageChanged ? 0 : Math.Max(0, _examples.SelectedIndex);
             _exampleList = b.IsPython ? PythonExamples.For(b) : ArduinoExamples.All;
+            _keepBlocks = blocks; // en modo bloques el código lo dan los bloques, no el ejemplo de código
             _examples.ItemsSource = _exampleList.Select(e => e.Name).ToList();
             _examples.SelectedIndex = Math.Min(index, _exampleList.Count - 1);
+            _keepBlocks = false;
         }
-        else GenerateFromBlocks();
+        // Los bloques generan C++ o MicroPython según la placa; sus ejemplos cambian de pines si hace falta.
+        _blocks.Board = b;
+        GenerateFromBlocks();
         _inputSignature = "";
         UpdateStatus();
     }

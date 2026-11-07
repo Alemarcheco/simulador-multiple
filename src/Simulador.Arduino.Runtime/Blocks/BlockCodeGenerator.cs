@@ -23,8 +23,8 @@ public static partial class BlockCodeGenerator
 
     public static BlockCode Generate(BlockProgram program, ArduinoBoard? board = null)
     {
-        var g = new Gen(board);
-        return g.Run(program);
+        if (board is { IsPython: true }) return new PyGen(board).Run(program);
+        return new Gen(board).Run(program);
     }
 
     /// <summary>Nombre de variable válido en C a partir de lo que escribió el usuario (quita tildes y espacios).</summary>
@@ -49,6 +49,15 @@ public static partial class BlockCodeGenerator
 
     [GeneratedRegex(@"^-?\d+(\.\d+)?$")]
     private static partial Regex Number();
+
+    private static string NumberCode(Block b)
+    {
+        string text = b.Field("n").Trim().Replace(',', '.');
+        if (!Number().IsMatch(text)) throw new BlockException($"«{b.Field("n")}» no es un número.", b);
+        return text;
+    }
+
+    private static string Quote(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
     private sealed class Gen(ArduinoBoard? board)
     {
@@ -165,12 +174,6 @@ public static partial class BlockCodeGenerator
             };
         }
 
-        private static string NumberCode(Block b)
-        {
-            string text = b.Field("n").Trim().Replace(',', '.');
-            if (!Number().IsMatch(text)) throw new BlockException($"«{b.Field("n")}» no es un número.", b);
-            return text;
-        }
 
         /// <summary>D13 → 13, A0 → A0 (como se escribe en un sketch).</summary>
         private string PinCode(Block b)
@@ -186,6 +189,5 @@ public static partial class BlockCodeGenerator
             throw new BlockException($"«{b.Field("pin")}» no es un pin (usa D2, D13, A0…).", b);
         }
 
-        private static string Quote(string s) => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
     }
 }
