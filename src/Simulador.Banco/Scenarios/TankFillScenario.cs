@@ -61,30 +61,7 @@ public sealed class TankFillScenario : Scenario
         M1 = new InductionMotorGeneric("M1", powerKw: 2.2, voltage: 400, rpm: 2900, ratedCurrent: 4.7,
             startCurrentRatio: 6.5, breakdownTorqueRatio: 2.8, inertia: 0.006, loadInertia: 0.01);
 
-        var f = new HydraulicComponentFactory();
-        HydraulicPart Part(string type, Dictionary<string, object> p) => (HydraulicPart)f.Create(type, p);
-        var parts = new List<HydraulicPart>
-        {
-            Part("deposito", new() { ["id"] = "CIS", ["cota"] = 0.0, ["nivel"] = 1.5 }),
-            Part("tuberia", new() { ["id"] = "T1", ["longitud"] = 4.0, ["diametro"] = 0.05 }),
-            Part("bomba", new() { ["id"] = "P1" }),
-            Part("tuberia", new() { ["id"] = "T2", ["longitud"] = 18.0, ["diametro"] = 0.05, ["perdidasLocales"] = 3.0 }),
-            Part("tanque", new() { ["id"] = "TK1", ["cota"] = 4.0, ["diametro"] = 1.2, ["alturaMax"] = 3.0, ["nivelInicial"] = 0.9 }),
-            Part("tuberia", new() { ["id"] = "T3", ["longitud"] = 12.0, ["diametro"] = 0.04 }),
-            Part("valvula-control", new() { ["id"] = "V1", ["diametro"] = 0.04, ["tiempoRecorrido"] = 3.0 }),
-            Part("deposito", new() { ["id"] = "DES", ["cota"] = 0.0, ["nivel"] = 0.0 }),
-            Part("sensor-nivel", new() { ["id"] = "LT1", ["objetivo"] = "TK1" }),
-        };
-        Hydraulics = RedHidraulica.Assemble("agua", parts,
-        [
-            new("CIS", "Boca", "T1", "Entrada"),
-            new("T1", "Salida", "P1", "Entrada"),
-            new("P1", "Salida", "T2", "Entrada"),
-            new("T2", "Salida", "TK1", "Boca"),
-            new("TK1", "Boca", "T3", "Entrada"),
-            new("T3", "Salida", "V1", "Entrada"),
-            new("V1", "Salida", "DES", "Boca"),
-        ]);
+        Hydraulics = CreateHydraulics();
         Pump = Hydraulics.Part("P1");
         Pump.ShaftConnected = true;
         Valve = Hydraulics.Part("V1");
@@ -116,6 +93,35 @@ public sealed class TankFillScenario : Scenario
         Actions.Add(new("Rearmar térmico", () => { Km1.OverloadSetting = 5.0; Km1.ResetOverload(); }));
 
         AfterReset();
+    }
+
+    /// <summary>Cisterna → bomba P1 → tanque elevado TK1 → válvula de consumo V1 → desagüe, con la sonda LT1.</summary>
+    internal static RedHidraulica CreateHydraulics()
+    {
+        var f = new HydraulicComponentFactory();
+        HydraulicPart Part(string type, Dictionary<string, object> p) => (HydraulicPart)f.Create(type, p);
+        var parts = new List<HydraulicPart>
+        {
+            Part("deposito", new() { ["id"] = "CIS", ["cota"] = 0.0, ["nivel"] = 1.5 }),
+            Part("tuberia", new() { ["id"] = "T1", ["longitud"] = 4.0, ["diametro"] = 0.05 }),
+            Part("bomba", new() { ["id"] = "P1" }),
+            Part("tuberia", new() { ["id"] = "T2", ["longitud"] = 18.0, ["diametro"] = 0.05, ["perdidasLocales"] = 3.0 }),
+            Part("tanque", new() { ["id"] = "TK1", ["cota"] = 4.0, ["diametro"] = 1.2, ["alturaMax"] = 3.0, ["nivelInicial"] = 0.9 }),
+            Part("tuberia", new() { ["id"] = "T3", ["longitud"] = 12.0, ["diametro"] = 0.04 }),
+            Part("valvula-control", new() { ["id"] = "V1", ["diametro"] = 0.04, ["tiempoRecorrido"] = 3.0 }),
+            Part("deposito", new() { ["id"] = "DES", ["cota"] = 0.0, ["nivel"] = 0.0 }),
+            Part("sensor-nivel", new() { ["id"] = "LT1", ["objetivo"] = "TK1" }),
+        };
+        return RedHidraulica.Assemble("agua", parts,
+        [
+            new("CIS", "Boca", "T1", "Entrada"),
+            new("T1", "Salida", "P1", "Entrada"),
+            new("P1", "Salida", "T2", "Entrada"),
+            new("T2", "Salida", "TK1", "Boca"),
+            new("TK1", "Boca", "T3", "Entrada"),
+            new("T3", "Salida", "V1", "Entrada"),
+            new("V1", "Salida", "DES", "Boca"),
+        ]);
     }
 
     public override void AfterReset()

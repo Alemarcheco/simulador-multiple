@@ -46,6 +46,9 @@ public sealed class PlantCanvas : Control
             case TankFillScenario t:
                 yield return ("M1", V(f, "M1", GenericKeys.Speed) / t.M1.SyncSpeed);
                 break;
+            case TankFillElectricScenario:
+                yield return ("M1", V(f, TankFillElectricScenario.NetworkId, "M1.rpm") / 3000);
+                break;
             case TurboGeneratorScenario g:
                 yield return ("T1", V(f, "T1", GenericKeys.Speed) / g.T1.RatedSpeed);
                 break;
@@ -71,7 +74,8 @@ public sealed class PlantCanvas : Control
         var p = new Paint(ctx);
         switch (_scenario)
         {
-            case TankFillScenario t: DrawTankFill(p, t, _frame); break;
+            case TankFillScenario: DrawTankFill(p, GenericDrive(_frame)); break;
+            case TankFillElectricScenario: DrawTankFill(p, SchematicDrive(_frame)); break;
             case TurboGeneratorScenario g: DrawTurboGenerator(p, g, _frame); break;
             case TurboCompressorScenario c: DrawTurboCompressor(p, c, _frame); break;
         }
@@ -79,14 +83,30 @@ public sealed class PlantCanvas : Control
 
     // ---------------- Llenado de tanque ----------------
 
-    private void DrawTankFill(Paint p, TankFillScenario s, SimFrame? f)
+    /// <summary>Lo que el dibujo del llenado necesita de la parte eléctrica, venga de los equipos genéricos o del esquema real.</summary>
+    private sealed record DriveView(SimFrame? Frame, bool GridLive, bool Closed, bool Coil, bool Tripped, double Speed, double Current,
+        string TripInput, bool TripInputOn, string ContactorLabel);
+
+    private static DriveView GenericDrive(SimFrame? f) => new(f,
+        V(f, "RED", GenericKeys.Voltage) > 1, B(f, "KM1", GenericKeys.Closed), B(f, "KM1", GenericKeys.CoilOn),
+        B(f, "KM1", GenericKeys.Tripped), V(f, "M1", GenericKeys.Speed), V(f, "M1", GenericKeys.Current),
+        "%IX0.1 térmico", V(f, "PLC1", "PLC1.%IX0.1") > 15, "KM1");
+
+    private static DriveView SchematicDrive(SimFrame? f)
     {
-        bool gridLive = V(f, "RED", GenericKeys.Voltage) > 1;
-        bool closed = B(f, "KM1", GenericKeys.Closed);
-        bool coil = B(f, "KM1", GenericKeys.CoilOn);
-        bool tripped = B(f, "KM1", GenericKeys.Tripped);
-        double speed = V(f, "M1", GenericKeys.Speed);
-        double current = V(f, "M1", GenericKeys.Current);
+        const string n = TankFillElectricScenario.NetworkId;
+        bool q1Tripped = B(f, n, "Q1.disparado");
+        bool q1Closed = V(f, n, $"{n}.Q1.13-14") > 15;
+        bool km = B(f, n, "KM1.actuado");
+        return new(f, q1Closed, km && q1Closed, km, q1Tripped, V(f, n, "M1.rpm") * 2 * Math.PI / 60, V(f, n, "M1.corriente"),
+            "%IX0.1 Q1 ok", V(f, "PLC1", "PLC1.%IX0.1") > 15, q1Closed ? "Q1 + KM1" : "Q1 abierto");
+    }
+
+    private void DrawTankFill(Paint p, DriveView d)
+    {
+        var f = d.Frame;
+        bool gridLive = d.GridLive, closed = d.Closed, coil = d.Coil, tripped = d.Tripped;
+        double speed = d.Speed, current = d.Current;
         double q = Math.Max(0, V(f, "agua", "P1.flow"));
         double qOut = Math.Max(0, V(f, "agua", "T3.flow"));
         double level = V(f, "agua", "TK1.levelRatio");
@@ -94,23 +114,24 @@ public sealed class PlantCanvas : Control
         double opening = V(f, "agua", "V1.opening");
         bool run = f?["PLC1"]?.Values.TryGetValue("plc.state", out var st) == true && (string)st == "Run";
         double q0 = V(f, "PLC1", "PLC1.%QX0.0"), q1 = V(f, "PLC1", "PLC1.%QX0.1");
-        double i1 = V(f, "PLC1", "PLC1.%IX0.1"), ai = V(f, "PLC1", "PLC1.%IW64");
+        double ai = V(f, "PLC1", "PLC1.%IW64");
+        bool i1 = d.TripInputOn;
 
         // PLC y regleta X1
         p.Plc(new Rect(30, 40, 180, 150), "PLC1 · Genérico IEC", run,
-            [("%QX0.0 bomba", q0 > 0.5), ("%QX0.1 alarma", q1 > 0.5), ("%IX0.1 térmico", i1 > 15)], $"%IW64 = {ai:0.00} V ({ai * 10:0} %)");
+            [("%QX0.0 bomba", q0 > 0.5), ("%QX0.1 alarma", q1 > 0.5), (d.TripInput, i1)], $"%IW64 = {ai:0.00} V ({ai * 10:0} %)");
         p.TerminalBox(250, 60, "X1", 4);
         p.Signal(q0 > 0.5, new Point(210, 82), Paint.Terminal(250, 60, 1));
-        p.Signal(i1 > 15, new Point(210, 100), Paint.Terminal(250, 60, 2));
+        p.Signal(i1, new Point(210, 100), Paint.Terminal(250, 60, 2));
         p.Signal(true, new Point(210, 165), new Point(230, 165), Paint.Terminal(250, 60, 4));
         // X1:1 → bobina KM1, X1:2 ← 97-98
         p.Signal(q0 > 0.5, Paint.Terminal(250, 60, 1), new Point(330, 73), new Point(330, 172), new Point(410, 172));
-        p.Signal(i1 > 15, Paint.Terminal(250, 60, 2), new Point(320, 89), new Point(320, 194), new Point(410, 194));
+        p.Signal(i1, Paint.Terminal(250, 60, 2), new Point(320, 89), new Point(320, 194), new Point(410, 194));
 
         // Red, KM1 y motor
         p.Text("RED 400 V 50 Hz", 400, 14, 12, gridLive ? Paint.Live : Paint.Quiet, true);
         for (int i = 0; i < 3; i++) p.Cable(gridLive, new Point(432 + i * 26, 34), new Point(432 + i * 26, 116));
-        p.Contactor(410, 108, closed, coil, tripped, gridLive, "KM1");
+        p.Contactor(410, 108, closed, coil, tripped, gridLive, d.ContactorLabel);
         for (int i = 0; i < 3; i++) p.Cable(closed && gridLive, new Point(432 + i * 26, 216), new Point(432 + i * 26, 262));
         p.Motor(458, 300, A("M1"), closed && gridLive, "M1");
         p.Text($"{current:0.0} A · {speed * 60 / (2 * Math.PI):0} rpm", 458, 354, 11, Paint.Quiet, false, true);
