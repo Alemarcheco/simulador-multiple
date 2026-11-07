@@ -32,6 +32,10 @@ internal sealed class SketchCanvas : Control
     private static readonly IBrush HandleSelected = new SolidColorBrush(Color.FromRgb(0xFF, 0xC0, 0x40));
     private static readonly IBrush Label = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly IBrush LabelBack = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0));
+    private static readonly IBrush RuleBack = new SolidColorBrush(Color.FromArgb(200, 0x2E, 0x6B, 0x3A));
+    private static readonly IBrush RuleBackBad = new SolidColorBrush(Color.FromArgb(220, 0xB0, 0x3A, 0x2E));
+    private static readonly IPen SelectedSegPen = new Pen(new SolidColorBrush(Color.FromRgb(0xFF, 0xC0, 0x40)), 4);
+    private static readonly IPen FixedPen = new Pen(new SolidColorBrush(Color.FromRgb(0x7C, 0xE0, 0x8A)), 2);
 
     private double _scale = 8; // píxeles por mm
     private Vec2 _center;       // mm en el centro del lienzo
@@ -40,6 +44,7 @@ internal sealed class SketchCanvas : Control
     private int _dragArc = -1;
     private Point? _panFrom;
     private Vec2? _mouse;
+    private bool _arcMoved;
 
     public List<Vec2> Points { get; } = new();
     /// <summary>Abombamiento de cada tramo (mismo tamaño que <see cref="Points"/>).</summary>
@@ -47,6 +52,12 @@ internal sealed class SketchCanvas : Control
     public bool Revolve { get; init; }
     public double Snap { get; set; } = 1;
     public int Selected { get; private set; } = -1;
+    /// <summary>Reglas del boceto (ver <see cref="SketchSolver"/>).</summary>
+    public List<SketchConstraint> Constraints { get; } = new();
+    /// <summary>Tramos elegidos para una regla (el último elegido al final, como mucho dos).</summary>
+    public List<int> SelectedSegments { get; } = new();
+    /// <summary>Error que queda al aplicar las reglas (0 = todas se cumplen).</summary>
+    public double RuleError { get; private set; }
 
     /// <summary>Cambió la geometría (durante el arrastre, en cada movimiento).</summary>
     public event Action? Edited;
@@ -61,6 +72,39 @@ internal sealed class SketchCanvas : Control
     }
 
     public void Select(int i) { Selected = i; InvalidateVisual(); }
+
+    public void SelectSegment(int seg)
+    {
+        if (SelectedSegments.Remove(seg)) { InvalidateVisual(); return; }
+        SelectedSegments.Add(seg);
+        while (SelectedSegments.Count > 2) SelectedSegments.RemoveAt(0);
+        InvalidateVisual();
+    }
+
+    public void ClearSegmentSelection() { SelectedSegments.Clear(); InvalidateVisual(); }
+
+    /// <summary>Aplica las reglas sin mover los puntos indicados (si se puede). Devuelve el error que queda.</summary>
+    public double ApplyRules(params int[] held)
+    {
+        RuleError = SketchSolver.Solve(Points, Constraints, held);
+        InvalidateVisual();
+        return RuleError;
+    }
+
+    public void SetConstraints(IEnumerable<SketchConstraint>? rules)
+    {
+        Constraints.Clear();
+        if (rules is not null) Constraints.AddRange(rules.Where(c => SketchSolver.IsValid(c, Points.Count)));
+        SelectedSegments.Clear();
+        RuleError = SketchSolver.Residual(Points, Constraints);
+    }
+
+    private void ReplaceConstraints(List<SketchConstraint> rules)
+    {
+        Constraints.Clear();
+        Constraints.AddRange(rules);
+        SelectedSegments.Clear();
+    }
 
     /// <summary>Reemplaza el boceto.</summary>
     public void SetProfile(IEnumerable<Vec2> points, IEnumerable<double>? bulges)
@@ -79,10 +123,12 @@ internal sealed class SketchCanvas : Control
 
     private void RemovePoint(int i)
     {
+        ReplaceConstraints(SketchSolver.AfterRemove(Constraints, i, Points.Count));
         Points.RemoveAt(i);
         Bulges.RemoveAt(i);
         // El tramo anterior ahora llega a otro punto: deja de ser arco.
         if (Points.Count > 0) Bulges[i == 0 ? Points.Count - 1 : i - 1] = 0;
+        ApplyRules();
     }
 
     private int HitMid(Point screen)
@@ -144,7 +190,7 @@ internal sealed class SketchCanvas : Control
         else if (props.IsLeftButtonPressed && mid >= 0)
         {
             if (e.ClickCount >= 2) { Bulges[mid] = 0; Edited?.Invoke(); Committed?.Invoke(); }
-            else _dragArc = mid;
+            else { _dragArc = mid; _arcMoved = false; }
         }
         else if (props.IsLeftButtonPressed)
         {
@@ -154,6 +200,7 @@ internal sealed class SketchCanvas : Control
                 // Si el punto cae en un arco, los dos trozos quedan rectos.
                 Bulges.Insert(hit, 0);
                 if (hit > 0) Bulges[hit - 1] = 0;
+                if (Points.Count > 3) ReplaceConstraints(SketchSolver.AfterInsert(Constraints, hit));
                 Edited?.Invoke();
                 Committed?.Invoke();
             }
@@ -180,12 +227,17 @@ internal sealed class SketchCanvas : Control
             var a = Points[_dragArc]; var b = Points[(_dragArc + 1) % Points.Count];
             double bulge = Sketch2D.BulgeThrough(a, b, ToModel(pos));
             if (Math.Abs(bulge) * Sketch2D.Length(a, b) / 2 * _scale < 4) bulge = 0;
-            if (Math.Abs(Bulges[_dragArc] - bulge) > 1e-9) { Bulges[_dragArc] = bulge; Edited?.Invoke(); }
+            if (Math.Abs(Bulges[_dragArc] - bulge) > 1e-9) { Bulges[_dragArc] = bulge; _arcMoved = true; Edited?.Invoke(); }
         }
         else if (_drag >= 0 && _drag < Points.Count)
         {
             var p = _mouse.Value;
-            if (Points[_drag] != p) { Points[_drag] = p; Edited?.Invoke(); }
+            if (Points[_drag] != p)
+            {
+                Points[_drag] = p;
+                if (Constraints.Count > 0) ApplyRules(_drag);
+                Edited?.Invoke();
+            }
         }
         InvalidateVisual();
     }
@@ -193,6 +245,8 @@ internal sealed class SketchCanvas : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        // Un clic en el cuadradito sin arrastrar elige el tramo para las reglas.
+        if (_dragArc >= 0 && !_arcMoved) SelectSegment(_dragArc);
         if (_drag >= 0 || _dragArc >= 0) Committed?.Invoke();
         _drag = -1;
         _dragArc = -1;
@@ -232,6 +286,7 @@ internal sealed class SketchCanvas : Control
             InvalidateVisual();
         }
         else if (e.Key == Key.F) FitView();
+        else if (e.Key == Key.Escape && SelectedSegments.Count > 0) { ClearSegmentSelection(); e.Handled = true; }
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
@@ -269,6 +324,12 @@ internal sealed class SketchCanvas : Control
             }
             bool bad = Sketch2D.Validate(Points, Bulges, Revolve) is not null;
             ctx.DrawGeometry(bad ? null : Fill, bad ? BadEdgePen : EdgePen, geo);
+            foreach (var sg in SelectedSegments.Where(sg => sg < Points.Count))
+            {
+                var segPts = Sketch2D.Tessellate(new[] { Points[sg], Points[(sg + 1) % Points.Count] }, new[] { Bulges[sg], 0 }, 0.5 / _scale);
+                // El perfil de dos puntos va del inicio al final por el arco; el cierre (recto) no se dibuja.
+                for (int k = 0; k + 1 < segPts.Count; k++) ctx.DrawLine(SelectedSegPen, ToScreen(segPts[k]), ToScreen(segPts[k + 1]));
+            }
 
             // Cotas: longitud de cada tramo recto o radio de cada arco, junto a su punto medio.
             for (int i = 0; i < Points.Count; i++)
@@ -287,17 +348,59 @@ internal sealed class SketchCanvas : Control
                     Text(ctx, arc is { } g3 ? "R" + Fmt(g3.Radius) : Fmt(Sketch2D.SegmentLength(Points, i)), new Point(mid.X, mid.Y - 14), true);
                 ctx.FillRectangle(arc is null ? MidHandle : MidHandleArc, new Rect(mid.X - 3.5, mid.Y - 3.5, 7, 7));
             }
+            DrawRuleMarks(ctx);
         }
 
         for (int i = 0; i < Points.Count; i++)
         {
             var s = ToScreen(Points[i]);
             ctx.DrawEllipse(i == Selected ? HandleSelected : Handle, null, s, 4.5, 4.5);
+            if (Constraints.Any(c => c.Kind == ConstraintKind.Fijo && c.A == i))
+                ctx.DrawRectangle(null, FixedPen, new Rect(s.X - 7, s.Y - 7, 14, 14));
             Text(ctx, (i + 1).ToString(CultureInfo.InvariantCulture), new Point(s.X + 7, s.Y - 16), false);
         }
 
         if (_mouse is { } m)
             Text(ctx, $"X {Fmt(m.X)}  Y {Fmt(m.Y)} mm", new Point(8, r.Height - 22), false);
+    }
+
+    /// <summary>Marca de cada regla junto al centro de su tramo: H, V, ∥n, ⊥n, =n o la cota fija.</summary>
+    private void DrawRuleMarks(DrawingContext ctx)
+    {
+        var marks = new Dictionary<int, List<(string Text, bool Ok)>>();
+        void Add(int seg, string text, bool ok)
+        {
+            if (!marks.TryGetValue(seg, out var list)) marks[seg] = list = new();
+            list.Add((text, ok));
+        }
+        for (int k = 0; k < Constraints.Count; k++)
+        {
+            var c = Constraints[k];
+            if (!SketchSolver.IsValid(c, Points.Count) || c.Kind == ConstraintKind.Fijo) continue;
+            bool ok = SketchSolver.Error(Points, c) < 1e-3;
+            string tag = (k + 1).ToString(CultureInfo.InvariantCulture);
+            switch (c.Kind)
+            {
+                case ConstraintKind.Horizontal: Add(c.A, "H", ok); break;
+                case ConstraintKind.Vertical: Add(c.A, "V", ok); break;
+                case ConstraintKind.Longitud: Add(c.A, "⟷" + Fmt(c.Value), ok); break;
+                case ConstraintKind.Paralelo: Add(c.A, "∥" + tag, ok); Add(c.B, "∥" + tag, ok); break;
+                case ConstraintKind.Perpendicular: Add(c.A, "⊥" + tag, ok); Add(c.B, "⊥" + tag, ok); break;
+                case ConstraintKind.IgualLongitud: Add(c.A, "=" + tag, ok); Add(c.B, "=" + tag, ok); break;
+            }
+        }
+        foreach (var (seg, list) in marks)
+        {
+            var mid = ToScreen(Sketch2D.ArcMidpoint(Points[seg], Points[(seg + 1) % Points.Count], Bulges[seg]));
+            double x = mid.X + 10, y = mid.Y + 6;
+            foreach (var (text, ok) in list)
+            {
+                var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, Label);
+                ctx.FillRectangle(ok ? RuleBack : RuleBackBad, new Rect(x - 2, y - 1, ft.Width + 4, ft.Height + 2), 3);
+                ctx.DrawText(ft, new Point(x, y));
+                x += ft.Width + 7;
+            }
+        }
     }
 
     private void DrawGrid(DrawingContext ctx, Rect r)

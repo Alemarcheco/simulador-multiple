@@ -140,7 +140,13 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
      SkiaSharp (`TextOutline`), altura de mayúscula en mm, negrita y alineación; las letras con agujeros (o, A, 8)
      se extruyen con `IGeometryKernel.ExtrudeRegion`. Con el motor de malla, grabar varias letras puede dejar
      grietas; con OpenCASCADE sale cerrado.
-4. **Pendiente**: restricciones de boceto (paralelo, perpendicular, igual), arcos exactos en OpenCASCADE (ahora
+   - Reglas en los bocetos (`Math/SketchConstraints.cs`): horizontal, vertical, paralelo, perpendicular, igual
+     longitud, cota fija y punto fijo, guardadas en `Constraints` de la extrusión o revolución (el perfil guardado ya
+     las cumple). `SketchSolver` usa Gauss-Newton de paso mínimo (Levenberg-Marquardt, jacobiano numérico): mueve
+     los puntos lo menos posible y no toca los fijos ni el que se arrastra; rechaza una regla que choque con las demás
+     o que solo se cumpla aplastando un tramo. En los arcos la regla se aplica a la cuerda. Al añadir, borrar,
+     redondear o invertir puntos los índices se renumeran (`AfterInsert/AfterRemove/AfterFillet/AfterReverse`).
+4. **Pendiente**: reglas de tangencia y distancia entre puntos, arcos exactos en OpenCASCADE (ahora
    llegan divididos en tramos),
    texto sobre caras curvas, ver los modelos STEP de los componentes
    dentro de la caja y exportar equipos animables `.sm3d` (contrato `Simulador.Core.Model3D`).

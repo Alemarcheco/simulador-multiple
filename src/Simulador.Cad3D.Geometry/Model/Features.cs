@@ -119,6 +119,8 @@ public sealed class ExtrudeFeature : Feature
     public List<Vec2> Profile { get; set; } = new() { new(0, 0), new(20, 0), new(10, 17.32) };
     /// <summary>Arco de cada tramo del perfil (ver <see cref="Sketch2D"/>); vacío = todos rectos.</summary>
     public List<double> Bulges { get; set; } = new();
+    /// <summary>Reglas del boceto (horizontal, paralelo…); el perfil guardado ya las cumple.</summary>
+    public List<SketchConstraint> Constraints { get; set; } = new();
     [Param("Alto", Min = 0.01)] public double Height { get; set; } = 10;
     public override ISolid BuildLocal(IGeometryKernel k) => k.Extrude(Sketch2D.Tessellate(Profile, Bulges), Height);
 
@@ -127,6 +129,7 @@ public sealed class ExtrudeFeature : Feature
         var c = (ExtrudeFeature)base.Clone();
         c.Profile = new List<Vec2>(Profile);
         c.Bulges = new List<double>(Bulges);
+        c.Constraints = new List<SketchConstraint>(Constraints);
         return c;
     }
 }

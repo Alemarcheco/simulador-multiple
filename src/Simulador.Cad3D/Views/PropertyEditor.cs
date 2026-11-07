@@ -125,9 +125,9 @@ internal sealed class PropertyEditor : ScrollViewer
         }
 
         if (f is ExtrudeFeature ex)
-            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, ex.Bulges, (pts, bl) => { ex.Profile = pts; ex.Bulges = bl; }, revolve: false);
+            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, ex.Bulges, ex.Constraints, (pts, bl, rules) => { ex.Profile = pts; ex.Bulges = bl; ex.Constraints = rules; }, revolve: false);
         if (f is RevolveFeature rev)
-            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, rev.Bulges, (pts, bl) => { rev.Profile = pts; rev.Bulges = bl; }, revolve: true);
+            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, rev.Bulges, rev.Constraints, (pts, bl, rules) => { rev.Profile = pts; rev.Bulges = bl; rev.Constraints = rules; }, revolve: true);
         if (f is StepImportFeature step)
         {
             var path = new TextBox { Text = step.FilePath, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
@@ -142,15 +142,15 @@ internal sealed class PropertyEditor : ScrollViewer
         VecEditor(f.Rotation, v => { f.Rotation = v; Changed?.Invoke(); }, 15);
     }
 
-    private void ProfileEditor(string label, List<Vec2> profile, List<double> bulges, Action<List<Vec2>, List<double>> set, bool revolve)
+    private void ProfileEditor(string label, List<Vec2> profile, List<double> bulges, List<SketchConstraint> rules, Action<List<Vec2>, List<double>, List<SketchConstraint>> set, bool revolve)
     {
         var sketch = new Button { Content = "Editar boceto…", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         sketch.Click += async (_, _) =>
         {
             if (TopLevel.GetTopLevel(this) is not Window owner) return;
-            var result = await new SketchDialog(profile, bulges, revolve).ShowDialog<SketchResult?>(owner);
+            var result = await new SketchDialog(profile, bulges, revolve, rules).ShowDialog<SketchResult?>(owner);
             if (result is null) return;
-            set(result.Points, result.Bulges);
+            set(result.Points, result.Bulges, result.Constraints);
             Changed?.Invoke();
             Refresh?.Invoke();
         };
@@ -168,7 +168,8 @@ internal sealed class PropertyEditor : ScrollViewer
             if (TryParseProfile(box.Text ?? "", out var pts))
             {
                 // Si cambia el número de puntos, los arcos ya no corresponden a los mismos tramos.
-                set(pts, pts.Count == profile.Count ? bulges : new List<double>());
+                bool same = pts.Count == profile.Count;
+                set(pts, same ? bulges : new List<double>(), same ? rules : new List<SketchConstraint>());
                 error.Text = "";
                 Changed?.Invoke();
             }
