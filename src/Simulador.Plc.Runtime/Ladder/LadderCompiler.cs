@@ -107,6 +107,10 @@ public static class LadderCompiler
         if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i)) return new LiteralExpr(PlcValue.FromInt(i));
         if (text.StartsWith("T#", StringComparison.OrdinalIgnoreCase))
             return new LiteralExpr(PlcValue.FromTime(Lexer.ParseTime(text[2..], default)));
+        // Números reales (2.5, -0.75, 1e3). "0.00" con dos decimales es una dirección de Omron, no un real.
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var r)
+            && !System.Text.RegularExpressions.Regex.IsMatch(text, @"^\d+\.\d\d$"))
+            return new LiteralExpr(PlcValue.FromReal(r));
 
         // "T1.Q" es salida de bloque; "I0.0", "0.00" o "%IX0.0" son direcciones (las resuelve el intérprete).
         int dot = text.IndexOf('.');

@@ -1,3 +1,4 @@
+using Simulador.Plc.Runtime.Fbd;
 using Simulador.Plc.Runtime.Ladder;
 
 namespace Simulador.Plc;
@@ -8,6 +9,9 @@ internal static class Examples
     public sealed record StExample(string Name, string Source);
 
     public sealed record LadderExample(string Name, LadderProgram Program);
+
+    /// <summary>Los programas FBD son mutables (el editor los modifica), así que cada ejemplo se crea nuevo.</summary>
+    public sealed record FbdExample(string Name, Func<FbdProgram> Create);
 
     public static IReadOnlyList<StExample> StructuredText { get; } =
     [
@@ -404,5 +408,67 @@ internal static class Examples
             new Rung(new ParallelBranch(new Contact(ContactKind.NormallyOpen, "%IX0.1"), new Contact(ContactKind.NormallyOpen, "%IX0.2")),
                 [new Coil(CoilKind.Reset, "%QX0.0")], "Boya de máximo %IX0.1 o fallo → para"),
             new Rung(new Contact(ContactKind.NormallyOpen, "%IX0.2"), [new Coil(CoilKind.Normal, "%QX0.1")], "Piloto de fallo"))),
+    ];
+
+    // ---- FBD ----
+
+    private static FbdOperand Op(string text) => new(text);
+    private static FbdOperand NotOp(string text) => new(text, true);
+    private static FbdGate And(params FbdNode[] i) => new(GateKind.And, i);
+    private static FbdGate Or(params FbdNode[] i) => new(GateKind.Or, i);
+
+    private static FbdInstance Fb(string type, string instance, params (string Pin, FbdNode Node)[] pins)
+    {
+        var fb = new FbdInstance(type, instance, FbdProgram.OutputPins(type)[0]);
+        foreach (var (pin, node) in pins) fb.Inputs[pin] = node;
+        return fb;
+    }
+
+    private static FbdNetwork Net(FbdNode root, string? comment, params FbdAssignment[] outputs)
+    {
+        var n = new FbdNetwork { Root = root, Comment = comment };
+        n.Outputs.AddRange(outputs);
+        return n;
+    }
+
+    private static FbdAssignment To(string target, FbdAssignKind kind = FbdAssignKind.Assign) => new(target, kind);
+
+    private static FbdProgram Program(params FbdNetwork[] networks)
+    {
+        var p = new FbdProgram();
+        p.Networks.AddRange(networks);
+        return p;
+    }
+
+    public static IReadOnlyList<FbdExample> Fbd { get; } =
+    [
+        new("Marcha-paro con autorretención", () => Program(
+            Net(And(Or(Op("%IX0.0"), Op("%QX0.0")), Op("%IX0.1")), "Marcha %IX0.0 (NA), paro %IX0.1 (pulsador NC) y realimentación del motor", To("%QX0.0")))),
+        new("Telerruptor con flanco y XOR", () => Program(
+            Net(new FbdGate(GateKind.Xor, Fb("R_TRIG", "P1", ("CLK", Op("%IX0.0"))), Op("%QX0.0")),
+                "Cada pulso de %IX0.0 invierte la luz %QX0.0", To("%QX0.0")))),
+        new("Intermitente con dos temporizadores", () => Program(
+            Net(Fb("TON", "T1", ("IN", And(Op("%IX0.0"), NotOp("T2.Q"))), ("PT", Op("T#1s"))), "T1: tiempo apagado (activar con %IX0.0)", To("%QX0.0")),
+            Net(Fb("TON", "T2", ("IN", Op("T1.Q")), ("PT", Op("T#1s"))), "T2: tiempo encendido"))),
+        new("Arranque estrella-triángulo", () => Program(
+            Net(And(Or(Op("%IX0.0"), Op("%QX0.0")), Op("%IX0.1"), Op("%IX0.2")), "KM1 línea: marcha %IX0.0, paro NC %IX0.1, térmico NC %IX0.2", To("%QX0.0")),
+            Net(Fb("TON", "T1", ("IN", Op("%QX0.0")), ("PT", Op("T#6s"))), "T1: tiempo en estrella"),
+            Net(And(Op("%QX0.0"), NotOp("T1.Q"), NotOp("%QX0.2")), "KM2 estrella", To("%QX0.1")),
+            Net(And(Op("%QX0.0"), Op("T1.Q"), NotOp("%QX0.1")), "KM3 triángulo", To("%QX0.2")))),
+        new("Contador de piezas", () => Program(
+            Net(Fb("CTU", "C1", ("CU", Op("%IX0.0")), ("R", Op("%IX0.1")), ("PV", Op("5"))), "Sensor %IX0.0 cuenta, %IX0.1 pone a cero; lote de 5", To("%QX0.0")),
+            Net(new FbdGate(GateKind.Ge, Op("C1.CV"), Op("3")), "Aviso a partir de 3 piezas", To("%QX0.1")))),
+        new("Depósito analógico con histéresis", () => Program(
+            Net(Fb("SR", "B1",
+                    ("S1", new FbdGate(GateKind.Lt, Op("%IW64"), Op("5000"))),
+                    ("R", new FbdGate(GateKind.Gt, Op("%IW64"), Op("25000")))),
+                "Nivel %IW64 (0-10 V = 0-27648): bomba en marcha por debajo de 5000, para por encima de 25000", To("%QX0.0")),
+            Net(new FbdGate(GateKind.Gt, Op("%IW64"), Op("26500")), "Alarma de rebose", To("%QX0.1")))),
+        new("Escalado analógico a porcentaje", () => Program(
+            Net(new FbdGate(GateKind.Div, new FbdGate(GateKind.Mul, Op("%IW64"), Op("100")), Op("27648")), "%MW10 = nivel en % (0-100)", To("%MW10")),
+            Net(new FbdGate(GateKind.Ge, Op("%MW10"), Op("80")), "Piloto por encima del 80 %", To("%QX0.0")))),
+        new("Escalera con minutero", () => Program(
+            Net(Fb("TOF", "T1", ("IN", Or(Op("%IX0.0"), Op("%IX0.1"), Op("%IX0.2"))), ("PT", Op("T#60s"))),
+                "Pulsadores en cada planta; la luz queda 60 s encendida", To("%QX0.0")))),
     ];
 }

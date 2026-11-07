@@ -127,7 +127,8 @@ public static partial class BuildingTemplates
             e.TagSpace(n0.Id, P(8, 6), "Recepción y vestíbulo", "estar");
             e.TagSpace(n0.Id, P(20, 3), "Cocina", "cocina");
             e.TagSpace(n0.Id, P(20, 9), "Cuarto técnico (bombas, tanque, tablero)", "tecnico");
-            e.AddStair(n0.Id, P(14.5, 1), Math.PI / 2, 1.2, 3.5);
+            // 3,5 m son 20 escalones: en U, con descanso a media altura, y llegando arriba al pasillo central.
+            e.AddStair(n0.Id, P(14.5, 4.7), -Math.PI / 2, 1.2, 3.5, StairShape.U, turnLeft: false);
             e.AddSlab(n0.Id, [P(0, 0), P(24, 0), P(24, 12), P(0, 12)], 0.2);
 
             var n1 = e.AddLevel("Planta 1", 3.5, 3.0, "N1");

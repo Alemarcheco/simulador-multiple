@@ -24,11 +24,26 @@ simularlos en el tiempo (caudales, presiones y niveles).
 - Válvulas: K / apertura²; tiempo de recorrido; antirretorno.
 - Tanques: el nivel se integra con subpasos que no cambian el nivel más del 1 %; rebose al llenarse; un tanque vacío
   no entrega agua.
-- Pendiente (fase 2): golpe de ariete, tanques presurizados, neumática, cilindros, descarga libre por orificio.
+- Pendiente: neumática y cilindros.
+
+## Fase 2: aspersores, calderines y golpe de ariete
+
+- **Aspersor / descarga libre**: un nudo con «Descarga a 1 bar» mayor que cero echa agua según la presión,
+  Q = Q₁·√(p / 1 bar) (ley del orificio). A 4 bar da el doble que a 1 bar; sin presión no sale nada.
+- **Calderín (tanque presurizado)**: tanque cerrado con aire arriba. El aire se comprime de forma isoterma
+  (p·V = constante, en presión absoluta), así que la presión sube al llenarse y empuja el agua a la red. No rebosa.
+- **Presostato**: una bomba puede llevar presostato sobre un nudo; arranca por debajo de la presión de arranque y
+  para al llegar a la de paro. Con presostato la bomba ignora la orden de marcha del PLC.
+- **Golpe de ariete**: con una válvula seleccionada, «Analizar golpe de ariete…» calcula por el método de las
+  características la presión al cerrarla en el tiempo que elijas. Sirve para conducciones simples
+  (depósito o tanque → tuberías en serie → válvula). Muestra la velocidad de la onda (Korteweg, con el material y el
+  espesor de pared), el tiempo crítico 2L/a, la sobrepresión de Joukowsky ρ·a·V, la presión máxima y la mínima, y avisa
+  si la presión baja a la de vapor (rotura de columna).
+- Ejemplos nuevos: «Grupo de presión con calderín», «Riego por aspersión» y «Golpe de ariete».
 
 ## Vista 3D
 
-`View3D/` es un rasterizador por software con búfer de profundidad (cada píxel muestra la superficie más cercana), así
+`View3D/` usa el rasterizador común de `Simulador.Core.Rendering` (búfer de profundidad por software, sin supermuestreo para redibujar rápido durante la simulación) (cada píxel muestra la superficie más cercana), así
 que la imagen no se deforma al girar, como pasaría al ordenar triángulos. `SceneBuilder` genera la escena desde el
 modelo y el estado de la simulación; las tuberías van en horizontal a la cota de salida y suben o bajan en vertical al
 llegar a su destino.

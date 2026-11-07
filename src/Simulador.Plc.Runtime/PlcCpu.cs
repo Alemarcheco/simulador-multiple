@@ -89,6 +89,9 @@ public sealed class PlcCpu : ISimComponent
     /// <summary>Compila y carga un programa en lista de instrucciones (IL / AWL).</summary>
     public void LoadInstructionList(string source) => Load(Il.IlCompiler.Compile(source, Profile));
 
+    /// <summary>Compila y carga un diagrama de bloques de función (FBD).</summary>
+    public void LoadFbd(Fbd.FbdProgram program) => Load(Fbd.FbdCompiler.Compile(program));
+
     /// <summary>Compila y carga un SFC / GRAFCET escrito en la forma textual de IEC 61131-3.</summary>
     public void LoadSfc(string source) => Load(Sfc.SfcCompiler.Compile(Parser.ParseSfc(source)));
 

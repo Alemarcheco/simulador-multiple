@@ -25,7 +25,7 @@ public sealed class CircuitosModule : IModule
 
         var tabs = new TabControl { TabStripPlacement = Dock.Left, Padding = new Thickness(8) };
         tabs.Items.Add(new TabItem { Header = "Esquemático", Content = schematic });
-        tabs.Items.Add(new TabItem { Header = "Simulación", Content = new SimulationView(host, catalog, schematic.Canvas) });
+        tabs.Items.Add(new TabItem { Header = "Simulación", Content = new SimulationView(host, catalog, schematic.Canvas, () => tabs.SelectedIndex = 0) });
         var pcb = new PcbView(host, catalog, schematic.Canvas);
         tabs.Items.Add(new TabItem { Header = "PCB", Content = pcb });
         tabs.Items.Add(new TabItem { Header = "Fabricación", Content = new FabricationView(host, pcb.Canvas) });

@@ -11,7 +11,7 @@ namespace Simulador.Hidraulica.Ui;
 /// <summary>Herramienta activa del lienzo.</summary>
 public enum Tool
 {
-    Select, Reservoir, Tank, Junction, Pipe, Pump, ManualValve, ControlValve, SolenoidValve, CheckValve,
+    Select, Reservoir, Tank, PressureTank, Junction, Sprinkler, Pipe, Pump, ManualValve, ControlValve, SolenoidValve, CheckValve,
     PressureSensor, LevelSensor, FlowSensor, Delete,
 }
 
@@ -27,6 +27,7 @@ public sealed class NetworkCanvas : Control
     private static readonly IBrush Paper = new SolidColorBrush(Color.Parse("#F6F8FA"));
     private static readonly IPen GridPen = new Pen(new SolidColorBrush(Color.Parse("#E3E8EE")), 1);
     private static readonly IBrush Ink = new SolidColorBrush(Color.Parse("#24292F"));
+    private static readonly IBrush GasFill = new SolidColorBrush(Color.Parse("#EEF1F4"));
     private static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#57606A"));
     private static readonly IBrush Water = new SolidColorBrush(Color.Parse("#4A9FE0"));
     private static readonly IBrush WaterLight = new SolidColorBrush(Color.Parse("#D6EBFA"));
@@ -203,16 +204,25 @@ public sealed class NetworkCanvas : Control
                 var r = new Rect(p.X - TankW / 2, p.Y - TankH / 2, TankW, TankH);
                 double ratio = _sim is null ? t.InitialLevel / t.MaxLevel : t.Level / t.MaxLevel;
                 ratio = Math.Clamp(double.IsFinite(ratio) ? ratio : 0, 0, 1);
-                ctx.DrawRectangle(Brushes.White, null, r, 4, 4);
+                double corner = t.Closed ? TankW / 2 : 4;
+                var shape = new RectangleGeometry(r, corner, corner);
+                ctx.DrawGeometry(t.Closed ? GasFill : Brushes.White, null, shape);
                 var water = new Rect(r.X, r.Bottom - r.Height * ratio, r.Width, r.Height * ratio);
-                ctx.DrawRectangle(_sim is null ? WaterLight : Water, null, water);
-                ctx.DrawRectangle(null, pen, r, 4, 4);
+                using (ctx.PushGeometryClip(shape))
+                    ctx.DrawRectangle(_sim is null ? WaterLight : Water, null, water);
+                ctx.DrawGeometry(null, pen, shape);
+                if (t.Closed)
+                {
+                    double pg = _sim is null ? t.InitialGasPressure : t.GasPressureAt(t.Level);
+                    DrawText(ctx, "aire", new Point(r.X + 18, r.Top + 12), 10, Muted);
+                    DrawText(ctx, $"{pg / 1e5:0.0} bar", new Point(r.X + 10, r.Top + 24), 10, Ink);
+                }
                 DrawText(ctx, t.Id, new Point(r.Right + 6, r.Top), 12, Ink);
                 string info = _sim is null
                     ? $"Ø{t.Diameter:0.##} m · {t.Capacity * 1000:0} L"
                     : $"{t.Level:0.00} m ({ratio * 100:0} %)";
                 DrawText(ctx, info, new Point(r.Right + 6, r.Top + 16), 11, Muted);
-                if (_sim is not null && _sim.Overflow[_sim.NodeIndex(t.Id)] > 1e-7)
+                if (!t.Closed && _sim is not null && _sim.Overflow[_sim.NodeIndex(t.Id)] > 1e-7)
                     DrawText(ctx, "¡Rebosa!", new Point(r.Right + 6, r.Top + 32), 11, Off);
                 break;
             }
@@ -229,10 +239,25 @@ public sealed class NetworkCanvas : Control
             {
                 ctx.DrawEllipse(j.Demand > 0 ? Accent : Ink, selected ? pen : null, p, NodeRadius / 1.6, NodeRadius / 1.6);
                 if (_sim is not null)
-                    DrawText(ctx, $"{_sim.PressureAt(_sim.NodeIndex(j.Id)) / 1e5:0.00} bar", p + new Point(8, -20), 11, Muted);
+                    DrawText(ctx, $"{_sim.PressureAt(_sim.NodeIndex(j.Id)) / 1e5:0.00} bar", p + new Point(j.IsEmitter ? 24 : 8, -20), 11, Muted);
                 else
-                    DrawText(ctx, j.Id, p + new Point(8, -18), 11, Muted);
+                    DrawText(ctx, j.Id, p + new Point(j.IsEmitter ? 24 : 8, -18), 11, Muted);
                 if (j.Demand > 0) DrawText(ctx, $"↓ {j.Demand * 1000:0.##} L/s", p + new Point(8, 4), 10, Accent);
+                if (j.IsEmitter)
+                {
+                    // Boquilla con abanico de chorros, más largo cuanto más agua echa.
+                    double q = _sim is null ? j.DischargeAt1Bar : _sim.EmittedAt(j.Id);
+                    double len = 10 + 22 * Math.Clamp(q / Math.Max(j.DischargeAt1Bar, 1e-9), 0, 2) / 2;
+                    var spray = new Pen(_sim is null ? WaterLight : Water, 1.6);
+                    ctx.DrawLine(new Pen(Ink, 3), p, p + new Point(0, -8));
+                    for (int k = -2; k <= 2; k++)
+                    {
+                        double ang = -Math.PI / 2 + k * 0.38;
+                        ctx.DrawLine(spray, p + new Point(0, -8), p + new Point(Math.Cos(ang) * len, -8 + Math.Sin(ang) * len));
+                    }
+                    string flow = _sim is null ? $"{j.DischargeAt1Bar * 1000:0.##} L/s a 1 bar" : $"{q * 1000:0.00} L/s";
+                    DrawText(ctx, flow, p + new Point(8, j.Demand > 0 ? 18 : 4), 10, Accent);
+                }
                 break;
             }
         }
@@ -393,7 +418,7 @@ public sealed class NetworkCanvas : Control
             case Tool.Delete:
                 if (hit is not null) DeleteElement(hit);
                 break;
-            case Tool.Reservoir or Tool.Tank or Tool.Junction:
+            case Tool.Reservoir or Tool.Tank or Tool.PressureTank or Tool.Junction or Tool.Sprinkler:
                 PlaceNode(Snap(pos));
                 break;
             case Tool.PressureSensor or Tool.LevelSensor or Tool.FlowSensor:
@@ -442,6 +467,8 @@ public sealed class NetworkCanvas : Control
         {
             Tool.Reservoir => new Reservoir { Id = _net.NextId("R"), Level = 1 },
             Tool.Tank => new Tank { Id = _net.NextId("T"), Elevation = 5 },
+            Tool.PressureTank => new Tank { Id = _net.NextId("T"), Elevation = 0, Diameter = 0.45, MaxLevel = 1, InitialLevel = 0.3, Closed = true, InitialGasPressure = 2e5 },
+            Tool.Sprinkler => new Junction { Id = _net.NextId("A"), DischargeAt1Bar = 0.0004 },
             _ => new Junction { Id = _net.NextId("N") },
         };
         node.X = p.X;

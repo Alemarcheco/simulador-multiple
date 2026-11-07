@@ -7,6 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Simulador.Civil.Model;
 using Simulador.Civil.Rendering;
+using Simulador.Core.Rendering;
 
 namespace Simulador.Civil.Views;
 
@@ -17,9 +18,13 @@ namespace Simulador.Civil.Views;
 public sealed class Building3DView : Control
 {
     private readonly BuildingDocument _doc;
-    private readonly OrbitCamera _camera = new();
-    private readonly SoftwareRenderer _renderer = new();
+    private readonly OrbitCamera _camera = BuildingRenderer.CreateCamera();
+    private readonly ZBufferRasterizer _renderer = BuildingRenderer.CreateRasterizer();
     private BuildingMesh? _mesh;
+    /// <summary>Caja del último encuadre automático; null = encuadrar en el próximo dibujo.</summary>
+    private (System.Numerics.Vector3 Min, System.Numerics.Vector3 Max)? _fitted;
+    /// <summary>true cuando el usuario ha desplazado o acercado: los cambios del edificio ya no reencuadran.</summary>
+    private bool _userMoved;
     private WriteableBitmap? _bitmap;
     private Point? _drag;
     private bool _dragPan;
@@ -52,21 +57,20 @@ public sealed class Building3DView : Control
         if (w < 2 || h < 2) return;
 
         _mesh ??= BuildingMesh.Build(_doc, UpToLevelId, ShowRoof);
+        var bounds = BuildingRenderer.Bounds(_mesh);
+        // Encuadre con la esfera envolvente (fijo al girar). Se rehace si el edificio cambia de tamaño, salvo que el
+        // usuario haya movido la vista a mano.
+        if (_fitted is null || (!_userMoved && _fitted.Value != bounds))
+        {
+            _camera.Fit(bounds.Min, bounds.Max);
+            _fitted = bounds;
+        }
 
         // Suavizado de bordes por supermuestreo 2× mientras el lienzo no sea enorme.
-        int ss = w * h <= 1_500_000 ? 2 : 1;
-        _renderer.Resize(w * ss, h * ss);
-        _renderer.Clear(0xFFE0EAF2);
-        if (_mesh.Faces.Count > 0 || _mesh.Lines.Count > 0)
-        {
-            var cam = new OrbitCamera
-            {
-                Yaw = _camera.Yaw, Pitch = _camera.Pitch, Zoom = _camera.Zoom,
-                PanX = _camera.PanX * scaling * ss, PanY = _camera.PanY * scaling * ss,
-            };
-            _renderer.Render(_mesh, cam.CreateProjector(_mesh.Bounds, w * ss, h * ss), edges: true);
-        }
-        var pixels = ss == 1 ? _renderer.Pixels : SoftwareRenderer.Downsample(_renderer.Pixels, w * ss, h * ss, ss, out _, out _);
+        _renderer.Supersampling = w * h <= 1_500_000 ? 2 : 1;
+        _renderer.Resize(w, h);
+        BuildingRenderer.Render(_renderer, _mesh, _camera, edges: true);
+        var pixels = _renderer.Pixels;
 
         if (_bitmap is null || _bitmap.PixelSize.Width != w || _bitmap.PixelSize.Height != h)
         {
@@ -75,9 +79,12 @@ public sealed class Building3DView : Control
         }
         using (var fb = _bitmap.Lock())
         {
-            if (fb.RowBytes == w * 4) Marshal.Copy(pixels, 0, fb.Address, w * h);
-            else
-                for (int y = 0; y < h; y++) Marshal.Copy(pixels, y * w, fb.Address + y * fb.RowBytes, w);
+            var bytes = MemoryMarshal.AsBytes(pixels.AsSpan());
+            for (int y = 0; y < h; y++)
+                unsafe
+                {
+                    bytes.Slice(y * w * 4, w * 4).CopyTo(new Span<byte>((byte*)fb.Address + (long)y * fb.RowBytes, w * 4));
+                }
         }
         ctx.DrawImage(_bitmap, new Rect(0, 0, w, h), new Rect(Bounds.Size));
     }
@@ -98,14 +105,10 @@ public sealed class Building3DView : Control
         var p = e.GetPosition(this);
         if (_dragPan)
         {
-            _camera.PanX += p.X - d.X;
-            _camera.PanY += p.Y - d.Y;
+            _camera.Pan(p.X - d.X, p.Y - d.Y, (int)Math.Max(1, Bounds.Width), (int)Math.Max(1, Bounds.Height));
+            _userMoved = true;
         }
-        else
-        {
-            _camera.Yaw -= (p.X - d.X) * 0.01;
-            _camera.Pitch = Math.Clamp(_camera.Pitch + (p.Y - d.Y) * 0.01, 0.05, 1.5);
-        }
+        else _camera.Orbit((p.X - d.X) * 0.5, (p.Y - d.Y) * 0.5);
         _drag = p;
         InvalidateVisual();
     }
@@ -119,14 +122,19 @@ public sealed class Building3DView : Control
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
-        _camera.Zoom = Math.Clamp(_camera.Zoom * (e.Delta.Y > 0 ? 1.15 : 1 / 1.15), 0.2, 20);
+        _camera.Zoom(e.Delta.Y > 0 ? 1.1 : -1.1);
+        _userMoved = true;
         InvalidateVisual();
         e.Handled = true;
     }
 
     public void ResetView()
     {
-        _camera.Reset();
+        var fresh = BuildingRenderer.CreateCamera();
+        _camera.Yaw = fresh.Yaw;
+        _camera.Pitch = fresh.Pitch;
+        _userMoved = false;
+        _fitted = null;
         Invalidate();
     }
 

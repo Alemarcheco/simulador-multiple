@@ -14,7 +14,26 @@ public static class Examples
         ("Cintas transportadoras en cascada", CascadeConveyors),
         ("Puerta de garaje con finales de carrera", GarageDoor),
         ("Cuadro de vivienda con diferencial y fuga a tierra", HouseholdPanel),
+        ("Bomba monofásica con transformador de mando 230/24 V", SinglePhasePump),
+        ("Variador de frecuencia: rampa y dos sentidos de giro", VfdDrive),
+        ("Marcha-paro de motor con PLC", PlcStartStop),
     ];
+
+    /// <summary>Programa del PLC del ejemplo <see cref="PlcStartStop"/> (texto estructurado IEC 61131-3).</summary>
+    public const string PlcStartStopProgram = """
+        PROGRAM MarchaParo
+        VAR
+            Marcha AT %IX0.0 : BOOL;   (* S1, pulsador NA *)
+            Paro   AT %IX0.2 : BOOL;   (* S2, pulsador NC: en reposo la entrada está a 1 *)
+            Q1_ok  AT %IX0.4 : BOOL;   (* Q1 13-14: guardamotor cerrado *)
+            KM1    AT %QX0.0 : BOOL;   (* bobina del contactor *)
+            H1     AT %QX0.2 : BOOL;   (* piloto de marcha *)
+        END_VAR
+
+        KM1 := (Marcha OR KM1) AND Paro AND Q1_ok;
+        H1 := KM1;
+        END_PROGRAM
+        """;
 
     /// <summary>Potencia común. Devuelve también el borne XN del que sale el neutro del mando.</summary>
     private static (PlacedElement xn, PlacedElement q1, PlacedElement fuse) PowerHead(SchematicBuilder b, int fuseX)
@@ -322,6 +341,92 @@ public static class Examples
         var rf = b.Add("resistencia", "RF", 28, 31, ("R", 2000));
         var xt = b.Add("borne", "XT", 32, 9);
         b.Wire(q3, "2", s3, "1").Wire(s3, "2", rf, "1").Wire(rf, "2", xt, "1").Wire(xt, "1", q0, "4");
+        return b.Schematic;
+    }
+
+    public static Schematic SinglePhasePump()
+    {
+        var b = new SchematicBuilder("Bomba monofásica con transformador de mando 230/24 V",
+            "La bomba M1 es un motor monofásico de 230 V entre fase y neutro. El mando trabaja a 24 V AC desde el transformador T1, " +
+            "más seguro para los pulsadores: S2 arranca con autorretención por KM1 13-14 y S1 para. Q2 protege el primario y F3 el " +
+            "secundario, que va a tierra por X0 como pide la norma de máquinas.");
+        var red = b.Add("red_3f", "XS1", 0, 0);
+        var q1 = b.Add("magnetotermico_2p", "Q1", 0, 5, ("In", 10), ("curva", 1));
+        b.Wire(red, "L1", q1, "1").Wire(red, "N", q1, "3");
+        var km = b.Add("contactos_principales", "KM1", 0, 13, ("In", 9));
+        b.Wire(q1, "2", km, "1").Wire(q1, "4", km, "3");
+        var m = b.Add("motor_1f", "M1", 0, 21, ("Pn", 0.75));
+        b.Wire(km, "2", m, "U1").Wire(km, "4", m, "U2");
+
+        var q2 = b.Add("magnetotermico_2p", "Q2", 12, 5, ("In", 2), ("curva", 1));
+        b.Wire(red, "L1", q2, "1").Wire(red, "N", q2, "3");
+        var t1 = b.Add("trafo_1f", "T1", 12, 11, ("S", 63), ("V1", 230), ("V2", 24), ("ucc", 8));
+        b.Wire(q2, "2", t1, "1U1").Wire(q2, "4", t1, "1U2");
+        var f3 = b.Add("fusible", "F3", 12, 19, ("In", 2), ("tipo", 0));
+        b.Wire(t1, "2U1", f3, "1");
+        var s1 = b.Add("pulsador_nc", "S1", 12, 25);
+        var s2 = b.Add("pulsador_na", "S2", 12, 31);
+        var hold = Aux(b, "contacto_na", "KM1", 17, 31, "13-14");
+        var coil = b.Add("bobina_contactor", "KM1", 12, 37, ("V", 24), ("S", 4));
+        var h1 = b.Add("piloto", "H1", 20, 37, ("V", 24), ("P", 1), ("color", 1));
+        b.Chain(f3, s1, s2, coil);
+        b.Wire(s1, "2", hold, "1").Wire(hold, "2", coil, "A1");
+        b.Wire(coil, "A1", h1, "1").Wire(h1, "2", coil, "A2");
+        var x0 = b.Add("borne", "X0", 23, 17);
+        b.Wire(t1, "2U2", x0, "1").Wire(x0, "1", h1, "2").Wire(x0, "1", red, "PE");
+        return b.Schematic;
+    }
+
+    public static Schematic VfdDrive()
+    {
+        var b = new SchematicBuilder("Variador de frecuencia: rampa y dos sentidos de giro",
+            "Gira el selector SA1: en I une STF con SD y el variador U1 acelera el motor con una rampa de 5 s hasta la consigna; " +
+            "en II gira a izquierdas (primero frena hasta 0 Hz). En 0 decelera y para. Fíjate en que la corriente de arranque es mucho " +
+            "menor que en el arranque directo. Cambia la consigna en Propiedades mientras simulas.");
+        var red = b.Add("red_3f", "XS1", 0, 0);
+        var q1 = b.Add("magnetotermico_3p", "Q1", 0, 5, ("In", 16), ("curva", 1));
+        b.Wire(red, "L1", q1, "1").Wire(red, "L2", q1, "3").Wire(red, "L3", q1, "5");
+        var u1 = b.Add("variador", "U1", 0, 13, ("Pn", 4), ("In", 9), ("fref", 50), ("tacc", 5), ("tdec", 5));
+        b.Wire(q1, "2", u1, "L1").Wire(q1, "4", u1, "L2").Wire(q1, "6", u1, "L3");
+        var m = b.Add("motor_3f", "M1", 0, 26);
+        b.Wire(u1, "U", m, "U").Wire(u1, "V", m, "V").Wire(u1, "W", m, "W");
+        // Selector girado 90°: C a la derecha, posiciones I y II a la izquierda, frente a STF y STR.
+        var sa = b.Add("selector_3p", "SA1", 14, 15);
+        sa.Rotation = 1;
+        b.Wire(u1, "SD", sa, "C").Wire(sa, "1", u1, "STF").Wire(sa, "2", u1, "STR");
+        return b.Schematic;
+    }
+
+    public static Schematic PlcStartStop()
+    {
+        var b = new SchematicBuilder("Marcha-paro de motor con PLC",
+            "El autómata KF1 lee los pulsadores en sus entradas de 24 V DC y su salida a relé Q0.0 alimenta la bobina de KM1. " +
+            "El programa (en Propiedades del PLC) hace la autorretención: pulsa S1 para arrancar y S2 para parar. Los LED verdes del PLC " +
+            "son las entradas y los ámbar las salidas. Si abres Q1, el PLC lo ve en I0.4 y para el motor.");
+        var (xn, q1, f3) = PowerHead(b, 22);
+        var km = b.Add("contactos_principales", "KM1", 0, 12, ("In", 9));
+        var m = b.Add("motor_3f", "M1", 0, 20);
+        b.Wire(q1, "2", km, "1").Wire(q1, "4", km, "3").Wire(q1, "6", km, "5");
+        b.Wire(km, "2", m, "U").Wire(km, "4", m, "V").Wire(km, "6", m, "W");
+
+        var g1 = b.Add("fuente_dc", "G1", 44, 0, ("V", 24));
+        var xp = b.Add("borne", "X+", 44, 5);
+        b.Wire(g1, "+", xp, "1");
+        var plc = b.Add("plc_compacto", "KF1", 28, 18);
+        b.Text(plc, "programa", PlcStartStopProgram);
+        b.Wire(xp, "1", plc, "L+").Wire(g1, "-", plc, "M");
+        var s1 = b.Add("pulsador_na", "S1", 32, 8);
+        var s2 = b.Add("pulsador_nc", "S2", 36, 8);
+        var qaux = Aux(b, "contacto_na", "Q1", 40, 8, "13-14");
+        foreach (var x in new[] { s1, s2, qaux }) b.Wire(xp, "1", x, "1");
+        b.Wire(s1, "2", plc, "I0.0").Wire(s2, "2", plc, "I0.2").Wire(qaux, "2", plc, "I0.4");
+
+        b.Wire(f3, "2", plc, "1L");
+        var coil = b.Add("bobina_contactor", "KM1", 30, 30);
+        var h1 = b.Add("piloto", "H1", 34, 30, ("color", 1));
+        b.Wire(plc, "Q0.0", coil, "A1").Wire(plc, "Q0.2", h1, "1");
+        var xn2 = b.Add("borne", "XN2", 22, 37);
+        b.Wire(coil, "A2", xn2, "1").Wire(h1, "2", xn2, "1").Wire(xn2, "1", xn, "1");
         return b.Schematic;
     }
 }

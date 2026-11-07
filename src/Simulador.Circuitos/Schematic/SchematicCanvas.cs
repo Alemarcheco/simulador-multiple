@@ -14,7 +14,7 @@ public enum SchematicTool { Select, Place, Wire, Label }
 /// Lienzo del editor de esquemas. Rueda = zoom, botón central o derecho arrastrando = desplazar.
 /// Teclas: R girar, M espejo, Supr borrar, W cable, L etiqueta, Esc cancelar, Ctrl+Z / Ctrl+Y deshacer / rehacer.
 /// </summary>
-public sealed class SchematicCanvas : Control
+public sealed partial class SchematicCanvas : Control
 {
     public const double Grid = 1.27; // mm (50 mil), la rejilla de KiCad
 
@@ -126,6 +126,7 @@ public sealed class SchematicCanvas : Control
     public void Changed(bool markDirty = true)
     {
         _conn = Schematic.Connectivity.Analyze(_doc);
+        if (_anim is not null) SetAnimation(null);
         if (markDirty) IsDirty = true;
         DocumentChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
@@ -468,6 +469,7 @@ public sealed class SchematicCanvas : Control
 
             foreach (var w in _doc.Wires)
                 ctx.DrawLine(ReferenceEquals(w, Selected) ? selPen : wirePen, P(w.A), P(w.B));
+            DrawAnimationUnder(ctx, minPen);
             var dotBrush = new SolidColorBrush(WireColor);
             foreach (var j in _conn.Junctions)
                 ctx.DrawEllipse(dotBrush, null, P(j), 0.5, 0.5);
@@ -478,6 +480,7 @@ public sealed class SchematicCanvas : Control
             foreach (var l in _doc.Labels)
                 DrawLabel(ctx, l, ReferenceEquals(l, Selected));
 
+            DrawAnimationOver(ctx);
             if (_opVoltages is not null) DrawVoltages(ctx);
 
             if (_ghost is not null)
@@ -497,6 +500,7 @@ public sealed class SchematicCanvas : Control
                 ctx.DrawLine(cross, P(_mouseWorld - new Vec2(0, 1)), P(_mouseWorld + new Vec2(0, 1)));
             }
         }
+        DrawAnimationOverlay(ctx);
     }
 
     private static Point P(Vec2 v) => new(v.X, v.Y);

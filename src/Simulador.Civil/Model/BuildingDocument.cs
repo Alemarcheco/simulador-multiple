@@ -31,6 +31,9 @@ public sealed class BuildingDocument : IBuildingModel
     public string Name { get; set; } = "Edificio sin nombre";
     public BuildingType Type { get; set; } = BuildingType.Vivienda;
 
+    /// <summary>Reglas del asistente y precios unitarios; se guardan con el proyecto.</summary>
+    public AdvisorSettings Advisor { get; set; } = new();
+
     public IReadOnlyList<Level> Levels => _levels;
     public IReadOnlyList<Wall> Walls => _walls;
     public IReadOnlyList<Opening> Openings => _openings;
@@ -156,9 +159,10 @@ public sealed class BuildingDocument : IBuildingModel
             return s;
         }
 
-        public Stair AddStair(string levelId, Point2 start, double angle, double width, double rise)
+        public Stair AddStair(string levelId, Point2 start, double angle, double width, double rise,
+            StairShape shape = StairShape.Straight, bool turnLeft = true)
         {
-            var s = new Stair(NewId("E"), levelId, start, angle, width, rise);
+            var s = new Stair(NewId("E"), levelId, start, angle, width, rise, shape, turnLeft);
             _d._stairs.Add(s);
             return s;
         }
@@ -317,13 +321,13 @@ public sealed class BuildingDocument : IBuildingModel
     private sealed record FileDto(
         int Version, string Name, BuildingType Type,
         List<Level> Levels, List<Wall> Walls, List<Opening> Openings, List<Slab> Slabs, List<Stair> Stairs,
-        List<SpaceTag> SpaceTags, List<PlacedFixture> Fixtures, List<Route> Routes);
+        List<SpaceTag> SpaceTags, List<PlacedFixture> Fixtures, List<Route> Routes, AdvisorSettings? Advisor = null);
 
     public const int FileVersion = 1;
     public const string FileExtension = ".edif.json";
 
     public string ToJson() => JsonSerializer.Serialize(
-        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes), JsonOpts);
+        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor), JsonOpts);
 
     public static BuildingDocument FromJson(string json)
     {
@@ -342,6 +346,7 @@ public sealed class BuildingDocument : IBuildingModel
         Replace(_levels, dto.Levels); Replace(_walls, dto.Walls); Replace(_openings, dto.Openings);
         Replace(_slabs, dto.Slabs); Replace(_stairs, dto.Stairs); Replace(_tags, dto.SpaceTags);
         Replace(_fixtures, dto.Fixtures); Replace(_routes, dto.Routes);
+        Advisor = dto.Advisor ?? new AdvisorSettings();
         if (_levels.Count == 0) _levels.Add(new Level("N0", "Planta baja", 0, 3.0));
     }
 

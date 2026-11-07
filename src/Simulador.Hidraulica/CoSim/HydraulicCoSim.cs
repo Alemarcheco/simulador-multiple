@@ -181,7 +181,7 @@ public sealed class RedHidraulica : ISimComponent
             switch (part.Element)
             {
                 case Pump p when part.ShaftConnected: _sim.SetPumpShaftSpeed(p.Id, part.Shaft!.Flow); break;
-                case Pump p: _sim.SetPumpRunning(p.Id, part.RunCommand!.Value > 0.5); break;
+                case Pump { HasPressureSwitch: false } p: _sim.SetPumpRunning(p.Id, part.RunCommand!.Value > 0.5); break;
                 case Valve { Kind: ValveKind.Control } v: _sim.SetValveOpening(v.Id, part.OpeningCommand!.Value / 100); break;
                 case Valve { Kind: ValveKind.Solenoid } v: _sim.SetValveOpening(v.Id, part.Coil!.Value > 0.5 ? 1 : 0); break;
             }

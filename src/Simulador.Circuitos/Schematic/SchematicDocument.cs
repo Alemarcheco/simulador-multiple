@@ -55,6 +55,10 @@ public sealed class SchematicDocument
     public List<PlacedSymbol> Symbols { get; set; } = [];
     public List<Wire> Wires { get; set; } = [];
     public List<NetLabel> Labels { get; set; } = [];
+    /// <summary>Tiempo de transitorio recomendado para ver el circuito funcionando (p. ej. "4" o "20m"). null = punto de trabajo.</summary>
+    public string? TranStop { get; set; }
+    /// <summary>Paso máximo del transitorio recomendado.</summary>
+    public string? TranStep { get; set; }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 

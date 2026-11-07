@@ -50,6 +50,7 @@ public sealed class HydraulicNetwork
         {
             n.Id = newId;
             foreach (var l in Links) { if (l.From == oldId) l.From = newId; if (l.To == oldId) l.To = newId; }
+            foreach (var p in Links.OfType<Pump>().Where(p => p.PressureSwitchNode == oldId)) p.PressureSwitchNode = newId;
         }
         else if (FindLink(oldId) is { } l) l.Id = newId;
         else if (Sensors.FirstOrDefault(s => s.Id == oldId) is { } s) { s.Id = newId; return true; }
@@ -92,6 +93,13 @@ public sealed class HydraulicNetwork
                 case Pump b when b.ShutoffHead <= 0 || b.RatedFlow <= 0 || b.RatedHead >= b.ShutoffHead:
                     errors.Add($"{b.Id}: la curva necesita altura a caudal cero > altura nominal > 0 y caudal nominal > 0."); break;
             }
+            if (l is Pump { HasPressureSwitch: true } ps)
+            {
+                if (FindNode(ps.PressureSwitchNode) is null)
+                    errors.Add($"{ps.Id}: el presostato mide en '{ps.PressureSwitchNode}', que no existe.");
+                if (ps.SwitchOnPressure >= ps.SwitchOffPressure)
+                    errors.Add($"{ps.Id}: la presión de arranque del presostato debe ser menor que la de paro.");
+            }
         }
 
         foreach (var t in Nodes.OfType<Tank>())
@@ -99,6 +107,8 @@ public sealed class HydraulicNetwork
                 errors.Add($"{t.Id}: diámetro y altura máxima deben ser mayores que cero.");
             else if (t.InitialLevel < 0 || t.InitialLevel > t.MaxLevel)
                 warnings.Add($"{t.Id}: el nivel inicial está fuera de 0–{t.MaxLevel} m.");
+            else if (t.Closed && t.InitialLevel >= t.MaxLevel * 0.95)
+                errors.Add($"{t.Id}: un tanque presurizado necesita aire; el nivel inicial debe quedar por debajo de la altura total.");
 
         foreach (var j in Nodes.OfType<Junction>())
             if (!Links.Any(l => l.From == j.Id || l.To == j.Id))

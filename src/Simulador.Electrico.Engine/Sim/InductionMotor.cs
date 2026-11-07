@@ -20,6 +20,11 @@ public sealed class InductionMotor
     public double RatedSpeedRadS { get; }
     public double RatedTorque { get; }
     public double Inertia { get; }
+    /// <summary>Inercia de la máquina accionada en el banco de pruebas (kg·m²), que se suma a la del motor.</summary>
+    public double ExternalInertia { get; set; }
+    /// <summary>Par resistente que devuelve la carga del banco de pruebas (N·m, positivo = frena).</summary>
+    public double ExternalLoadTorque { get; set; }
+    private double TotalInertia => Inertia + Math.Max(ExternalInertia, 0);
     public double LoadFraction { get; set; }
     public bool QuadraticLoad { get; set; }
 
@@ -94,6 +99,7 @@ public sealed class InductionMotor
     /// <summary>Par (N·m) que produce una tensión de secuencia (fase de devanado) con deslizamiento dado.</summary>
     private double SequenceTorque(Complex v, double slip, double f)
     {
+        if (f < 0.05) return 0;
         var s = Math.Abs(slip) < 1e-5 ? (slip < 0 ? -1e-5 : 1e-5) : slip;
         var kx = Scale(f);
         var zs = new Complex(_r1, _x1 * kx);
@@ -135,6 +141,22 @@ public sealed class InductionMotor
 
     internal double WindingResistance => _r1;
 
+    /// <summary>
+    /// Admitancia vista por la red en un motor monofásico de condensador permanente. Se modela como el motor
+    /// trifásico equivalente alimentado solo en secuencia directa (o inversa si gira a izquierdas): el condensador
+    /// crea el campo giratorio. Con la misma potencia, la corriente de línea es tres veces la de un devanado.
+    /// </summary>
+    internal Complex SinglePhaseAdmittance(bool reverse) =>
+        3 / Zseq(reverse ? 2 - Slip : Slip, Frequency);
+
+    /// <summary>Tensión de alimentación de un motor monofásico (ver <see cref="SinglePhaseAdmittance"/>).</summary>
+    internal void SetSinglePhaseVoltage(Complex v, double dc, bool reverse)
+    {
+        _v1 = reverse ? 0 : v;
+        _v2 = reverse ? v : 0;
+        _vdc = Math.Abs(dc);
+    }
+
     private Complex _v1, _v2;
     private double _vdc;
 
@@ -157,7 +179,7 @@ public sealed class InductionMotor
         var te = SequenceTorque(_v1, s, Frequency) - SequenceTorque(_v2, 2 - s, Frequency);
         Torque = te;
 
-        var load = RatedTorque * LoadFraction * (QuadraticLoad ? Math.Pow(Omega / RatedSpeedRadS, 2) : 1);
+        var load = RatedTorque * LoadFraction * (QuadraticLoad ? Math.Pow(Omega / RatedSpeedRadS, 2) : 1) + Math.Max(ExternalLoadTorque, 0);
         var friction = 0.01 * RatedTorque * Omega / RatedSpeedRadS;
         LoadTorque = load;
 
@@ -165,13 +187,13 @@ public sealed class InductionMotor
         {
             // Parado: la carga solo frena, no empuja. Si el par motor no la vence, el eje no se mueve.
             if (Math.Abs(te) <= load) { Omega = 0; return; }
-            var acc0 = (te - Math.Sign(te) * load) / Inertia;
+            var acc0 = (te - Math.Sign(te) * load) / TotalInertia;
             Omega += acc0 * dt;
             return;
         }
 
         var dir = Math.Sign(Omega);
-        var acc = (te - dir * load - friction) / Inertia;
+        var acc = (te - dir * load - friction) / TotalInertia;
         var next = Omega + acc * dt;
         // Si la carga y el rozamiento lo frenan hasta cero, se queda parado en vez de invertir el giro.
         if (Math.Sign(next) != dir && Math.Abs(te) <= load) next = 0;
