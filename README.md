@@ -13,7 +13,11 @@ Hecha con C# (.NET 8) y [Avalonia](https://avaloniaui.net/). La simulación de c
 
 ## Descargar y ejecutar
 
-Cada cambio en GitHub compila la aplicación en Windows. En la pestaña **Actions** del repositorio, abre la última ejecución de "Compilar y probar" y descarga `SimuladorMultiple-win-x64`. Descomprímelo y ejecuta `SimuladorMultiple.exe` (no necesita instalar .NET).
+Cada cambio fusionado en `main` publica una versión nueva en **Releases**. El instalador de la última versión está siempre en:
+
+https://github.com/Alemarcheco/simulador-multiple/releases/latest/download/SimuladorMultiple-Setup.exe
+
+Ábrelo y sigue los pasos (no pide permisos de administrador ni necesita instalar .NET). Como el instalador no está firmado, Windows puede mostrar "Windows protegió su PC": pulsa **Más información** y luego **Ejecutar de todas formas**. También hay un `SimuladorMultiple-portable.zip` para usarlo sin instalar.
 
 La versión descargable ya incluye `ngspice.dll` (motor de simulación [ngspice](https://ngspice.sourceforge.io/), licencia BSD modificada).
 
