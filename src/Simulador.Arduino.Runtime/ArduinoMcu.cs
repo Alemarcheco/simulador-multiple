@@ -191,20 +191,22 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     private void Spend(long ticks)
     {
         _now += ticks;
-        if (_toneEnd.Count > 0) ExpireTones();
+        // Un delay largo salta el tiempo de golpe: los tonos se apagan en su instante, visto desde el simulador.
         while (_now >= _target)
         {
+            if (_toneEnd.Count > 0) ExpireTones(_target);
             _yielded.Release();
             _go.Wait();
             if (_abort) throw new AbortSketch();
         }
+        if (_toneEnd.Count > 0) ExpireTones(_now);
     }
 
-    private void ExpireTones()
+    private void ExpireTones(long time)
     {
         foreach (var (pin, end) in _toneEnd.ToList())
         {
-            if (_now < end) continue;
+            if (time < end) continue;
             _toneEnd.Remove(pin);
             SetOutput(_pins[pin], 0, null);
             _pins[pin].ToneHz = null;
