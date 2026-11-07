@@ -1,6 +1,10 @@
 namespace Simulador.Arduino.Runtime;
 
-public sealed record ArduinoExample(string Name, string Description, string Source);
+/// <summary>Ejemplo con el montaje que necesita (piezas y pines).</summary>
+public sealed record ArduinoExample(string Name, string Description, string Source, IReadOnlyList<PartSpec>? Parts = null)
+{
+    public IReadOnlyList<PartSpec> Setup => Parts ?? [];
+}
 
 /// <summary>Sketches de ejemplo, de más fácil a más difícil. Todos funcionan en Uno, Nano y Mega.</summary>
 public static class ArduinoExamples
@@ -37,7 +41,7 @@ public static class ArduinoExamples
                 digitalWrite(pinLed, LOW);
               }
             }
-            """),
+            """, [new(PartKind.Button, "D2"), new(PartKind.Led, "D13", "#FF3B30")]),
         new("Semáforo", "Rojo (pin 10), ámbar (pin 11) y verde (pin 12) con sus tiempos.", """
             const int rojo = 10;
             const int ambar = 11;
@@ -60,7 +64,7 @@ public static class ArduinoExamples
               encender(verde, 4000);
               encender(ambar, 1500);
             }
-            """),
+            """, [new(PartKind.Led, "D10", "#FF3B30", "Rojo"), new(PartKind.Led, "D11", "#FFB020", "Ámbar"), new(PartKind.Led, "D12", "#39D353", "Verde")]),
         new("Luz que se enciende poco a poco (PWM)", "analogWrite en el pin 9 sube y baja el brillo del LED.", """
             // Solo los pines con ~ tienen PWM (en el Uno: 3, 5, 6, 9, 10 y 11).
             const int led = 9;
@@ -79,7 +83,7 @@ public static class ArduinoExamples
                 delay(30);
               }
             }
-            """),
+            """, [new(PartKind.Led, "D9", "#FF3B30")]),
         new("Potenciómetro regula un LED", "Lee el potenciómetro en A0 (0-1023) y lo convierte en brillo (0-255) para el pin 9. Muestra el valor por el monitor serie.", """
             int lectura = 0;
             int brillo = 0;
@@ -99,7 +103,7 @@ public static class ArduinoExamples
               Serial.println(brillo);
               delay(200);
             }
-            """),
+            """, [new(PartKind.Potentiometer, "A0"), new(PartKind.Led, "D9", "#FF3B30")]),
         new("Parpadeo sin delay (millis)", "Dos LEDs parpadean a ritmos distintos sin bloquear el programa, usando millis().", """
             unsigned long antesA = 0;
             unsigned long antesB = 0;
@@ -124,7 +128,7 @@ public static class ArduinoExamples
                 digitalWrite(13, estadoB);
               }
             }
-            """),
+            """, [new(PartKind.Led, "D12", "#39D353"), new(PartKind.Led, "D13", "#4DA3FF")]),
         new("Coche fantástico (array de LEDs)", "Seis LEDs en los pines 2 a 7 se encienden uno tras otro, de ida y vuelta.", """
             int leds[] = {2, 3, 4, 5, 6, 7};
             const int total = 6;
@@ -147,7 +151,7 @@ public static class ArduinoExamples
                 digitalWrite(leds[i], LOW);
               }
             }
-            """),
+            """, [new(PartKind.Led, "D2", "#FF3B30"), new(PartKind.Led, "D3", "#FF3B30"), new(PartKind.Led, "D4", "#FF3B30"), new(PartKind.Led, "D5", "#FF3B30"), new(PartKind.Led, "D6", "#FF3B30"), new(PartKind.Led, "D7", "#FF3B30")]),
         new("Encender un LED desde el monitor serie", "Escribe 1 o 0 en el monitor serie para encender o apagar el LED del pin 13.", """
             void setup() {
               Serial.begin(9600);
@@ -167,7 +171,7 @@ public static class ArduinoExamples
                 }
               }
             }
-            """),
+            """, [new(PartKind.Led, "D13", "#FFE14D")]),
         new("Servo de barrido", "Un servo en el pin 9 gira de 0° a 180° y vuelve.", """
             #include <Servo.h>
 
@@ -187,7 +191,7 @@ public static class ArduinoExamples
                 delay(15);
               }
             }
-            """),
+            """, [new(PartKind.Servo, "D9")]),
         new("Melodía con zumbador", "tone() toca notas en un zumbador conectado al pin 8.", """
             // Frecuencias en Hz de las notas.
             #define DO  262
@@ -209,7 +213,7 @@ public static class ArduinoExamples
               noTone(8);
               delay(1000);
             }
-            """),
+            """, [new(PartKind.Buzzer, "D8")]),
         new("Luz automática con sensor (LDR)", "Una fotorresistencia en A1: si hay poca luz se enciende la lámpara del pin 7, con histéresis para que no parpadee.", """
             const int sensor = A1;
             const int lampara = 7;
@@ -235,7 +239,7 @@ public static class ArduinoExamples
               digitalWrite(lampara, encendida);
               delay(100);
             }
-            """),
+            """, [new(PartKind.Ldr, "A1"), new(PartKind.Led, "D7", "#FFE14D", "Lámpara")]),
         new("Termómetro LM35", "Un sensor LM35 en A0 da 10 mV por °C. Se calcula la temperatura y se enciende un ventilador (pin 6) por encima de 30 °C.", """
             float temperatura;
 
@@ -254,7 +258,7 @@ public static class ArduinoExamples
               digitalWrite(6, temperatura > 30.0);
               delay(500);
             }
-            """),
+            """, [new(PartKind.Lm35, "A0"), new(PartKind.Led, "D6", "#4DA3FF", "Ventilador")]),
         new("Dado electrónico", "Al pulsar el botón del pin 2 sale un número del 1 al 6, que se muestra con LEDs en los pines 8 a 13 y por el monitor serie.", """
             int leds[] = {8, 9, 10, 11, 12, 13};
 
@@ -285,6 +289,6 @@ public static class ArduinoExamples
                 while (digitalRead(2) == LOW) delay(10);  // espera a que se suelte
               }
             }
-            """),
+            """, [new(PartKind.Button, "D2"), new(PartKind.Led, "D8", "#39D353"), new(PartKind.Led, "D9", "#39D353"), new(PartKind.Led, "D10", "#39D353"), new(PartKind.Led, "D11", "#39D353"), new(PartKind.Led, "D12", "#39D353"), new(PartKind.Led, "D13", "#39D353")]),
     ];
 }
