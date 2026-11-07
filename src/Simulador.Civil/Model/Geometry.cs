@@ -43,6 +43,43 @@ public static class Geo
         return new(cx / (6 * a), cy / (6 * a));
     }
 
+    /// <summary>Parte del polígono convexo a la izquierda de la recta a→b (Sutherland–Hodgman).</summary>
+    public static List<Point2> ClipLeft(IReadOnlyList<Point2> poly, Point2 a, Point2 b)
+    {
+        var result = new List<Point2>();
+        var d = b - a;
+        for (int i = 0; i < poly.Count; i++)
+        {
+            var p = poly[i];
+            var q = poly[(i + 1) % poly.Count];
+            double sp = Point2.Cross(d, p - a), sq = Point2.Cross(d, q - a);
+            if (sp >= 0) result.Add(p);
+            if ((sp >= 0) != (sq >= 0)) result.Add(p + (q - p) * (sp / (sp - sq)));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Polígono convexo menos un agujero convexo, en trozos convexos que no se solapan (por ejemplo, un forjado con
+    /// el hueco de la escalera). Si no se tocan, devuelve el polígono tal cual.
+    /// </summary>
+    public static List<Point2[]> SubtractConvex(IReadOnlyList<Point2> poly, IReadOnlyList<Point2> hole)
+    {
+        var h = SignedArea(hole) < 0 ? hole.Reverse().ToArray() : hole.ToArray();
+        var pieces = new List<Point2[]>();
+        IReadOnlyList<Point2> rest = poly;
+        for (int i = 0; i < h.Length && rest.Count >= 3; i++)
+        {
+            var a = h[i];
+            var b = h[(i + 1) % h.Length];
+            // Lo que queda fuera de este borde del agujero es un trozo; lo de dentro sigue con el siguiente borde.
+            var outside = ClipLeft(rest, b, a);
+            if (outside.Count >= 3 && Math.Abs(SignedArea(outside)) > 1e-6) pieces.Add(outside.ToArray());
+            rest = ClipLeft(rest, a, b);
+        }
+        return pieces;
+    }
+
     public static bool Contains(IReadOnlyList<Point2> poly, Point2 pt)
     {
         bool inside = false;

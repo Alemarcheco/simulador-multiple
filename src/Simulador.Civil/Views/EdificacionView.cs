@@ -66,6 +66,15 @@ public sealed class EdificacionView : DockPanel
         _levelBox.SelectionChanged += (_, _) => { if (upTo.IsChecked == true) { _view3d.UpToLevelId = _plan.LevelId; _view3d.InvalidateVisual(); } };
         var reset = new Button { Content = "Vista inicial" };
         reset.Click += (_, _) => _view3d.ResetView();
+        var walk = new ToggleButton { Content = "🚶 Recorrer por dentro" };
+        ToolTip.SetTip(walk, "Recorrido en primera persona: empieza delante de la puerta de entrada. W A S D o flechas para andar, arrastra para mirar, Esc para salir.");
+        walk.IsCheckedChanged += (_, _) =>
+        {
+            _view3d.WalkMode = walk.IsChecked == true;
+            roof.IsEnabled = upTo.IsEnabled = reset.IsEnabled = walk.IsChecked != true;
+        };
+        _view3d.WalkModeExited += (_, _) => walk.IsChecked = false;
+        v3bar.Children.Add(walk);
         v3bar.Children.Add(roof);
         v3bar.Children.Add(upTo);
         v3bar.Children.Add(reset);

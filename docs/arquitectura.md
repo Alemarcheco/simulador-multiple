@@ -91,7 +91,12 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   muros con material, huecos (IfcOpeningElement) con su puerta o ventana, forjados y cubierta, escaleras (recta, L, U),
   habitaciones con superficie (Qto_SpaceBaseQuantities) e instalaciones como IfcBuildingElementProxy con la designación
   del banco de pruebas. GlobalId estables derivados del id de cada elemento. Comprobado con IfcOpenShell (0 errores).
-- **Siguiente**: recorrido en primera persona, estudio de soleamiento.
+- **Recorrido en primera persona** (`Model/Walkthrough.cs`, botón «Recorrer por dentro» de la vista 3D): se empieza
+  delante de la puerta de entrada; W A S D o flechas para andar, ratón para mirar, Esc para salir. `Walker` choca con
+  muros y ventanas (cuerpo de 25 cm de radio, deslizando), pasa por las puertas, sube y baja escaleras peldaño a
+  peldaño y cambia de planta. Los forjados se dibujan con el hueco de la escalera que llega desde abajo
+  (`BuildingMesh.StairWellCut`, `Geo.SubtractConvex`).
+- **Siguiente**: estudio de soleamiento.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D
