@@ -14,5 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Simulador.Core\Simulador.Core.csproj" />
     <ProjectReference Include="..\..\src\Simulador.Cad3D.Geometry\Simulador.Cad3D.Geometry.csproj" />
+    <ProjectReference Include="..\..\src\Simulador.Circuitos\Simulador.Circuitos.csproj" />
+    <ProjectReference Include="..\..\src\Simulador.Cad3D\Simulador.Cad3D.csproj" />
   </ItemGroup>
 </Project>

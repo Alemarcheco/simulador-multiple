@@ -121,3 +121,37 @@ public class DocumentTests
         Assert.Equal("#FF0000FF", xml.Descendants(ns + "base").First().Attribute("displaycolor")!.Value);
     }
 }
+
+public class ExamplesTests
+{
+    public static IEnumerable<object[]> Names() => Examples.All.Select(e => new object[] { e.Name });
+
+    [Theory]
+    [MemberData(nameof(Names))]
+    public void Ejemplo_se_construye_con_el_motor_de_mallas(string name)
+    {
+        var ex = Examples.All.Single(e => e.Name == name);
+        var doc = ex.Create(false);
+        var eval = new DocumentEvaluator(new MeshKernel());
+        foreach (var part in doc.Parts)
+        {
+            var r = eval.Evaluate(part);
+            Assert.Empty(r.Errors);
+            Assert.True(r.Mesh!.Volume() > 0, $"{name}/{part.Name} sin volumen");
+            Assert.Equal(0, r.Mesh.CountOpenEdges());
+        }
+        // Se puede guardar y volver a abrir.
+        Assert.Equal(doc.ToJson(), CadDocument.FromJson(doc.ToJson()).ToJson());
+    }
+
+    [Fact]
+    public void Perfil_de_engranaje_tiene_el_tamano_esperado()
+    {
+        var pts = Examples.GearProfile(2, 20);
+        double rmax = pts.Max(p => Math.Sqrt(p.X * p.X + p.Y * p.Y));
+        double rmin = pts.Min(p => Math.Sqrt(p.X * p.X + p.Y * p.Y));
+        Assert.Equal(22, rmax, 3);   // radio exterior = m·z/2 + m
+        Assert.Equal(17.5, rmin, 3); // radio de pie = m·z/2 − 1,25·m
+        Assert.True(Polygon2D.SignedArea(Polygon2D.Normalize(pts)) > 0);
+    }
+}

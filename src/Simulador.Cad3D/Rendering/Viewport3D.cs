@@ -1,6 +1,5 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Simulador.Cad3D.Geometry;
@@ -18,19 +17,17 @@ public sealed record RenderItem(Mesh Mesh, Color Color, bool Overlay = false);
 public sealed class Viewport3D : Control
 {
     private IReadOnlyList<RenderItem> _items = Array.Empty<RenderItem>();
-    private double _yaw = -55, _pitch = 30, _distance = 250;
-    private Vec3 _target = new(0, 0, 0);
-    private Point? _lastPointer;
-    private bool _panning;
+    private readonly OrbitCamera _camera;
 
     public static readonly IBrush Background = new ImmutableSolidColorBrush(Color.FromRgb(0x23, 0x27, 0x2E));
     private static readonly IPen GridPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)), 1);
     private static readonly IPen GridPenMajor = new ImmutablePen(new ImmutableSolidColorBrush(Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF)), 1);
 
-    public Viewport3D()
+    public Viewport3D(OrbitCamera camera)
     {
+        _camera = camera;
         ClipToBounds = true;
-        Focusable = true;
+        IsHitTestVisible = false; // el ratón lo gestiona el contenedor (ViewportHost)
     }
 
     public void SetItems(IReadOnlyList<RenderItem> items)
@@ -39,36 +36,12 @@ public sealed class Viewport3D : Control
         InvalidateVisual();
     }
 
-    /// <summary>Centra la cámara en todas las piezas.</summary>
-    public void FitAll()
-    {
-        var meshes = _items.Where(i => !i.Overlay && i.Mesh.Vertices.Count > 0).Select(i => i.Mesh).ToList();
-        if (meshes.Count == 0) { _target = Vec3.Zero; _distance = 250; InvalidateVisual(); return; }
-        var min = meshes.Select(m => m.Bounds().Min).Aggregate(Vec3.Min);
-        var max = meshes.Select(m => m.Bounds().Max).Aggregate(Vec3.Max);
-        _target = (min + max) / 2;
-        _distance = Math.Max(20, (max - min).Length * 2.0);
-        InvalidateVisual();
-    }
-
-    private (Vec3 Eye, Vec3 Right, Vec3 Up, Vec3 Forward) Camera()
-    {
-        double yaw = _yaw * Math.PI / 180, pitch = _pitch * Math.PI / 180;
-        var dir = new Vec3(Math.Cos(pitch) * Math.Cos(yaw), Math.Cos(pitch) * Math.Sin(yaw), Math.Sin(pitch));
-        var eye = _target + dir * _distance;
-        var forward = (-dir).Normalized();
-        var right = forward.Cross(Vec3.UnitZ).Normalized();
-        if (right.Length < 1e-9) right = Vec3.UnitX;
-        var up = right.Cross(forward).Normalized();
-        return (eye, right, up, forward);
-    }
-
     public override void Render(DrawingContext ctx)
     {
         var bounds = new Rect(Bounds.Size);
         ctx.FillRectangle(Background, bounds);
-        var (eye, right, up, forward) = Camera();
-        double focal = Math.Min(bounds.Width, bounds.Height) * 1.2;
+        var (eye, right, up, forward) = _camera.Basis();
+        double focal = Math.Min(bounds.Width, bounds.Height) * OrbitCamera.FocalFactor;
         double cx = bounds.Width / 2, cy = bounds.Height / 2;
         const double near = 1;
 
@@ -167,56 +140,4 @@ public sealed class Viewport3D : Control
         }
     }
 
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        var props = e.GetCurrentPoint(this).Properties;
-        _panning = props.IsRightButtonPressed || props.IsMiddleButtonPressed || e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        _lastPointer = e.GetPosition(this);
-        e.Pointer.Capture(this);
-        Focus();
-    }
-
-    protected override void OnPointerMoved(PointerEventArgs e)
-    {
-        base.OnPointerMoved(e);
-        if (_lastPointer is not { } last) return;
-        var pos = e.GetPosition(this);
-        var d = pos - last;
-        _lastPointer = pos;
-        if (_panning)
-        {
-            var (_, right, up, _) = Camera();
-            double scale = _distance / (Math.Min(Bounds.Width, Bounds.Height) * 1.2);
-            _target = _target - right * (d.X * scale) + up * (d.Y * scale);
-        }
-        else
-        {
-            _yaw -= d.X * 0.4;
-            _pitch = Math.Clamp(_pitch + d.Y * 0.4, -89, 89);
-        }
-        InvalidateVisual();
-    }
-
-    protected override void OnPointerReleased(PointerReleasedEventArgs e)
-    {
-        base.OnPointerReleased(e);
-        _lastPointer = null;
-        e.Pointer.Capture(null);
-    }
-
-    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
-    {
-        base.OnPointerWheelChanged(e);
-        _distance = Math.Clamp(_distance * Math.Pow(0.88, e.Delta.Y), 5, 5000);
-        InvalidateVisual();
-    }
-
-    /// <summary>Vistas estándar.</summary>
-    public void SetView(double yaw, double pitch)
-    {
-        _yaw = yaw;
-        _pitch = pitch;
-        InvalidateVisual();
-    }
 }

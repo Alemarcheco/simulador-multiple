@@ -86,7 +86,7 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
 - **Siguiente**: exportar planos PDF/DXF con cotas.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
-## Módulo Diseño 3D (plan)
+## Módulo Diseño 3D
 
 Proyectos: `Simulador.Cad3D.Geometry` (sin interfaz: documento paramétrico, motor de sólidos, STL/3MF, plantillas)
 y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `tests/Simulador.Cad3D.Tests`.
@@ -97,10 +97,20 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
    de una `BoardExport`. El motor actual (`MeshKernel`, árboles BSP en C#) da mallas cerradas.
 2. **Motor exacto** (hecho): `OcctKernel` (`IExactKernel`) sobre OpenCASCADE mediante el envoltorio nativo
    `native/simcad_occt`: geometría exacta, redondeos, chaflanes, vaciados, revoluciones e importación/exportación
-   STEP. Si falta la biblioteca nativa, la app usa `MeshKernel`. Pendiente: visor OpenGL.
-3. **Bocetos 2D** con restricciones y cotas, revolución, patrones y simetrías.
-4. **Integración**: caja desde la placa del módulo de circuitos con un clic; exportar equipos animables `.sm3d`
-   para el banco de pruebas (contrato `Simulador.Core.Model3D`).
+   STEP. Si falta la biblioteca nativa, la app usa `MeshKernel`. Tras redondeos y chaflanes se repara la forma
+   (`heal`: costura y `ShapeFix_Solid`) y el teselado pasa por `MeshRepair.FixTJunctions`.
+3. **Fase 2** (hecho):
+   - Visor OpenGL (`GlViewport3D`, `OpenGlControlBase`) con cámara compartida (`OrbitCamera`) y respaldo por
+     software (`Viewport3D`) si OpenGL no arranca en 3 s o con `CAD3D_SOFTWARE_VIEW=1`; lo elige `ViewportHost`.
+   - Editor de bocetos 2D (`SketchDialog`, lógica en `Sketch2D`): rejilla con ajuste, añadir/mover/borrar puntos,
+     cotas de cada tramo editables, rectángulo/polígono/círculo y validación (cruces, área, radio negativo).
+   - Ejemplos prediseñados (`Templates/Examples.cs`): cajas, soporte en L, engranaje, maceta, separador, atril.
+   - «Caja para placa…»: abre un `.placa`, lo convierte con `PcbBoardExport.ToBoardExport` (Simulador.Circuitos,
+     Y hacia arriba) y crea la caja con `EnclosureTemplate.FromBoard` (postes en los taladros de montaje,
+     huecos para conectores).
+4. **Pendiente**: restricciones de boceto (paralelo, perpendicular, igual), arcos en bocetos, patrones y simetrías,
+   texto en relieve, ancho real de los huecos de conector desde la huella, ver los modelos STEP de los componentes
+   dentro de la caja y exportar equipos animables `.sm3d` (contrato `Simulador.Core.Model3D`).
 
 ## Banco de pruebas (`Simulador.Banco`)
 

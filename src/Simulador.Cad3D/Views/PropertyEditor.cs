@@ -19,6 +19,9 @@ internal sealed class PropertyEditor : ScrollViewer
     /// <summary>Se lanza cuando cambia el nombre (para refrescar las listas).</summary>
     public event Action? Renamed;
 
+    /// <summary>Se lanza cuando hay que volver a generar el panel (p. ej. el perfil cambió desde el editor de bocetos).</summary>
+    public event Action? Refresh;
+
     public PropertyEditor()
     {
         Content = _stack;
@@ -89,9 +92,9 @@ internal sealed class PropertyEditor : ScrollViewer
         }
 
         if (f is ExtrudeFeature ex)
-            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, pts => ex.Profile = pts);
+            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, pts => ex.Profile = pts, revolve: false);
         if (f is RevolveFeature rev)
-            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, pts => rev.Profile = pts);
+            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, pts => rev.Profile = pts, revolve: true);
         if (f is StepImportFeature step)
         {
             var path = new TextBox { Text = step.FilePath, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
@@ -106,8 +109,20 @@ internal sealed class PropertyEditor : ScrollViewer
         VecEditor(f.Rotation, v => { f.Rotation = v; Changed?.Invoke(); }, 15);
     }
 
-    private void ProfileEditor(string label, List<Vec2> profile, Action<List<Vec2>> set)
+    private void ProfileEditor(string label, List<Vec2> profile, Action<List<Vec2>> set, bool revolve)
     {
+        var sketch = new Button { Content = "Editar boceto…", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        sketch.Click += async (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(this) is not Window owner) return;
+            var result = await new SketchDialog(profile, revolve).ShowDialog<List<Vec2>?>(owner);
+            if (result is null) return;
+            set(result);
+            Changed?.Invoke();
+            Refresh?.Invoke();
+        };
+        _stack.Children.Add(sketch);
+
         var box = new TextBox
         {
             Text = string.Join("; ", profile.Select(p => FormattableString.Invariant($"{p.X:0.###},{p.Y:0.###}"))),
