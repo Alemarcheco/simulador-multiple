@@ -36,6 +36,8 @@ public sealed class ParamAttribute : Attribute
 [JsonDerivedType(typeof(FilletFeature), "redondeo")]
 [JsonDerivedType(typeof(ChamferFeature), "chaflan")]
 [JsonDerivedType(typeof(ShellFeature), "vaciado")]
+[JsonDerivedType(typeof(PatternFeature), "repeticion")]
+[JsonDerivedType(typeof(MirrorFeature), "simetria")]
 public abstract class Feature
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];

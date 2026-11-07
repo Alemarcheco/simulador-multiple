@@ -13,6 +13,9 @@ public abstract class ModifierFeature : Feature
 
     public abstract ISolid Apply(IGeometryKernel kernel, ISolid current);
 
+    /// <summary>True si solo funciona con OpenCASCADE (redondeos, chaflanes, vaciados).</summary>
+    public virtual bool NeedsExactKernel => true;
+
     protected static IExactKernel Exact(IGeometryKernel k) =>
         k as IExactKernel ?? throw new NotSupportedException("necesita el motor exacto (OpenCASCADE)");
 }

@@ -127,12 +127,16 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
      radio; «Redondear esquina» mete un arco tangente; rectángulo con esquinas redondeadas y círculo exacto.
      El motor recibe el perfil dividido con `Sketch2D.Tessellate` (error de cuerda 0,01 mm). Los `.cad3d` sin
      `Bulges` se abren con todos los tramos rectos.
+   - Repeticiones y simetría (`Model/PatternFeatures.cs`): `PatternFeature` repite las últimas N operaciones con
+     forma propia (en fila, en rejilla o en círculo alrededor de Z) y cada copia suma o resta como su original;
+     no repite copias de otra repetición. `MirrorFeature` (modificador, funciona con los dos motores) une la pieza
+     con su imagen en un espejo perpendicular a X, Y o Z.
    - Ejemplos prediseñados (`Templates/Examples.cs`): cajas, soporte en L, engranaje, maceta, separador, atril.
    - «Caja para placa…»: abre un `.placa`, lo convierte con `PcbBoardExport.ToBoardExport` (Simulador.Circuitos,
      Y hacia arriba) y crea la caja con `EnclosureTemplate.FromBoard` (postes en los taladros de montaje,
      huecos para conectores).
 4. **Pendiente**: restricciones de boceto (paralelo, perpendicular, igual), arcos exactos en OpenCASCADE (ahora
-   llegan divididos en tramos), patrones y simetrías,
+   llegan divididos en tramos),
    texto en relieve, ancho real de los huecos de conector desde la huella, ver los modelos STEP de los componentes
    dentro de la caja y exportar equipos animables `.sm3d` (contrato `Simulador.Core.Model3D`).
 
