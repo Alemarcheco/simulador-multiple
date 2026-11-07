@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Simulador.Civil.Export;
 using Simulador.Civil.Import;
 using Simulador.Civil.Model;
 using Simulador.Core.Building;
@@ -110,6 +111,7 @@ public sealed class EdificacionView : DockPanel
         bar.Children.Add(Btn("Abrir…", () => _ = OpenAsync()));
         bar.Children.Add(Btn("Guardar", () => _ = SaveAsync(false)));
         bar.Children.Add(Btn("Guardar como…", () => _ = SaveAsync(true)));
+        bar.Children.Add(Btn("🖨 Exportar plano…", () => _ = ExportPlanAsync()));
         bar.Children.Add(Sep());
         bar.Children.Add(Btn("↶ Deshacer", _doc.Undo));
         bar.Children.Add(Btn("↷ Rehacer", _doc.Redo));
@@ -751,6 +753,77 @@ public sealed class EdificacionView : DockPanel
         };
         if (TopLevel.GetTopLevel(this) is Window owner) await dlg.ShowDialog(owner);
         return result;
+    }
+
+    /// <summary>Diálogo de exportación: formato, papel, escala, niveles y qué se dibuja; luego pide dónde guardar.</summary>
+    private async Task ExportPlanAsync()
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        var format = new ComboBox { ItemsSource = new[] { "PDF (para imprimir, a escala)", "DXF (para AutoCAD y otros CAD)" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var paper = new ComboBox { ItemsSource = Paper.All.Select(p => p.Name).ToArray(), SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var scale = new ComboBox
+        {
+            ItemsSource = new[] { "Automática (la mayor que quepa)" }.Concat(PlanExport.StandardScales.Select(s => $"1:{s}")).ToArray(),
+            SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        var levels = new ComboBox { ItemsSource = new[] { "Solo el nivel actual", "Todos los niveles" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var dims = new CheckBox { Content = "Cotas", IsChecked = true };
+        var rooms = new CheckBox { Content = "Nombres y superficies", IsChecked = true };
+        var inst = new CheckBox { Content = "Instalaciones", IsChecked = true };
+        format.SelectionChanged += (_, _) => paper.IsEnabled = scale.IsEnabled = format.SelectedIndex == 0;
+
+        bool accepted = false;
+        var dlg = new Window
+        {
+            Title = "Exportar plano", Width = 380, SizeToContent = SizeToContent.Height, CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+        var ok = new Button { Content = "Exportar…", IsDefault = true };
+        var cancel = new Button { Content = "Cancelar", IsCancel = true };
+        ok.Click += (_, _) => { accepted = true; dlg.Close(); };
+        cancel.Click += (_, _) => dlg.Close();
+        TextBlock L(string t) => new() { Text = t, Margin = new Thickness(0, 4, 0, 0) };
+        dlg.Content = new StackPanel
+        {
+            Margin = new Thickness(16), Spacing = 4,
+            Children =
+            {
+                L("Formato"), format, L("Papel (apaisado)"), paper, L("Escala"), scale, L("Niveles"), levels,
+                L("Dibujar"), dims, rooms, inst,
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Right, Children = { cancel, ok } },
+            },
+        };
+        await dlg.ShowDialog(owner);
+        if (!accepted) return;
+
+        bool pdf = format.SelectedIndex == 0;
+        var options = new PlanOptions(dims.IsChecked == true, rooms.IsChecked == true, inst.IsChecked == true);
+        var ids = levels.SelectedIndex == 1 ? _doc.Levels.OrderBy(l => l.Elevation).Select(l => l.Id).ToList() : [_plan.LevelId];
+        var drawings = ids.Select(id => PlanDrawing.Build(_doc, id, options)).Where(d => d.Items.Count > 0).ToList();
+        if (drawings.Count == 0) { _host.SetStatus("No hay nada dibujado en ese nivel para exportar."); return; }
+
+        var ext = pdf ? ".pdf" : ".dxf";
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Exportar plano", SuggestedFileName = _doc.Name + ext, DefaultExtension = ext,
+            FileTypeChoices = [pdf ? new FilePickerFileType("PDF") { Patterns = ["*.pdf"] } : new FilePickerFileType("DXF") { Patterns = ["*.dxf"] }],
+        });
+        if (file is null) return;
+        try
+        {
+            var sheet = Paper.All[Math.Max(0, paper.SelectedIndex)];
+            int? fixedScale = scale.SelectedIndex > 0 ? PlanExport.StandardScales[scale.SelectedIndex - 1] : null;
+            byte[] bytes = pdf ? PlanExport.ToPdf(drawings, sheet, fixedScale) : PlanExport.ToDxfBytes(drawings);
+            await using (var s = await file.OpenWriteAsync()) await s.WriteAsync(bytes);
+            string detail = pdf
+                ? $"{drawings.Count} hoja(s) {sheet.Name}, escala 1:{fixedScale ?? PlanExport.AutoScale(drawings[0], sheet)}"
+                : $"{drawings.Count} nivel(es), en metros";
+            _host.SetStatus($"Plano exportado: {file.Name} ({detail}).");
+        }
+        catch (Exception ex)
+        {
+            _host.SetStatus($"No se pudo exportar: {ex.Message}");
+        }
     }
 
     private static readonly FilePickerFileType FileType = new("Edificio (Simulador múltiple)") { Patterns = ["*" + BuildingDocument.FileExtension] };

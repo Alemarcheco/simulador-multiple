@@ -83,7 +83,11 @@ Contrato: `Simulador.Core.Building` (ver `contratos/edificio.md` en los archivos
   del tamaño) o imagen escaneada; opacidad, capas, escalar con una medida conocida, mover y girar; imán a los
   extremos de sus líneas al dibujar; crear muros desde las parejas de líneas paralelas del DXF (prefiere las capas
   con nombre de muro). Los calcos se guardan en el proyecto (las imágenes, por ruta) y no entran en deshacer.
-- **Siguiente**: exportar planos PDF/DXF con cotas.
+- **Exportar plano** (`Export/PlanDrawing.cs`, `Export/PlanExport.cs`, `Export/PdfCanvas.cs`): cada nivel se convierte
+  en primitivas 2D en metros por capas (MUROS, HUECOS, ESCALERAS, HABITACIONES, COTAS, ELECTRICIDAD, HIDRAULICA) con
+  cotas totales y de fachada. Sale a DXF R12 en metros (ANSI 1252, un nivel al lado de otro) o a PDF vectorial a
+  escala normalizada (automática o elegida) con cajetín y barra de escala, una hoja por nivel, sin dependencias.
+- **Siguiente**: IFC, recorrido en primera persona, estudio de soleamiento.
 - **Más adelante**: IFC (xBIM), recorrido en primera persona, soleamiento, simulación de evacuación.
 
 ## Módulo Diseño 3D
