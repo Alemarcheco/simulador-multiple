@@ -10,8 +10,10 @@ namespace Simulador.Cad3D.Views;
 
 /// <summary>
 /// Editor de bocetos 2D para el perfil de una extrusión o revolución: dibujo con el ratón sobre rejilla
-/// y tabla de puntos con cotas editables. Devuelve el perfil nuevo o null si se cancela.
+/// y tabla de puntos con cotas editables, tramos rectos o en arco. Devuelve el perfil nuevo o null si se cancela.
 /// </summary>
+internal sealed record SketchResult(List<Vec2> Points, List<double> Bulges);
+
 internal sealed class SketchDialog : Window
 {
     private const int MaxRows = 300;
@@ -22,7 +24,7 @@ internal sealed class SketchDialog : Window
     private readonly Button _ok;
     private readonly bool _revolve;
 
-    public SketchDialog(IEnumerable<Vec2> profile, bool revolve)
+    public SketchDialog(IEnumerable<Vec2> profile, IEnumerable<double>? bulges, bool revolve)
     {
         _revolve = revolve;
         Title = revolve ? "Boceto del perfil de revolución (X = radio, Y = altura)" : "Boceto del perfil de extrusión";
@@ -33,25 +35,30 @@ internal sealed class SketchDialog : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         _canvas = new SketchCanvas { Revolve = revolve };
-        _canvas.Points.AddRange(profile);
+        _canvas.SetProfile(profile, bulges);
         _canvas.Edited += UpdateStatus;
         _canvas.Committed += RebuildRows;
 
         _ok = new Button { Content = "Aceptar", IsDefault = true, MinWidth = 90 };
-        _ok.Click += (_, _) => Close(Polygon2D.Normalize(_canvas.Points));
+        _ok.Click += (_, _) =>
+        {
+            var (pts, bl) = Sketch2D.Normalize(_canvas.Points, _canvas.Bulges);
+            Close(new SketchResult(pts, bl));
+        };
         var cancel = new Button { Content = "Cancelar", IsCancel = true, MinWidth = 90 };
         cancel.Click += (_, _) => Close(null);
 
         var side = new StackPanel { Spacing = 8, Margin = new Thickness(12) };
         side.Children.Add(new TextBlock
         {
-            Text = "Clic: añadir punto · Arrastrar: mover · Clic derecho o Supr: borrar · Rueda: zoom · Botón central o Mayús+arrastrar: desplazar · F: encuadrar",
+            Text = "Clic: añadir punto · Arrastrar: mover · Clic derecho o Supr: borrar · Arrastrar el cuadradito del centro de un tramo: convertirlo en arco (doble clic: recto) · Rueda: zoom · Botón central o Mayús+arrastrar: desplazar · F: encuadrar",
             TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.8,
         });
         side.Children.Add(SnapRow());
         side.Children.Add(ShapesPanel());
+        side.Children.Add(FilletRow());
         side.Children.Add(new TextBlock { Text = "Puntos y cotas (mm)", FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
-        side.Children.Add(new TextBlock { Text = "Tramo: distancia al punto siguiente. Al cambiarla se mueve el punto siguiente en la misma dirección.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7 });
+        side.Children.Add(new TextBlock { Text = "Tramo: distancia en línea recta al punto siguiente (al cambiarla se mueve el punto siguiente en la misma dirección). Radio: vacío = tramo recto; escribe un radio para hacerlo arco.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7 });
         side.Children.Add(Header());
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12) };
@@ -96,19 +103,57 @@ internal sealed class SketchDialog : Window
         var panel = new StackPanel { Spacing = 4 };
         panel.Children.Add(new TextBlock { Text = "Formas (reemplazan el boceto)", FontWeight = FontWeight.SemiBold });
 
-        var w = Num(40); var h = Num(20);
+        var w = Num(40); var h = Num(20); var cr = Num(0);
         var rect = new Button { Content = "Rectángulo" };
-        rect.Click += (_, _) => Replace(Sketch2D.Rectangle(Value(w, 40), Value(h, 20)));
+        rect.Click += (_, _) =>
+        {
+            var (pts, bl) = Sketch2D.RoundedRectangle(Value(w, 40), Value(h, 20), TryNumber(cr.Text, out var r) ? Math.Max(0, r) : 0);
+            Replace(pts, bl);
+        };
         panel.Children.Add(Line(rect, "ancho", w, "alto", h));
+        var crRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(102, 0, 0, 0) };
+        crRow.Children.Add(new TextBlock { Text = "radio de esquinas", VerticalAlignment = VerticalAlignment.Center, FontSize = 12 });
+        crRow.Children.Add(cr);
+        panel.Children.Add(crRow);
 
         var rad = Num(15); var sides = Num(6);
         var poly = new Button { Content = "Polígono" };
         poly.Click += (_, _) => Replace(Sketch2D.RegularPolygon(Center(Value(rad, 15)), Value(rad, 15), (int)Math.Clamp(Value(sides, 6), 3, 64)));
         var circle = new Button { Content = "Círculo" };
-        circle.Click += (_, _) => Replace(Sketch2D.RegularPolygon(Center(Value(rad, 15)), Value(rad, 15), 48));
+        circle.Click += (_, _) =>
+        {
+            var (pts, bl) = Sketch2D.CircleArcs(Center(Value(rad, 15)), Value(rad, 15));
+            Replace(pts, bl);
+        };
         panel.Children.Add(Line(poly, "radio", rad, "lados", sides));
         panel.Children.Add(circle);
         return panel;
+    }
+
+    private Control FilletRow()
+    {
+        var r = Num(3);
+        var b = new Button { Content = "Redondear esquina", MinWidth = 96 };
+        b.Click += (_, _) =>
+        {
+            if (_canvas.Selected < 0) { ShowProblem("Primero haz clic en el punto de la esquina que quieres redondear."); return; }
+            var problem = Sketch2D.FilletCorner(_canvas.Points, _canvas.Bulges, _canvas.Selected, Value(r, 3));
+            if (problem is not null) { ShowProblem(problem); return; }
+            _canvas.Select(-1);
+            RebuildRows();
+        };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(b);
+        row.Children.Add(new TextBlock { Text = "radio", VerticalAlignment = VerticalAlignment.Center, FontSize = 12 });
+        row.Children.Add(r);
+        ToolTip.SetTip(b, "Redondea la esquina del punto seleccionado (haz clic antes en el punto).");
+        return row;
+    }
+
+    private void ShowProblem(string text)
+    {
+        _status.Text = text;
+        _status.Foreground = Brushes.OrangeRed;
     }
 
     // En una revolución las formas se colocan a la derecha del eje para que el radio no sea negativo.
@@ -134,10 +179,9 @@ internal sealed class SketchDialog : Window
     private static bool TryNumber(string? s, out double v) =>
         double.TryParse((s ?? "").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out v);
 
-    private void Replace(List<Vec2> pts)
+    private void Replace(List<Vec2> pts, List<double>? bulges = null)
     {
-        _canvas.Points.Clear();
-        _canvas.Points.AddRange(pts);
+        _canvas.SetProfile(pts, bulges);
         _canvas.Select(-1);
         _canvas.FitView();
         RebuildRows();
@@ -150,10 +194,11 @@ internal sealed class SketchDialog : Window
         Cell(g, 1, new TextBlock { Text = "X", Opacity = 0.7 });
         Cell(g, 2, new TextBlock { Text = "Y", Opacity = 0.7 });
         Cell(g, 3, new TextBlock { Text = "Tramo", Opacity = 0.7 });
+        Cell(g, 4, new TextBlock { Text = "Radio", Opacity = 0.7 });
         return g;
     }
 
-    private static Grid RowGrid() => new() { ColumnDefinitions = new ColumnDefinitions("32,*,*,*") };
+    private static Grid RowGrid() => new() { ColumnDefinitions = new ColumnDefinitions("28,*,*,*,*") };
 
     private static void Cell(Grid g, int col, Control c)
     {
@@ -186,6 +231,7 @@ internal sealed class SketchDialog : Window
             Cell(g, 1, Field(pts[i].X, v => { pts[idx] = pts[idx] with { X = v }; return true; }));
             Cell(g, 2, Field(pts[i].Y, v => { pts[idx] = pts[idx] with { Y = v }; return true; }));
             Cell(g, 3, Field(Sketch2D.SegmentLength(pts, i), v => Sketch2D.SetSegmentLength(pts, idx, v), rebuild: true));
+            Cell(g, 4, RadiusField(idx));
             g.PointerPressed += (_, _) => _canvas.Select(idx);
             _rows.Children.Add(g);
         }
@@ -213,10 +259,40 @@ internal sealed class SketchDialog : Window
         return box;
     }
 
+    private TextBox RadiusField(int i)
+    {
+        var pts = _canvas.Points;
+        var bl = _canvas.Bulges;
+        Vec2 A() => pts[i];
+        Vec2 B() => pts[(i + 1) % pts.Count];
+        string Current() => Sketch2D.ArcGeometry(A(), B(), Sketch2D.Bulge(bl, i)) is { } g ? SketchCanvas.Fmt(g.Radius) : "";
+        var box = new TextBox { Text = Current(), MinWidth = 0, Padding = new Thickness(4, 2), Watermark = "recto" };
+        void Commit()
+        {
+            if (_rebuilding || box.Parent is null || i >= bl.Count) return;
+            var text = (box.Text ?? "").Trim();
+            if (text == Current()) return;
+            if (text.Length == 0 || (TryNumber(text, out var z) && z == 0)) bl[i] = 0;
+            else if (TryNumber(text, out var r) && Sketch2D.BulgeFromRadius(A(), B(), r, bl[i] == 0 ? 1 : bl[i]) is { } bulge) bl[i] = bulge;
+            else
+            {
+                ShowProblem($"El radio del tramo {i + 1} tiene que ser al menos la mitad del tramo ({SketchCanvas.Fmt(Sketch2D.SegmentLength(pts, i) / 2)} mm).");
+                box.Text = Current();
+                return;
+            }
+            _canvas.InvalidateVisual();
+            RebuildRows();
+        }
+        box.LostFocus += (_, _) => Commit();
+        box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Commit(); e.Handled = true; } };
+        return box;
+    }
+
     private void UpdateStatus()
     {
         var pts = _canvas.Points;
-        var problem = Sketch2D.Validate(pts, _revolve);
+        var bl = _canvas.Bulges;
+        var problem = Sketch2D.Validate(pts, bl, _revolve);
         _ok.IsEnabled = problem is null;
         if (problem is not null)
         {
@@ -224,10 +300,12 @@ internal sealed class SketchDialog : Window
             _status.Foreground = Brushes.OrangeRed;
             return;
         }
-        double area = Math.Abs(Polygon2D.SignedArea(pts));
-        double perimeter = Enumerable.Range(0, pts.Count).Sum(i => Sketch2D.SegmentLength(pts, i));
-        double w = pts.Max(p => p.X) - pts.Min(p => p.X), h = pts.Max(p => p.Y) - pts.Min(p => p.Y);
-        _status.Text = $"{pts.Count} puntos · {SketchCanvas.Fmt(w)} × {SketchCanvas.Fmt(h)} mm · área {SketchCanvas.Fmt(area)} mm² · perímetro {SketchCanvas.Fmt(perimeter)} mm";
+        var outline = Sketch2D.Tessellate(pts, bl);
+        double area = Math.Abs(Polygon2D.SignedArea(outline));
+        double perimeter = Enumerable.Range(0, pts.Count).Sum(i => Sketch2D.PathLength(pts, bl, i));
+        double w = outline.Max(p => p.X) - outline.Min(p => p.X), h = outline.Max(p => p.Y) - outline.Min(p => p.Y);
+        int arcs = bl.Count(b => Math.Abs(b) > 1e-9);
+        _status.Text = $"{pts.Count} puntos · {arcs} arco(s) · {SketchCanvas.Fmt(w)} × {SketchCanvas.Fmt(h)} mm · área {SketchCanvas.Fmt(area)} mm² · perímetro {SketchCanvas.Fmt(perimeter)} mm";
         _status.Foreground = Brushes.Gray;
     }
 }

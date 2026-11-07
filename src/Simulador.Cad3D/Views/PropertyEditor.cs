@@ -92,9 +92,9 @@ internal sealed class PropertyEditor : ScrollViewer
         }
 
         if (f is ExtrudeFeature ex)
-            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, pts => ex.Profile = pts, revolve: false);
+            ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, ex.Bulges, (pts, bl) => { ex.Profile = pts; ex.Bulges = bl; }, revolve: false);
         if (f is RevolveFeature rev)
-            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, pts => rev.Profile = pts, revolve: true);
+            ProfileEditor("Perfil (radio,altura; …)", rev.Profile, rev.Bulges, (pts, bl) => { rev.Profile = pts; rev.Bulges = bl; }, revolve: true);
         if (f is StepImportFeature step)
         {
             var path = new TextBox { Text = step.FilePath, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
@@ -109,15 +109,15 @@ internal sealed class PropertyEditor : ScrollViewer
         VecEditor(f.Rotation, v => { f.Rotation = v; Changed?.Invoke(); }, 15);
     }
 
-    private void ProfileEditor(string label, List<Vec2> profile, Action<List<Vec2>> set, bool revolve)
+    private void ProfileEditor(string label, List<Vec2> profile, List<double> bulges, Action<List<Vec2>, List<double>> set, bool revolve)
     {
         var sketch = new Button { Content = "Editar boceto…", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
         sketch.Click += async (_, _) =>
         {
             if (TopLevel.GetTopLevel(this) is not Window owner) return;
-            var result = await new SketchDialog(profile, revolve).ShowDialog<List<Vec2>?>(owner);
+            var result = await new SketchDialog(profile, bulges, revolve).ShowDialog<SketchResult?>(owner);
             if (result is null) return;
-            set(result);
+            set(result.Points, result.Bulges);
             Changed?.Invoke();
             Refresh?.Invoke();
         };
@@ -132,10 +132,23 @@ internal sealed class PropertyEditor : ScrollViewer
         var error = new TextBlock { Foreground = Avalonia.Media.Brushes.OrangeRed, FontSize = 12 };
         box.LostFocus += (_, _) =>
         {
-            if (TryParseProfile(box.Text ?? "", out var pts)) { set(pts); error.Text = ""; Changed?.Invoke(); }
+            if (TryParseProfile(box.Text ?? "", out var pts))
+            {
+                // Si cambia el número de puntos, los arcos ya no corresponden a los mismos tramos.
+                set(pts, pts.Count == profile.Count ? bulges : new List<double>());
+                error.Text = "";
+                Changed?.Invoke();
+            }
             else error.Text = "Formato: x,y; x,y; x,y (al menos 3 puntos).";
         };
         Row(label, box);
+        int arcs = bulges.Count(b => Math.Abs(b) > 1e-9);
+        if (arcs > 0)
+            _stack.Children.Add(new TextBlock
+            {
+                Text = $"El perfil tiene {arcs} tramo(s) en arco: aquí solo se ven sus puntos; edítalos con «Editar boceto…».",
+                FontSize = 11, Opacity = 0.7, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
         _stack.Children.Add(error);
     }
 
