@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Simulador.Arduino.Runtime.Avr;
+using Simulador.Arduino.Runtime.Python;
 using Simulador.Arduino.Runtime.Sketch;
 using Simulador.Core.CoSim;
 using Simulador.Core.Signals;
@@ -30,6 +31,8 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     private readonly Dictionary<int, long> _toneEnd = [];
     private SketchProgram? _program;
     private Interpreter? _interpreter;
+    private PyModuleAst? _pyProgram;
+    private PyInterpreter? _py;
     private Thread? _thread;
     private SemaphoreSlim _go = new(0);
     private SemaphoreSlim _yielded = new(0);
@@ -73,7 +76,10 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     public McuState State { get; private set; } = McuState.Stopped;
     public string? FaultMessage { get; private set; }
     public int? FaultLine { get; private set; }
-    public bool HasProgram => _program is not null || _firmware is not null;
+    public bool HasProgram => _program is not null || _firmware is not null || _pyProgram is not null;
+
+    /// <summary>true si el programa de MicroPython llegó al final (la placa queda con los pines como estaban).</summary>
+    public bool ProgramEnded { get; private set; }
 
     /// <summary>true si ejecuta un programa compilado en el chip emulado (en vez del intérprete).</summary>
     public bool IsChipMode => _firmware is not null;
@@ -90,7 +96,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     public IReadOnlyList<string> Diagnostics => _diagnostics;
 
     /// <summary>Línea del sketch que se estaba ejecutando al ceder el control.</summary>
-    public int CurrentLine => _interpreter?.CurrentLine ?? 0;
+    public int CurrentLine => _py?.CurrentLine ?? _interpreter?.CurrentLine ?? 0;
 
     /// <summary>true si el puerto serie transmitió en los últimos 50 ms (LED TX).</summary>
     public bool SerialActive => _now - _serialActivity < 500_000;
@@ -108,10 +114,20 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
     /// <summary>Compila el sketch. Lanza <see cref="SketchCompileException"/> con la línea del error.</summary>
     public void Load(string source)
     {
+        if (Board.IsPython)
+        {
+            var ast = PyParser.Parse(source);
+            Stop();
+            _pyProgram = ast;
+            _program = null;
+            _firmware = null;
+            return;
+        }
         var program = Parser.Parse(source, Board.IntBits);
         Stop();
         _program = program;
         _firmware = null;
+        _pyProgram = null;
     }
 
     /// <summary>Carga un programa compilado (Intel HEX) para ejecutarlo en el chip emulado.</summary>
@@ -123,6 +139,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         Stop();
         _firmware = words;
         _program = null;
+        _pyProgram = null;
     }
 
     public void Start()
@@ -132,7 +149,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
             StartChip(_firmware);
             return;
         }
-        if (_program is null) throw new InvalidOperationException("No hay ningún sketch cargado.");
+        if (_program is null && _pyProgram is null) throw new InvalidOperationException("No hay ningún sketch cargado.");
         Stop();
         foreach (var p in _pins) p.ResetHardware();
         Array.Clear(_lastRead);
@@ -144,12 +161,26 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         _epoch = null;
         FaultMessage = null;
         FaultLine = null;
+        ProgramEnded = false;
         _abort = false;
         _go = new SemaphoreSlim(0);
         _yielded = new SemaphoreSlim(0);
-        _interpreter = new Interpreter(_program, Host);
-        var interpreter = _interpreter;
-        _thread = new Thread(() => Run(interpreter)) { IsBackground = true, Name = $"Sketch {Id}" };
+        if (_pyProgram is not null)
+        {
+            _interpreter = null;
+            _py = new PyInterpreter(_pyProgram, Host, Board);
+            Host.Random = new Random(1);
+            SerialBaud = 115200; // la consola de MicroPython va por USB
+            var py = _py;
+            _thread = new Thread(() => RunPython(py), 4 * 1024 * 1024) { IsBackground = true, Name = $"MicroPython {Id}" };
+        }
+        else
+        {
+            _py = null;
+            _interpreter = new Interpreter(_program!, Host);
+            var interpreter = _interpreter;
+            _thread = new Thread(() => Run(interpreter)) { IsBackground = true, Name = $"Sketch {Id}" };
+        }
         State = McuState.Running;
         _thread.Start();
         _yielded.Wait(); // el hilo arranca y espera la primera orden
@@ -191,6 +222,32 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         catch (Exception ex) when (ex is InvalidCastException or IndexOutOfRangeException or OverflowException or ArgumentException or KeyNotFoundException)
         {
             Fail("Error interno del simulador: " + ex.Message, interpreter.CurrentLine);
+        }
+        finally
+        {
+            _yielded.Release();
+        }
+    }
+
+    private void RunPython(PyInterpreter py)
+    {
+        try
+        {
+            _yielded.Release();
+            _go.Wait();
+            if (_abort) return;
+            py.Run();
+            ProgramEnded = true;
+            State = McuState.Stopped;
+        }
+        catch (AbortSketch) { }
+        catch (SketchRuntimeException ex)
+        {
+            Fail(ex.Message, ex.Line);
+        }
+        catch (Exception ex) when (ex is InvalidCastException or IndexOutOfRangeException or OverflowException or ArgumentException or KeyNotFoundException or InvalidOperationException)
+        {
+            Fail("Error interno del simulador: " + ex.Message, py.CurrentLine);
         }
         finally
         {
@@ -449,6 +506,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
 
     public IReadOnlyList<SketchVariable> Variables()
     {
+        if (_py is not null) return _py.Variables();
         if (_interpreter is null || _chip is not null) return [];
         return _interpreter.Globals
             .Where(kv => !kv.Value.IsConst || !Host.Constants.ContainsKey(kv.Key))
@@ -488,7 +546,7 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
         public void Spend(long ticks) => mcu.Spend(ticks);
         public int IntBits => mcu.Board.IntBits;
         public IReadOnlyDictionary<string, long> Constants => constants;
-        public Random Random { get; } = new(1);
+        public Random Random { get; set; } = new(1);
 
         public void PinMode(int pin, long mode, int line)
         {
@@ -591,6 +649,28 @@ public sealed class ArduinoMcu : ISimComponent, IDisposable
             long begin = mcu._now;
             while (DigitalRead(pin, line) == level) { if (mcu._now > limit) return 0; Spend(100); }
             return (mcu._now - begin) / 10;
+        }
+
+        public double PinVolts(int pin, int line) => mcu.CheckPin(pin, line).Value;
+
+        public void Pwm(int pin, double hz, double? duty, int line)
+        {
+            var p = mcu.CheckPin(pin, line);
+            p.Configured = true;
+            p.Mode = Runtime.PinMode.Output;
+            if (duty is not { } d)
+            {
+                p.PwmHz = null;
+                SetOutput(p, 0, null);
+                return;
+            }
+            p.PwmHz = hz;
+            // Un servo espera 50 Hz con impulsos de 0,5 a 2,5 ms.
+            double widthMs = d / hz * 1000;
+            p.ServoAngle = hz is >= 40 and <= 400 && widthMs is >= 0.4 and <= 2.6
+                ? Math.Clamp((widthMs - 0.5) / 2.0 * 180, 0, 180)
+                : null;
+            SetOutput(p, mcu.Board.Vcc * d, d);
         }
 
         public void SerialBegin(long baud) => mcu.SerialBaud = baud;

@@ -42,8 +42,72 @@ internal sealed class ArduinoBoardView : UserControl
         int A(int i) => b.FirstAnalog + i;
         IEnumerable<HeaderPin> Digital(params int[] pins) => pins.Select(p => new HeaderPin((b.Pwm.Contains(p) ? "~" : "") + p, p));
         HeaderPin Fixed(string s) => new(s, -1);
+        IEnumerable<HeaderPin> Gpio(params int[] pins) => pins.Select(p => new HeaderPin(b == ArduinoBoard.Pico ? "GP" + p : p.ToString(), p));
 
-        if (b.Id == "arduino-nano")
+        string led = b.PinName(b.LedBuiltin);
+        if (b == ArduinoBoard.Esp32)
+        {
+            // ESP32 DevKit V1 de 30 pines, con el USB a la izquierda.
+            w = 440; h = 170;
+            Board(canvas, w, h, "#1E1E22");
+            Rect(canvas, -14, 62, 40, 46, new SolidColorBrush(Color.Parse("#B0B4B8")), 3, "USB");
+            // Módulo ESP-WROOM-32 con su blindaje metálico y la antena.
+            Rect(canvas, 300, 34, 128, 102, new SolidColorBrush(Color.Parse("#2A2A2A")), 3, "");
+            canvas.Children.Add(Place(new Border
+            {
+                Width = 92, Height = 86, Background = new SolidColorBrush(Color.Parse("#C4C8CC")), CornerRadius = new CornerRadius(2),
+                Child = new TextBlock { Text = "ESP-WROOM-32", FontSize = 9, FontFamily = Mono, Foreground = new SolidColorBrush(Color.Parse("#444")), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            }, 306, 42));
+            for (int i = 0; i < 4; i++)
+                canvas.Children.Add(Place(new Border { Width = 4, Height = 70, Background = new SolidColorBrush(Color.Parse("#C9A227")), Opacity = 0.8 }, 404 + i * 6, 50));
+            Chip(canvas, 150, 70, 46, 30, "CP2102");
+            var top = new List<HeaderPin> { Fixed("VIN"), Fixed("GND") };
+            top.AddRange(Gpio(13, 12, 14, 27, 26, 25, 33, 32, 35, 34, 39, 36));
+            top.Add(Fixed("EN"));
+            Header(canvas, 50, 6, top, toggle, labelsBelow: true);
+            var bottom = new List<HeaderPin> { Fixed("3V3"), Fixed("GND") };
+            bottom.AddRange(Gpio(15, 2, 4, 16, 17, 5, 18, 19, 21, 3, 1, 22, 23));
+            Header(canvas, 50, h - 22, bottom, toggle, labelsBelow: false);
+            Led(canvas, 100, 62, "ON", () => true, Color.Parse("#FF3B30"));
+            Led(canvas, 100, 100, "IO2", () => _mcu.Pin(led).IsOutput && _mcu.Pin(led).OutputVolts > 0.3, Color.Parse("#2F81F7"), () => _mcu.Pin(led).OutputVolts / b.Vcc);
+            Button(canvas, 36, 58, "EN");
+            Button(canvas, 36, 96, "BOOT");
+            BoardLabel(canvas, 214, 112, "ESP32");
+        }
+        else if (b == ArduinoBoard.Pico)
+        {
+            // Raspberry Pi Pico, con el micro-USB a la izquierda: pines 1-20 arriba y 40-21 abajo.
+            w = 420; h = 150;
+            Board(canvas, w, h, "#1F7A3A");
+            Rect(canvas, -12, 56, 34, 38, new SolidColorBrush(Color.Parse("#B0B4B8")), 3, "USB");
+            Chip(canvas, 190, 50, 50, 50, b.Chip);
+            Chip(canvas, 116, 60, 46, 30, "W25Q16");
+            var top = Gpio(0, 1).ToList();
+            top.Add(Fixed("GND"));
+            top.AddRange(Gpio(2, 3, 4, 5));
+            top.Add(Fixed("GND"));
+            top.AddRange(Gpio(6, 7, 8, 9));
+            top.Add(Fixed("GND"));
+            top.AddRange(Gpio(10, 11, 12, 13));
+            top.Add(Fixed("GND"));
+            top.AddRange(Gpio(14, 15));
+            Header(canvas, 50, 6, top, toggle, labelsBelow: true);
+            var bottom = new List<HeaderPin> { Fixed("VBUS"), Fixed("VSYS"), Fixed("GND"), Fixed("3V3E"), Fixed("3V3"), Fixed("VREF") };
+            bottom.AddRange(Gpio(28));
+            bottom.Add(Fixed("AGND"));
+            bottom.AddRange(Gpio(27, 26));
+            bottom.Add(Fixed("RUN"));
+            bottom.AddRange(Gpio(22));
+            bottom.Add(Fixed("GND"));
+            bottom.AddRange(Gpio(21, 20, 19, 18));
+            bottom.Add(Fixed("GND"));
+            bottom.AddRange(Gpio(17, 16));
+            Header(canvas, 50, h - 22, bottom, toggle, labelsBelow: false);
+            Led(canvas, 36, 42, "LED", () => _mcu.Pin(led).IsOutput && _mcu.Pin(led).OutputVolts > 0.3, Color.Parse("#39D353"), () => _mcu.Pin(led).OutputVolts / b.Vcc);
+            Button(canvas, 60, 92, "BOOTSEL");
+            BoardLabel(canvas, 262, 62, "Raspberry Pi Pico");
+        }
+        else if (b.Id == "arduino-nano")
         {
             w = 380; h = 130;
             Board(canvas, w, h);
@@ -132,9 +196,9 @@ internal sealed class ArduinoBoardView : UserControl
         return c;
     }
 
-    private static void Board(Canvas canvas, double w, double h) => canvas.Children.Add(new Border
+    private static void Board(Canvas canvas, double w, double h, string? color = null) => canvas.Children.Add(new Border
     {
-        Width = w, Height = h, Background = Pcb, BorderBrush = PcbEdge, BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(10),
+        Width = w, Height = h, Background = color is null ? Pcb : new SolidColorBrush(Color.Parse(color)), BorderBrush = color is null ? PcbEdge : new SolidColorBrush(Color.Parse(color), 0.7), BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(10),
         BoxShadow = BoxShadows.Parse("0 3 10 0 #50000000"),
     });
 
@@ -157,14 +221,23 @@ internal sealed class ArduinoBoardView : UserControl
     private static void BoardLabel(Canvas canvas, double x, double y, string text) =>
         canvas.Children.Add(Place(new TextBlock { Text = text, FontSize = 15, FontWeight = FontWeight.Bold, Foreground = Silk, Opacity = 0.9 }, x, y));
 
-    private void Led(Canvas canvas, double x, double y, string label, Func<bool> isOn, Color color)
+    /// <summary>Botón de la placa (dibujo): EN, BOOT, BOOTSEL…</summary>
+    private static void Button(Canvas canvas, double x, double y, string label)
+    {
+        Rect(canvas, x, y, 16, 16, new SolidColorBrush(Color.Parse("#C9CDD1")), 2, "");
+        canvas.Children.Add(Place(new Ellipse { Width = 9, Height = 9, Fill = new SolidColorBrush(Color.Parse("#333")) }, x + 3.5, y + 3.5));
+        canvas.Children.Add(Place(new TextBlock { Text = label, FontSize = 8, Foreground = Silk }, x + 20, y + 3));
+    }
+
+    private void Led(Canvas canvas, double x, double y, string label, Func<bool> isOn, Color color, Func<double>? brightness = null)
     {
         var led = new Border { Width = 12, Height = 7, Background = LedOff, CornerRadius = new CornerRadius(1) };
         var on = new SolidColorBrush(color);
         _refresh.Add(() =>
         {
-            bool v = isOn() && _mcu.State == McuState.Running;
-            led.Background = v ? on : LedOff;
+            // MicroPython deja los pines como estaban al acabar el programa: el LED sigue encendido.
+            bool v = isOn() && (_mcu.State == McuState.Running || _mcu.ProgramEnded);
+            led.Background = v ? (brightness is null ? on : new SolidColorBrush(color, 0.3 + 0.7 * Math.Clamp(brightness(), 0, 1))) : LedOff;
             led.BoxShadow = v ? BoxShadows.Parse($"0 0 6 1 {color}") : default;
         });
         canvas.Children.Add(Place(led, x, y));
@@ -222,7 +295,8 @@ internal sealed class ArduinoBoardView : UserControl
             {
                 double level = port.Duty ?? (port.OutputHigh ? 1 : 0);
                 if (level > 0) fill = new SolidColorBrush(OutColor, 0.25 + 0.75 * level);
-                tip += port.Duty is { } d ? $"salida PWM {d * 100:0} %" : port.OutputHigh ? "salida HIGH (5 V)" : "salida LOW (0 V)";
+                string pwmHz = port.PwmHz is { } f ? $" a {f:0} Hz" : "";
+                tip += port.Duty is { } d ? $"salida PWM {d * 100:0} %{pwmHz}" : port.OutputHigh ? $"salida HIGH ({port.NominalLevel:0.#} V)" : "salida LOW (0 V)";
             }
             else
             {

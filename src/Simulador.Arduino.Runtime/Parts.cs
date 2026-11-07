@@ -131,9 +131,11 @@ public sealed class PotentiometerPart(PinPort pin, string label) : Part(pin, lab
 public sealed class BuzzerPart(PinPort pin, string label) : Part(pin, label)
 {
     public override PartKind Kind => PartKind.Buzzer;
-    public double? Frequency => Pin.ToneHz;
-    public bool Sounding => Pin.ToneHz is not null;
-    public override string Describe() => Pin.ToneHz is { } hz ? $"suena a {hz:0} Hz ({Note(hz)})" : "en silencio";
+    /// <summary>Frecuencia de tone() o de un PWM audible (MicroPython: PWM con duty entre 0 y 100 %).</summary>
+    public double? Frequency => Pin.ToneHz
+        ?? (Pin.PwmHz is { } f and >= 20 and <= 20_000 && Pin.Duty is > 0.01 and < 0.99 && Pin.ServoAngle is null ? f : null);
+    public bool Sounding => Frequency is not null;
+    public override string Describe() => Frequency is { } hz ? $"suena a {hz:0} Hz ({Note(hz)})" : "en silencio";
 
     private static readonly string[] Names = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"];
 

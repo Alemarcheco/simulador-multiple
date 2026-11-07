@@ -27,6 +27,8 @@ internal sealed partial class ArduinoView : UserControl
 
     private readonly IModuleHost _host;
     private readonly ComboBox _boardBox;
+    private IReadOnlyList<ArduinoExample> _exampleList;
+    private readonly TextBlock _serialTitle = Title("Monitor serie");
     private readonly ComboBox _examples;
     private readonly TextBox _editor;
     private readonly TextBlock _gutter = new() { FontFamily = Mono, FontSize = EditorFontSize, Opacity = 0.5, TextAlignment = TextAlignment.Right, Margin = new Thickness(0, 6, 6, 0) };
@@ -65,9 +67,11 @@ internal sealed partial class ArduinoView : UserControl
         _host = host;
         _mcu = new ArduinoMcu("ARD1", ArduinoBoard.Uno);
 
-        _boardBox = new ComboBox { ItemsSource = ArduinoBoard.All, SelectedIndex = 0, MinWidth = 180 };
+        _boardBox = new ComboBox { ItemsSource = ArduinoBoard.Everything, SelectedIndex = 0, MinWidth = 180 };
+        ToolTip.SetTip(_boardBox, "Arduino se programa en C++ (y con bloques). ESP32 y Raspberry Pi Pico se programan en MicroPython.");
         _boardBox.SelectionChanged += (_, _) => ChangeBoard();
-        _examples = new ComboBox { ItemsSource = ArduinoExamples.All.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
+        _exampleList = ArduinoExamples.All;
+        _examples = new ComboBox { ItemsSource = _exampleList.Select(e => e.Name).ToList(), SelectedIndex = 0, MinWidth = 260 };
         _examples.SelectionChanged += (_, _) => ShowExample();
 
         _engine = new ComboBox { ItemsSource = new[] { "Intérprete", "Chip real (ATmega328P)" }, SelectedIndex = 0, MinWidth = 170 };
@@ -108,6 +112,7 @@ internal sealed partial class ArduinoView : UserControl
         ScrollViewer.SetVerticalScrollBarVisibility(_editor, ScrollBarVisibility.Disabled);
         ScrollViewer.SetHorizontalScrollBarVisibility(_editor, ScrollBarVisibility.Disabled);
         _editor.TextChanged += (_, _) => UpdateGutter();
+        _editor.AddHandler(KeyDownEvent, EditorKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         var editorGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         editorGrid.Children.Add(_gutter);
         Grid.SetColumn(_editor, 1);
@@ -162,7 +167,7 @@ internal sealed partial class ArduinoView : UserControl
         right.Children.Add(_boardHost);
         right.Children.Add(new TextBlock
         {
-            Text = "Rojo: salida en HIGH (más tenue = PWM). Verde: entrada que recibe 5 V. Azul: servo o tono. Clic en un pin de entrada para cambiarlo.",
+            Text = "Rojo: salida en HIGH (más tenue = PWM). Verde: entrada que recibe tensión. Azul: servo o tono. Clic en un pin de entrada para cambiarlo.",
             FontSize = 11, Opacity = 0.7, TextWrapping = TextWrapping.Wrap,
         });
         right.Children.Add(Title("Montaje"));
@@ -171,7 +176,7 @@ internal sealed partial class ArduinoView : UserControl
         right.Children.Add(_inputs);
         right.Children.Add(Title("Salidas"));
         right.Children.Add(_outputs);
-        right.Children.Add(Title("Monitor serie"));
+        right.Children.Add(_serialTitle);
         right.Children.Add(_serial);
         right.Children.Add(serialSend);
         right.Children.Add(Title("Variables"));
@@ -213,7 +218,7 @@ internal sealed partial class ArduinoView : UserControl
     private void ShowExample()
     {
         if (_examples.SelectedIndex < 0) return;
-        var e = ArduinoExamples.All[_examples.SelectedIndex];
+        var e = _exampleList[_examples.SelectedIndex];
         _mcu.Stop();
         _openedHex = null;
         if (_modeTabs is not null) _modeTabs.SelectedIndex = 0;
@@ -375,13 +380,64 @@ internal sealed partial class ArduinoView : UserControl
     private void ChangeBoard()
     {
         if (_boardBox.SelectedItem is not ArduinoBoard b || b == _mcu.Board) return;
+        bool languageChanged = b.Language != _mcu.Board.Language;
         _mcu.Dispose();
         _mcu = new ArduinoMcu("ARD1", b);
-        _blocks.Board = b;
+        _compiled = null;
+        _openedHex = null;
+        if (b.IsPython)
+        {
+            // MicroPython: ni bloques ni chip real (de momento).
+            if (BlocksMode) _modeTabs.SelectedIndex = 0;
+            _engine.SelectedIndex = 0;
+        }
+        else _blocks.Board = b;
+        _blocksTab.IsEnabled = !b.IsPython;
+        _engine.IsEnabled = !b.IsPython;
+        _serialTitle.Text = b.IsPython ? "Consola (print e input)" : "Monitor serie";
         BuildBoard();
-        GenerateFromBlocks();
+        // Los ejemplos de MicroPython usan los pines de cada placa; al cambiar de lenguaje cambia la lista entera.
+        if (languageChanged || b.IsPython)
+        {
+            int index = languageChanged ? 0 : Math.Max(0, _examples.SelectedIndex);
+            _exampleList = b.IsPython ? PythonExamples.For(b) : ArduinoExamples.All;
+            _examples.ItemsSource = _exampleList.Select(e => e.Name).ToList();
+            _examples.SelectedIndex = Math.Min(index, _exampleList.Count - 1);
+        }
+        else GenerateFromBlocks();
         _inputSignature = "";
         UpdateStatus();
+    }
+
+    /// <summary>En Python, Tab pone 4 espacios e Intro mantiene la sangría (y la aumenta después de ':').</summary>
+    private void EditorKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (!_mcu.Board.IsPython || _editor.IsReadOnly) return;
+        string text = _editor.Text ?? "";
+        int caret = Math.Clamp(_editor.CaretIndex, 0, text.Length);
+        if (e.Key == Avalonia.Input.Key.Tab && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
+        {
+            Insert("    ");
+            e.Handled = true;
+        }
+        else if (e.Key == Avalonia.Input.Key.Enter && e.KeyModifiers == Avalonia.Input.KeyModifiers.None)
+        {
+            int lineStart = text.LastIndexOf('\n', Math.Max(0, caret - 1)) + 1;
+            if (caret == 0) lineStart = 0;
+            string line = text[lineStart..caret];
+            string indent = new(line.TakeWhile(c => c == ' ').ToArray());
+            if (line.TrimEnd().EndsWith(':')) indent += "    ";
+            Insert("\n" + indent);
+            e.Handled = true;
+        }
+
+        void Insert(string s)
+        {
+            int start = Math.Min(_editor.SelectionStart, _editor.SelectionEnd), end = Math.Max(_editor.SelectionStart, _editor.SelectionEnd);
+            if (end <= start) start = end = caret;
+            _editor.Text = text[..start] + s + text[end..];
+            _editor.CaretIndex = start + s.Length;
+        }
     }
 
     private void BuildBoard()
@@ -417,6 +473,14 @@ internal sealed partial class ArduinoView : UserControl
     /// <summary>Analógicas que aparecen en el código (A0, A1…), para mostrar su regulador.</summary>
     private IEnumerable<PinPort> UsedAnalogPins()
     {
+        var board = _mcu.Board;
+        if (board.IsPython)
+        {
+            // ADC(Pin(34)), ADC(26) o, en la Pico, ADC(0) = GP26.
+            var numbers = PyAdc().Matches(_editor.Text ?? "").Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+                .Select(n => board == ArduinoBoard.Pico && n < board.AnalogCount ? board.FirstAnalog + n : n).ToHashSet();
+            return _mcu.Pins.Where(p => p.IsAnalog && numbers.Contains(p.Number));
+        }
         var names = AnalogName().Matches(_editor.Text ?? "").Select(m => m.Value).ToHashSet();
         return _mcu.Pins.Where(p => p.IsAnalog && names.Contains(p.Name));
     }
@@ -444,7 +508,7 @@ internal sealed partial class ArduinoView : UserControl
             row.Children.Add(hold);
             row.Children.Add(new TextBlock
             {
-                Text = p.Mode == PinMode.InputPullup ? "pull-up: pulsar = LOW" : "pulsar = HIGH",
+                Text = p.Mode == PinMode.InputPullup ? (_mcu.Board.IsPython ? "pull-up: pulsar = 0" : "pull-up: pulsar = LOW") : (_mcu.Board.IsPython ? "pulsar = 1" : "pulsar = HIGH"),
                 Opacity = 0.6, FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
             });
             _inputs.Children.Add(row);
@@ -453,7 +517,8 @@ internal sealed partial class ArduinoView : UserControl
         {
             var value = new TextBlock { Width = 110, VerticalAlignment = VerticalAlignment.Center, FontFamily = Mono, FontSize = 12 };
             var slider = new Slider { Minimum = 0, Maximum = p.NominalLevel, Value = p.ExternalVolts ?? 0, Width = 200 };
-            void Show() => value.Text = $"{slider.Value:0.00} V = {Math.Round(slider.Value / p.NominalLevel * 1023)}";
+            int full = _mcu.Board.IsPython ? 65535 : 1023;
+            void Show() => value.Text = $"{slider.Value:0.00} V = {Math.Round(slider.Value / p.NominalLevel * full)}";
             slider.ValueChanged += (_, _) => { p.Value = slider.Value; Show(); };
             p.Value = slider.Value;
             Show();
@@ -509,11 +574,12 @@ internal sealed partial class ArduinoView : UserControl
         var outs = new StringBuilder();
         foreach (var p in _mcu.Pins.Where(p => p.IsOutput))
         {
-            outs.Append(p.Name.PadRight(5));
+            outs.Append(p.Name.PadRight(_mcu.Board.IsPython ? 7 : 5));
+            string freq = p.PwmHz is { } f ? $" a {f:0} Hz" : "";
             outs.AppendLine(p.ServoAngle is { } a ? $"servo {a:0}°"
                 : p.ToneHz is { } hz ? $"tono {hz:0} Hz"
-                : p.Duty is { } d ? $"PWM {d * 100:0} % ({p.OutputVolts:0.00} V)"
-                : p.OutputHigh ? "HIGH (5 V)" : "LOW (0 V)");
+                : p.Duty is { } d ? $"PWM {d * 100:0} %{freq} ({p.OutputVolts:0.00} V)"
+                : p.OutputHigh ? $"HIGH ({p.NominalLevel:0.#} V)" : "LOW (0 V)");
         }
         _outputs.Text = outs.Length == 0 ? "Ningún pin configurado como salida." : outs.ToString().TrimEnd();
         _variables.Text = string.Join("\n", _mcu.Variables().Select(v => $"{v.Type} {v.Name} = {v.Value}"));
@@ -549,6 +615,7 @@ internal sealed partial class ArduinoView : UserControl
         {
             McuState.Running when _mcu.IsChipMode => $"EJECUTANDO en el chip (16 MHz) · {_mcu.Uptime.TotalSeconds:0.0} s",
             McuState.Running => $"EJECUTANDO · {_mcu.Uptime.TotalSeconds:0.0} s · línea {_mcu.CurrentLine}",
+            McuState.Stopped when _mcu.ProgramEnded => $"PROGRAMA TERMINADO tras {_mcu.Uptime.TotalSeconds:0.0} s (los pines se quedan como estaban)",
             McuState.Fault when _mcu.FaultLine is null or 0 => $"DETENIDO POR ERROR: {_mcu.FaultMessage}",
             McuState.Fault => $"DETENIDO POR ERROR en la línea {_mcu.FaultLine}: {_mcu.FaultMessage}",
             _ => "DETENIDO",
@@ -565,13 +632,14 @@ internal sealed partial class ArduinoView : UserControl
     // ---- Archivos .ino ----
 
     private static readonly FilePickerFileType InoType = new("Sketch de Arduino") { Patterns = ["*.ino", "*.cpp", "*.c"] };
+    private static readonly FilePickerFileType PyFileType = new("Programa de MicroPython") { Patterns = ["*.py"] };
     private static readonly FilePickerFileType HexType = new("Programa compilado (chip real)") { Patterns = ["*.hex"] };
 
     private async Task OpenAsync()
     {
         var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
         if (storage is null) return;
-        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Abrir sketch o programa compilado", FileTypeFilter = [InoType, HexType] });
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Abrir sketch o programa compilado", FileTypeFilter = _mcu.Board.IsPython ? [PyFileType, InoType, HexType] : [InoType, HexType, PyFileType] });
         if (files.Count == 0) return;
         try
         {
@@ -593,6 +661,9 @@ internal sealed partial class ArduinoView : UserControl
                 return;
             }
             _openedHex = null;
+            bool isPy = files[0].Name.EndsWith(".py", StringComparison.OrdinalIgnoreCase);
+            if (isPy != _mcu.Board.IsPython)
+                _boardBox.SelectedItem = isPy ? ArduinoBoard.Pico : ArduinoBoard.Uno; // cambia a una placa del lenguaje del archivo
             _editor.Text = text.Replace("\r\n", "\n");
             _examples.SelectedIndex = -1;
             _description.Text = files[0].Name;
@@ -610,9 +681,9 @@ internal sealed partial class ArduinoView : UserControl
         if (storage is null) return;
         var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Guardar sketch",
-            SuggestedFileName = "sketch.ino",
-            FileTypeChoices = [InoType],
+            Title = _mcu.Board.IsPython ? "Guardar programa" : "Guardar sketch",
+            SuggestedFileName = _mcu.Board.IsPython ? "main.py" : "sketch.ino",
+            FileTypeChoices = [_mcu.Board.IsPython ? PyFileType : InoType],
         });
         if (file is null) return;
         try
@@ -631,4 +702,7 @@ internal sealed partial class ArduinoView : UserControl
 
     [GeneratedRegex(@"\bA\d{1,2}\b")]
     private static partial Regex AnalogName();
+
+    [GeneratedRegex(@"ADC\(\s*(?:Pin\(\s*)?(\d+)")]
+    private static partial Regex PyAdc();
 }

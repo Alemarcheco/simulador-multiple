@@ -22,6 +22,10 @@ internal interface IMcuHost
     void NoTone(int pin, int line);
     void ServoWrite(ServoObj servo, int line);
     long PulseIn(int pin, bool level, long timeoutUs, int line);
+    /// <summary>Tensión real en el pin (para los ADC de 12 y 16 bits de MicroPython).</summary>
+    double PinVolts(int pin, int line);
+    /// <summary>PWM con frecuencia libre (MicroPython). <paramref name="duty"/> null lo apaga.</summary>
+    void Pwm(int pin, double hz, double? duty, int line);
 
     void SerialBegin(long baud);
     void SerialWrite(string text);

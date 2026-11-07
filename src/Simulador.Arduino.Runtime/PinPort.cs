@@ -40,6 +40,8 @@ public sealed class PinPort : ISignalPort
     public double? Duty { get; internal set; }
     /// <summary>Frecuencia de tone(), o null.</summary>
     public double? ToneHz { get; internal set; }
+    /// <summary>Frecuencia del PWM (MicroPython: PWM.freq()), o null si el pin no da PWM.</summary>
+    public double? PwmHz { get; internal set; }
     /// <summary>Ángulo del servo conectado (0-180°), o null.</summary>
     public double? ServoAngle { get; internal set; }
     /// <summary>Tensión que llega desde fuera, o null si el pin no está conectado a nada.</summary>
@@ -90,6 +92,7 @@ public sealed class PinPort : ISignalPort
         OutputVolts = 0;
         Duty = null;
         ToneHz = null;
+        PwmHz = null;
         ServoAngle = null;
         Notify();
     }

@@ -170,8 +170,9 @@ internal sealed class PartsPanel : UserControl
                 body.PointerCaptureLost += (_, _) => button.Pressed = false;
                 var hold = new ToggleButton { Content = "Fijo", Padding = new Thickness(8, 1), FontSize = 11 };
                 hold.IsCheckedChanged += (_, _) => button.Pressed = hold.IsChecked == true;
-                var to5v = new CheckBox { Content = "Conectado a 5 V", FontSize = 11, IsChecked = !button.ToGround };
-                ToolTip.SetTip(to5v, "Sin marcar: el pulsador une el pin con GND (usa INPUT_PULLUP). Marcado: lo une con 5 V y lleva resistencia a GND.");
+                string vcc = $"{button.Pin.NominalLevel:0.#} V";
+                var to5v = new CheckBox { Content = $"Conectado a {vcc}", FontSize = 11, IsChecked = !button.ToGround };
+                ToolTip.SetTip(to5v, $"Sin marcar: el pulsador une el pin con GND (usa la resistencia de pull-up). Marcado: lo une con {vcc} y lleva resistencia a GND.");
                 to5v.IsCheckedChanged += (_, _) => button.ToGround = to5v.IsChecked != true;
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { body, new StackPanel { Spacing = 4, Children = { hold, to5v } } } };
                 return (row, () => cap.Fill = new SolidColorBrush(Color.Parse(button.Pressed ? "#C62828" : "#2F2F2F")));
