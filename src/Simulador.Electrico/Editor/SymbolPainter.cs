@@ -411,7 +411,7 @@ internal static class SymbolPainter
         foreach (var term in t.Terminals) L(dc, term.X, term.Y == 0 ? 0 : 5, term.X, term.Y == 0 ? 1 : 6);
         var powered = st?.Powered == true;
         dc.DrawRectangle(Tint, Line, new Rect(P(-0.8, 1), P(maxX + 0.8, 5)));
-        Label(dc, "PLC", maxX - 1.2, 3.0, 12, Ink, center: true);
+        Label(dc, t.Id == ElementCatalog.McuTypeId ? "µC" : "PLC", maxX - 1.2, 3.0, 12, Ink, center: true);
         dc.DrawEllipse(st is null ? LedOff : powered ? LedInput : Fault, null, P(maxX - 2.6, 3.0), 3, 3);
         var inputs = st?.Inputs ?? [];
         var outputs = st?.Paths ?? [];

@@ -5,6 +5,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Simulador.Arduino.Runtime;
+using Simulador.Arduino.Runtime.Sketch;
 using Simulador.Core.Modules;
 using Simulador.Electrico.Editor;
 using Simulador.Electrico.Engine.Catalog;
@@ -32,6 +34,8 @@ internal sealed class ElectricoView : DockPanel
     private readonly ToggleButton _showCurrent = new() { Content = "• Corriente", IsChecked = true };
     private readonly ToggleButton _showVoltage = new() { Content = "⚡ Tensiones", IsChecked = true };
     private readonly Dictionary<Guid, PlcCpu> _plcs = [];
+    private readonly Dictionary<Guid, McuIoBoard> _mcus = [];
+    private readonly Dictionary<Guid, int> _mcuSerialShown = [];
     private readonly HashSet<Guid> _plcFaultShown = [];
     private readonly ComboBox _speed = new() { Width = 140 };
     private readonly TextBlock _clock = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8, MinWidth = 90 };
@@ -316,11 +320,17 @@ internal sealed class ElectricoView : DockPanel
     private void StartPlcs()
     {
         _plcs.Clear();
+        DisposeMcus();
         _plcFaultShown.Clear();
         if (_sim is null) return;
         foreach (var e in _canvas.Schematic.Elements.Where(x => _catalog.TryGet(x.Type, out var t) && t.Behavior == Behavior.Plc))
         {
             var tag = string.IsNullOrWhiteSpace(e.Tag) ? "KF" : e.Tag.Trim();
+            if (e.Type == ElementCatalog.McuTypeId)
+            {
+                StartMcu(e, tag);
+                continue;
+            }
             var cpu = new PlcCpu(tag, PlcProfiles.Get("generico-iec"));
             try
             {
@@ -340,8 +350,71 @@ internal sealed class ElectricoView : DockPanel
         }
     }
 
+    /// <summary>Microcontrolador con placa de relés: carga su programa (C++ o MicroPython) y lo une a los bornes.</summary>
+    private void StartMcu(PlacedElement e, string tag)
+    {
+        if (_sim is null || !_catalog.TryGet(e.Type, out var type)) return;
+        var board = McuProgramKeys.Board((int)e.Param(type, "placa"));
+        var io = new McuIoBoard(tag, board);
+        try
+        {
+            io.Load(e.Text(McuProgramKeys.Code, McuIoBoard.Template(board)));
+            foreach (var w in _sim.AttachController(tag, io)) AddLogLine($"{tag}: {w}", EventSeverity.Warning);
+            _mcus[e.Id] = io;
+            _mcuSerialShown[e.Id] = 0;
+            AddLogLine($"{tag}: programa cargado en {board.Name}, en marcha.", EventSeverity.Info);
+        }
+        catch (SketchCompileException ex)
+        {
+            io.Dispose();
+            AddLogLine($"{tag}: error en la línea {ex.Line} del programa: {ex.Detail}. La placa queda parada.", EventSeverity.Fault);
+            _host.SetStatus($"{tag}: error en la línea {ex.Line} del programa de {board.Name}: {ex.Detail}");
+        }
+    }
+
+    private void DisposeMcus()
+    {
+        foreach (var m in _mcus.Values) m.Dispose();
+        _mcus.Clear();
+        _mcuSerialShown.Clear();
+    }
+
+    /// <summary>Lo que imprime cada placa (Serial.println o print) va al registro, y sus errores también.</summary>
+    private void ShowMcuOutput()
+    {
+        foreach (var (id, io) in _mcus)
+        {
+            var mcu = io.Mcu;
+            var serial = mcu.SerialOutput;
+            int shown = _mcuSerialShown.GetValueOrDefault(id);
+            if (serial.Length < shown) shown = 0;
+            int end = serial.LastIndexOf('\n');
+            if (end >= shown)
+            {
+                foreach (var line in serial[shown..end].Split('\n'))
+                    if (line.Trim().Length > 0) AddLogLine($"{io.Id}: {line.TrimEnd('\r')}", EventSeverity.Info);
+                _mcuSerialShown[id] = end + 1;
+            }
+            if (mcu.State == McuState.Fault && _plcFaultShown.Add(id))
+                AddLogLine($"{io.Id}: error en la línea {mcu.FaultLine}: {mcu.FaultMessage}", EventSeverity.Fault);
+        }
+    }
+
     private string PlcStatusText(PlacedElement e)
     {
+        if (_mcus.TryGetValue(e.Id, out var io))
+        {
+            var m = io.Mcu;
+            var state = m.State switch
+            {
+                McuState.Running => $"en marcha, línea {m.CurrentLine}",
+                McuState.Fault => $"parado por un error en la línea {m.FaultLine}: {m.FaultMessage}",
+                _ when m.ProgramEnded => "el programa terminó (las salidas se quedan como estaban)",
+                _ => "parado",
+            };
+            return $"{m.Board.Name}: {state}. Tiempo: {m.Uptime.TotalSeconds:0.0} s.";
+        }
+        if (e.Type == ElementCatalog.McuTypeId) return "La placa no tiene un programa válido (mira el registro).";
         if (!_plcs.TryGetValue(e.Id, out var cpu)) return "El PLC no tiene un programa válido (mira el registro).";
         var text = $"Estado: {cpu.State}. Ciclos ejecutados: {cpu.ScanCount}.";
         if (cpu.FaultMessage is not null) text += $" Fallo: {cpu.FaultMessage}";
@@ -365,6 +438,7 @@ internal sealed class ElectricoView : DockPanel
     {
         _timer.Stop();
         _plcs.Clear();
+        DisposeMcus();
         _sim = null;
         _canvas.Sim = null;
         if (_run.IsChecked == true) _run.IsChecked = false;
@@ -381,6 +455,8 @@ internal sealed class ElectricoView : DockPanel
         _shownEvents = 0;
         _plcFaultShown.Clear();
         foreach (var cpu in _plcs.Values) { try { cpu.Start(); } catch (InvalidOperationException) { } }
+        foreach (var io in _mcus.Values) { io.Reset(); io.Mcu.Start(); }
+        foreach (var id in _mcus.Keys) _mcuSerialShown[id] = 0;
         Tick();
     }
 
@@ -394,6 +470,7 @@ internal sealed class ElectricoView : DockPanel
         foreach (var (id, cpu) in _plcs)
             if ((cpu.State == PlcState.Fault || cpu.Diagnostics.Count > 0) && _plcFaultShown.Add(id))
                 AddLogLine($"{cpu.Id}: {cpu.FaultMessage ?? string.Join(" ", cpu.Diagnostics)}", EventSeverity.Fault);
+        ShowMcuOutput();
         var events = _sim.Events;
         if (events.Count < _shownEvents) _shownEvents = 0;
         for (; _shownEvents < events.Count; _shownEvents++)

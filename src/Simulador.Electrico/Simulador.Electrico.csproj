@@ -10,6 +10,7 @@
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
     <ProjectReference Include="..\Simulador.Electrico.Engine\Simulador.Electrico.Engine.csproj" />
     <ProjectReference Include="..\Simulador.Plc.Runtime\Simulador.Plc.Runtime.csproj" />
+    <ProjectReference Include="..\Simulador.Arduino.Runtime\Simulador.Arduino.Runtime.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Catalogos\*.csv" CopyToOutputDirectory="PreserveNewest" />

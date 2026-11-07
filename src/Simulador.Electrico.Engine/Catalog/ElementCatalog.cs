@@ -52,6 +52,12 @@ public sealed class ElementCatalog
     public const int PlcInputs = 8;
     public const int PlcOutputs = 8;
 
+    /// <summary>Elemento «microcontrolador con placa de relés».</summary>
+    public const string McuTypeId = "mcu_reles";
+
+    /// <summary>Placas que admite <see cref="McuTypeId"/>, en el orden del parámetro «placa».</summary>
+    public static readonly string[] McuBoards = ["Arduino Uno R3", "Arduino Nano", "Arduino Mega 2560", "ESP32 DevKit V1", "Raspberry Pi Pico"];
+
     private static readonly string[] OnOff = ["No", "Sí"];
     private static readonly string[] AcDc = ["DC", "AC"];
     private static readonly string[] Curves = ["B (3-5 In)", "C (5-10 In)", "D (10-20 In)"];
@@ -258,6 +264,15 @@ public sealed class ElementCatalog
             yield return new("plc_compacto", "PLC compacto 8E/8S relé", CatAutomation, Behavior.Plc, "KF", plcTerms,
                 [P("ciclo", "Tiempo de ciclo", "ms", 10, 1, 200)],
                 "Autómata de 24 V DC con 8 entradas (I0.0-I0.7, se activan con 24 V respecto a M) y 8 salidas a relé (1L común, Q0.0-Q0.7). Escribe su programa en texto estructurado en Propiedades o carga un Ladder del módulo PLC.");
+
+            // Microcontrolador sobre una placa de E/S de 24 V: eléctricamente igual que el PLC compacto.
+            var mcuTerms = new List<TerminalDef> { new("L+", 0, 0, "L+"), new("M", 2, 0, "M") };
+            for (var i = 0; i < PlcInputs; i++) mcuTerms.Add(new($"I0.{i}", 4 + 2 * i, 0, $"IN{i + 1}"));
+            mcuTerms.Add(new("1L", 0, 6, "COM"));
+            for (var i = 0; i < PlcOutputs; i++) mcuTerms.Add(new($"Q0.{i}", 2 + 2 * i, 6, $"K{i + 1}"));
+            yield return new(McuTypeId, "Arduino / ESP32 / Pico con placa de relés", CatAutomation, Behavior.Plc, "KF", mcuTerms,
+                [O("placa", "Placa", 0, McuBoards), P("ciclo", "Paso de simulación", "ms", 5, 1, 50)],
+                "Microcontrolador sobre una placa de E/S de 24 V DC: 8 entradas optoacopladas (IN1-IN8, activas con 24 V respecto a M) y 8 relés (COM común, K1-K8). Se programa en Propiedades: en C++ (Arduino) o en MicroPython (ESP32 y Pico).");
         }
 
         // ---------------- Medida y conexión ----------------

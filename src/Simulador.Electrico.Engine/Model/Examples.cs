@@ -17,7 +17,46 @@ public static class Examples
         ("Bomba monofásica con transformador de mando 230/24 V", SinglePhasePump),
         ("Variador de frecuencia: rampa y dos sentidos de giro", VfdDrive),
         ("Marcha-paro de motor con PLC", PlcStartStop),
+        ("Marcha-paro de motor con Arduino y placa de relés", McuStartStop),
     ];
+
+    /// <summary>Sketch del Arduino Uno del ejemplo <see cref="McuStartStop"/>.</summary>
+    public const string McuStartStopSketch = """
+        // Marcha-paro con autorretención en un Arduino Uno con placa de relés.
+        // IN1 (D2) = S1 marcha, IN3 (D4) = S2 paro (NC), IN5 (D6) = Q1 cerrado
+        // K1 (D10) = bobina de KM1, K3 (D12) = piloto H1
+        const int MARCHA = 2;
+        const int PARO = 4;
+        const int GUARDAMOTOR = 6;
+        const int CONTACTOR = 10;
+        const int PILOTO = 12;
+
+        bool motor = false;
+
+        void setup() {
+          pinMode(MARCHA, INPUT);
+          pinMode(PARO, INPUT);
+          pinMode(GUARDAMOTOR, INPUT);
+          pinMode(CONTACTOR, OUTPUT);
+          pinMode(PILOTO, OUTPUT);
+          Serial.begin(9600);
+        }
+
+        void loop() {
+          bool permiso = digitalRead(PARO) == HIGH && digitalRead(GUARDAMOTOR) == HIGH;
+          if (digitalRead(MARCHA) == HIGH && permiso && !motor) {
+            motor = true;
+            Serial.println("Motor en marcha");
+          }
+          if (!permiso && motor) {
+            motor = false;
+            Serial.println("Motor parado");
+          }
+          digitalWrite(CONTACTOR, motor ? HIGH : LOW);
+          digitalWrite(PILOTO, motor ? HIGH : LOW);
+          delay(10);
+        }
+        """;
 
     /// <summary>Programa del PLC del ejemplo <see cref="PlcStartStop"/> (texto estructurado IEC 61131-3).</summary>
     public const string PlcStartStopProgram = """
@@ -397,9 +436,20 @@ public static class Examples
         return b.Schematic;
     }
 
-    public static Schematic PlcStartStop()
+    public static Schematic PlcStartStop() => ControllerStartStop(mcu: false);
+
+    /// <summary>El mismo marcha-paro, con un Arduino Uno sobre una placa de 8 entradas de 24 V y 8 relés.</summary>
+    public static Schematic McuStartStop() => ControllerStartStop(mcu: true);
+
+    private static Schematic ControllerStartStop(bool mcu)
     {
-        var b = new SchematicBuilder("Marcha-paro de motor con PLC",
+        var b = mcu
+            ? new SchematicBuilder("Marcha-paro de motor con Arduino y placa de relés",
+                "Un Arduino Uno montado en una placa de E/S industrial (KF1) hace de autómata: lee los pulsadores con sus entradas " +
+                "optoacopladas de 24 V (IN1, IN3, IN5) y su relé K1 alimenta la bobina de KM1. El sketch está en Propiedades de KF1 y " +
+                "se puede cambiar por MicroPython eligiendo ESP32 o Pico. Pulsa S1 para arrancar y S2 para parar; lo que imprime " +
+                "Serial.println aparece en el registro.")
+            : new SchematicBuilder("Marcha-paro de motor con PLC",
             "El autómata KF1 lee los pulsadores en sus entradas de 24 V DC y su salida a relé Q0.0 alimenta la bobina de KM1. " +
             "El programa (en Propiedades del PLC) hace la autorretención: pulsa S1 para arrancar y S2 para parar. Los LED verdes del PLC " +
             "son las entradas y los ámbar las salidas. Si abres Q1, el PLC lo ve en I0.4 y para el motor.");
@@ -412,8 +462,9 @@ public static class Examples
         var g1 = b.Add("fuente_dc", "G1", 44, 0, ("V", 24));
         var xp = b.Add("borne", "X+", 44, 5);
         b.Wire(g1, "+", xp, "1");
-        var plc = b.Add("plc_compacto", "KF1", 28, 18);
-        b.Text(plc, "programa", PlcStartStopProgram);
+        var plc = b.Add(mcu ? Catalog.ElementCatalog.McuTypeId : "plc_compacto", "KF1", 28, 18);
+        if (mcu) b.Text(plc, "codigo", McuStartStopSketch);
+        else b.Text(plc, "programa", PlcStartStopProgram);
         b.Wire(xp, "1", plc, "L+").Wire(g1, "-", plc, "M");
         var s1 = b.Add("pulsador_na", "S1", 32, 8);
         var s2 = b.Add("pulsador_nc", "S2", 36, 8);
