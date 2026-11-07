@@ -2,6 +2,8 @@
   <!-- Microcontroladores simulados sin interfaz gráfica: placas Arduino e intérprete de sketches en C/C++. -->
   <PropertyGroup>
     <RootNamespace>Simulador.Arduino.Runtime</RootNamespace>
+    <!-- El emulador del chip debe ir rápido también en Debug (16 millones de ciclos por segundo simulado). -->
+    <Optimize>true</Optimize>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
