@@ -275,6 +275,122 @@ public static class PythonExamples
                     print("Temperatura del chip: %.1f °C" % grados)
                     time.sleep(2)
                 """));
+        if (p.Esp) list.AddRange(WifiExamples(p, n));
         return list;
+    }
+
+    /// <summary>Ejemplos de Wi‑Fi del ESP32: conectarse, servidor web y pedir datos a un servidor.</summary>
+    private static IEnumerable<ArduinoExample> WifiExamples(Pins p, Func<int, string> n)
+    {
+        const string connect = """
+            def conectar(red, clave):
+                wlan = network.WLAN(network.STA_IF)
+                wlan.active(True)
+                if not wlan.isconnected():
+                    print("Conectando a", red, end="")
+                    wlan.connect(red, clave)
+                    for _ in range(20):              # espera hasta 10 s
+                        if wlan.isconnected():
+                            break
+                        print(".", end="")
+                        time.sleep(0.5)
+                    print()
+                if not wlan.isconnected():
+                    raise RuntimeError("no se pudo conectar (estado %d)" % wlan.status())
+                print("Conectado. IP:", wlan.ifconfig()[0])
+                return wlan
+            """;
+        yield return new("Wi‑Fi: buscar redes y conectarse", "Busca las redes Wi‑Fi al alcance, se conecta a «Casa_WiFi» y muestra la IP. El LED se enciende al conectar. Prueba a cambiar la clave para ver el error.", $$"""
+            # Wi‑Fi del ESP32 en modo estación (se conecta a un router)
+            import network
+            import time
+            from machine import Pin
+
+            led = Pin({{p.Led}}, Pin.OUT)
+            wlan = network.WLAN(network.STA_IF)
+            wlan.active(True)
+
+            print("Redes encontradas:")
+            for red in wlan.scan():
+                nombre, canal, senal, seguridad = red[0].decode(), red[2], red[3], red[4]
+                print("  %-12s canal %2d  %d dBm  %s" % (nombre, canal, senal, "abierta" if seguridad == 0 else "con clave"))
+
+            wlan.connect("Casa_WiFi", "clave1234")
+            while wlan.status() == network.STAT_CONNECTING:
+                print("Conectando...")
+                time.sleep(0.5)
+
+            if wlan.isconnected():
+                led.on()
+                ip, mascara, puerta, dns = wlan.ifconfig()
+                print("Conectado. IP", ip, "router", puerta, "señal", wlan.status("rssi"), "dBm")
+            elif wlan.status() == network.STAT_WRONG_PASSWORD:
+                print("La contraseña no es correcta")
+            else:
+                print("No se encuentra la red")
+            """);
+        yield return new("Wi‑Fi: servidor web con LED", $"El ESP32 sirve una página para encender y apagar el LED de {n(p.Led)}. Cuando ponga «Servidor listo», pulsa Abrir en el navegador de la derecha y usa los botones de la página.", $$""""
+            # Servidor web: abre http://192.168.1.50/ en el navegador del simulador
+            import network
+            import socket
+            import time
+            from machine import Pin
+
+            led = Pin({{p.Led}}, Pin.OUT)
+
+            {{connect.TrimEnd()}}
+
+            def pagina():
+                estado = "ENCENDIDO" if led.value() else "APAGADO"
+                return """<html><head><title>ESP32</title></head><body>
+            <h1>LED %s</h1>
+            <p><a href="/on">Encender</a> <a href="/off">Apagar</a></p>
+            <p>Tiempo encendida la placa: %d s</p>
+            </body></html>""" % (estado, time.ticks_ms() // 1000)
+
+            conectar("Casa_WiFi", "clave1234")
+            servidor = socket.socket()
+            servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            servidor.bind(socket.getaddrinfo("0.0.0.0", 80)[0][-1])
+            servidor.listen(1)
+            print("Servidor listo en http://192.168.1.50/")
+
+            while True:
+                cliente, direccion = servidor.accept()      # espera a que alguien abra la página
+                peticion = cliente.recv(1024).decode()
+                ruta = peticion.split(" ")[1]
+                print(direccion[0], "pide", ruta)
+                if ruta == "/on":
+                    led.on()
+                elif ruta == "/off":
+                    led.off()
+                cliente.send("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n")
+                cliente.sendall(pagina())
+                cliente.close()
+            """", [new(PartKind.Led, n(p.Led), "#2F81F7")]);
+        yield return new("Wi‑Fi: pedir el tiempo (JSON)", "Se conecta a la red y cada 10 s pide el tiempo al servidor de pruebas del simulador (simulador.local) con urequests. Lee la respuesta JSON y enciende el LED si hace más de 26 °C.", $$"""
+            # Cliente HTTP: pide datos a un servidor y lee la respuesta JSON
+            import network
+            import time
+            import urequests
+            from machine import Pin
+
+            led = Pin({{p.Led}}, Pin.OUT)
+
+            {{connect.TrimEnd()}}
+
+            conectar("Casa_WiFi", "clave1234")
+
+            while True:
+                r = urequests.get("http://simulador.local/api/tiempo")
+                if r.status_code == 200:
+                    datos = r.json()
+                    print("%s: %.1f °C, %d %% de humedad, %s" % (datos["ciudad"], datos["temperatura"], datos["humedad"], datos["cielo"]))
+                    led.value(datos["temperatura"] > 26)
+                else:
+                    print("Error", r.status_code)
+                r.close()
+                time.sleep(10)
+            """, [new(PartKind.Led, n(p.Led), "#FF9F0A", "Calor")]);
     }
 }
