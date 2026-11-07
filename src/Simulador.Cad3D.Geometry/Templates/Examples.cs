@@ -20,6 +20,7 @@ public static class Examples
         new CadExample("Maceta", "Maceta cónica de 90 mm con plato y agujero de drenaje.", Planter),
         new CadExample("Separador hexagonal M3", "Separador de 10 mm entre caras y 15 mm de alto para tornillo M3.", HexStandoff),
         new CadExample("Soporte para móvil", "Atril de escritorio para teléfono, con ranura para el cable.", PhoneStand),
+        new CadExample("Abrazadera de tubo 20 mm", "Abrazadera para fijar a la pared un tubo de 20 mm; el perfil usa arcos.", PipeClamp),
     };
 
     public static CadDocument ElectronicsBox(bool exact)
@@ -179,5 +180,40 @@ public static class Examples
         part.Features.Add(new BoxFeature { Name = "Ranura del cable", Mode = CombineMode.Hueco, SizeX = 40, SizeY = 12, SizeZ = 20, Position = new Vec3(10, 29, -1) });
         if (exact) part.Features.Add(new FilletFeature { Name = "Redondeo", Radius = 1, Edges = EdgeSelection.Verticales });
         return new CadDocument { Name = "Soporte para móvil", Parts = { part } };
+    }
+
+    public static CadDocument PipeClamp(bool exact)
+    {
+        const double pipe = 20, wall = 3, width = 15, baseH = 4;
+        double outer = pipe / 2 + wall;
+        var part = new Part { Name = "Abrazadera", Color = "#E8A33D" };
+        // Perfil lateral (X a lo ancho, Y hacia arriba): dos patas y un semicírculo que abraza el tubo.
+        // Esquinas exteriores redondeadas con arcos de 2 mm.
+        var profile = new List<Vec2> { new(0, 0), new(60, 0), new(60, baseH), new(30 + outer, baseH), new(30 - outer, baseH), new(0, baseH) };
+        var bulges = new List<double> { 0, 0, 0, 1, 0, 0 }; // tramo 3: semicírculo sobre el tubo
+        Sketch2D.FilletCorner(profile, bulges, 2, 1.5);
+        Sketch2D.FilletCorner(profile, bulges, 1, 1.5);
+        Sketch2D.FilletCorner(profile, bulges, profile.Count - 1, 1.5);
+        Sketch2D.FilletCorner(profile, bulges, 0, 1.5);
+        part.Features.Add(new ExtrudeFeature
+        {
+            Name = "Perfil con arcos",
+            Profile = profile,
+            Bulges = bulges,
+            Height = width,
+            Rotation = new Vec3(90, 0, 0),
+            Position = new Vec3(0, width, 0),
+        });
+        part.Features.Add(new CylinderFeature
+        {
+            Name = "Paso del tubo", Mode = CombineMode.Hueco, Diameter = pipe + 0.4, Height = width + 2, Segments = 96,
+            Rotation = new Vec3(90, 0, 0), Position = new Vec3(30, width + 1, baseH),
+        });
+        foreach (var x in new[] { 8.0, 52.0 })
+        {
+            part.Features.Add(new CylinderFeature { Name = "Taladro", Mode = CombineMode.Hueco, Diameter = 4.5, Height = baseH + 2, Position = new Vec3(x, width / 2, -1) });
+            part.Features.Add(new CylinderFeature { Name = "Avellanado", Mode = CombineMode.Hueco, Diameter = 4.5, TopDiameter = 9.5, Height = 2.5, Position = new Vec3(x, width / 2, baseH - 2.5 + 0.01) });
+        }
+        return new CadDocument { Name = "Abrazadera de tubo", Parts = { part } };
     }
 }

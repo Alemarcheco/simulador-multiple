@@ -10,6 +10,7 @@ namespace Simulador.Cad3D.Views;
 /// <summary>
 /// Lienzo del boceto 2D: rejilla en mm, perfil cerrado con sus cotas.
 /// Clic añade un punto, arrastrar lo mueve, clic derecho lo borra, rueda acerca, botón central desplaza.
+/// El cuadradito del centro de cada tramo se arrastra para convertirlo en arco (doble clic lo vuelve recto).
 /// </summary>
 internal sealed class SketchCanvas : Control
 {
@@ -25,6 +26,9 @@ internal sealed class SketchCanvas : Control
     private static readonly IBrush Fill = new SolidColorBrush(Color.FromArgb(50, 0x6C, 0xB4, 0xFF));
     private static readonly IBrush Forbidden = new SolidColorBrush(Color.FromArgb(28, 255, 80, 60));
     private static readonly IBrush Handle = Brushes.White;
+    private static readonly IBrush MidHandle = new SolidColorBrush(Color.FromArgb(160, 0x6C, 0xB4, 0xFF));
+    private static readonly IBrush MidHandleArc = new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x40));
+    private static readonly IPen CenterPen = new Pen(new SolidColorBrush(Color.FromArgb(110, 0xFF, 0x8C, 0x40)), 1, new DashStyle(new double[] { 3, 3 }, 0));
     private static readonly IBrush HandleSelected = new SolidColorBrush(Color.FromRgb(0xFF, 0xC0, 0x40));
     private static readonly IBrush Label = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly IBrush LabelBack = new SolidColorBrush(Color.FromArgb(170, 0, 0, 0));
@@ -33,10 +37,13 @@ internal sealed class SketchCanvas : Control
     private Vec2 _center;       // mm en el centro del lienzo
     private bool _fitted;
     private int _drag = -1;
+    private int _dragArc = -1;
     private Point? _panFrom;
     private Vec2? _mouse;
 
     public List<Vec2> Points { get; } = new();
+    /// <summary>Abombamiento de cada tramo (mismo tamaño que <see cref="Points"/>).</summary>
+    public List<double> Bulges { get; } = new();
     public bool Revolve { get; init; }
     public double Snap { get; set; } = 1;
     public int Selected { get; private set; } = -1;
@@ -54,6 +61,39 @@ internal sealed class SketchCanvas : Control
     }
 
     public void Select(int i) { Selected = i; InvalidateVisual(); }
+
+    /// <summary>Reemplaza el boceto.</summary>
+    public void SetProfile(IEnumerable<Vec2> points, IEnumerable<double>? bulges)
+    {
+        Points.Clear();
+        Points.AddRange(points);
+        Bulges.Clear();
+        Bulges.AddRange(Sketch2D.FitBulges(bulges?.ToList(), Points.Count));
+    }
+
+    private void SyncBulges()
+    {
+        while (Bulges.Count < Points.Count) Bulges.Add(0);
+        while (Bulges.Count > Points.Count) Bulges.RemoveAt(Bulges.Count - 1);
+    }
+
+    private void RemovePoint(int i)
+    {
+        Points.RemoveAt(i);
+        Bulges.RemoveAt(i);
+        // El tramo anterior ahora llega a otro punto: deja de ser arco.
+        if (Points.Count > 0) Bulges[i == 0 ? Points.Count - 1 : i - 1] = 0;
+    }
+
+    private int HitMid(Point screen)
+    {
+        for (int i = 0; i < Points.Count; i++)
+        {
+            var m = ToScreen(Sketch2D.ArcMidpoint(Points[i], Points[(i + 1) % Points.Count], Bulges[i]));
+            if (Math.Abs(m.X - screen.X) <= HitPx * 0.8 && Math.Abs(m.Y - screen.Y) <= HitPx * 0.8) return i;
+        }
+        return -1;
+    }
 
     public void FitView()
     {
@@ -83,7 +123,9 @@ internal sealed class SketchCanvas : Control
         var pos = e.GetPosition(this);
         var props = e.GetCurrentPoint(this).Properties;
         var m = ToModel(pos);
+        SyncBulges();
         int hit = Sketch2D.NearestPoint(Points, m, HitPx / _scale);
+        int mid = hit < 0 ? HitMid(pos) : -1;
 
         if (props.IsMiddleButtonPressed || (props.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
         {
@@ -93,17 +135,25 @@ internal sealed class SketchCanvas : Control
         {
             if (hit >= 0 && Points.Count > 3)
             {
-                Points.RemoveAt(hit);
+                RemovePoint(hit);
                 Selected = -1;
                 Edited?.Invoke();
                 Committed?.Invoke();
             }
+        }
+        else if (props.IsLeftButtonPressed && mid >= 0)
+        {
+            if (e.ClickCount >= 2) { Bulges[mid] = 0; Edited?.Invoke(); Committed?.Invoke(); }
+            else _dragArc = mid;
         }
         else if (props.IsLeftButtonPressed)
         {
             if (hit < 0)
             {
                 hit = Sketch2D.AddPoint(Points, Constrain(m));
+                // Si el punto cae en un arco, los dos trozos quedan rectos.
+                Bulges.Insert(hit, 0);
+                if (hit > 0) Bulges[hit - 1] = 0;
                 Edited?.Invoke();
                 Committed?.Invoke();
             }
@@ -124,6 +174,14 @@ internal sealed class SketchCanvas : Control
             _center = new Vec2(_center.X - (pos.X - from.X) / _scale, _center.Y + (pos.Y - from.Y) / _scale);
             _panFrom = pos;
         }
+        else if (_dragArc >= 0 && _dragArc < Points.Count)
+        {
+            // Sin ajuste a rejilla: el arco sigue al ratón; muy cerca de la cuerda queda recto.
+            var a = Points[_dragArc]; var b = Points[(_dragArc + 1) % Points.Count];
+            double bulge = Sketch2D.BulgeThrough(a, b, ToModel(pos));
+            if (Math.Abs(bulge) * Sketch2D.Length(a, b) / 2 * _scale < 4) bulge = 0;
+            if (Math.Abs(Bulges[_dragArc] - bulge) > 1e-9) { Bulges[_dragArc] = bulge; Edited?.Invoke(); }
+        }
         else if (_drag >= 0 && _drag < Points.Count)
         {
             var p = _mouse.Value;
@@ -135,8 +193,9 @@ internal sealed class SketchCanvas : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        if (_drag >= 0) Committed?.Invoke();
+        if (_drag >= 0 || _dragArc >= 0) Committed?.Invoke();
         _drag = -1;
+        _dragArc = -1;
         _panFrom = null;
         e.Pointer.Capture(null);
     }
@@ -165,7 +224,8 @@ internal sealed class SketchCanvas : Control
         base.OnKeyDown(e);
         if (e.Key is Key.Delete or Key.Back && Selected >= 0 && Points.Count > 3)
         {
-            Points.RemoveAt(Selected);
+            SyncBulges();
+            RemovePoint(Selected);
             Selected = -1;
             Edited?.Invoke();
             Committed?.Invoke();
@@ -196,25 +256,36 @@ internal sealed class SketchCanvas : Control
             Text(ctx, "eje de giro", new Point(ax + 6, 6), false);
         }
 
+        SyncBulges();
         if (Points.Count >= 2)
         {
+            var outline = Sketch2D.Tessellate(Points, Bulges, 0.5 / _scale);
             var geo = new StreamGeometry();
             using (var g = geo.Open())
             {
-                g.BeginFigure(ToScreen(Points[0]), true);
-                foreach (var p in Points.Skip(1)) g.LineTo(ToScreen(p));
+                g.BeginFigure(ToScreen(outline[0]), true);
+                foreach (var p in outline.Skip(1)) g.LineTo(ToScreen(p));
                 g.EndFigure(true);
             }
-            bool bad = Sketch2D.Validate(Points, Revolve) is not null;
+            bool bad = Sketch2D.Validate(Points, Bulges, Revolve) is not null;
             ctx.DrawGeometry(bad ? null : Fill, bad ? BadEdgePen : EdgePen, geo);
 
-            // Cotas: longitud de cada tramo en su punto medio.
+            // Cotas: longitud de cada tramo recto o radio de cada arco, junto a su punto medio.
             for (int i = 0; i < Points.Count; i++)
             {
-                var a = ToScreen(Points[i]);
-                var b = ToScreen(Points[(i + 1) % Points.Count]);
-                if (Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) < 30) continue;
-                Text(ctx, Fmt(Sketch2D.SegmentLength(Points, i)), new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2), true);
+                var pa = Points[i]; var pb = Points[(i + 1) % Points.Count];
+                var mid = ToScreen(Sketch2D.ArcMidpoint(pa, pb, Bulges[i]));
+                var arc = Sketch2D.ArcGeometry(pa, pb, Bulges[i]);
+                if (arc is { } g2)
+                {
+                    var c = ToScreen(g2.Center);
+                    ctx.DrawLine(CenterPen, c, mid);
+                    ctx.DrawEllipse(null, CenterPen, c, 2.5, 2.5);
+                }
+                var a = ToScreen(pa); var b = ToScreen(pb);
+                if (Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) >= 30)
+                    Text(ctx, arc is { } g3 ? "R" + Fmt(g3.Radius) : Fmt(Sketch2D.SegmentLength(Points, i)), new Point(mid.X, mid.Y - 14), true);
+                ctx.FillRectangle(arc is null ? MidHandle : MidHandleArc, new Rect(mid.X - 3.5, mid.Y - 3.5, 7, 7));
             }
         }
 

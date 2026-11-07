@@ -117,11 +117,17 @@ y `Simulador.Cad3D` (pestaña, visor 3D, panel de propiedades). Pruebas en `test
      software (`Viewport3D`) si OpenGL no arranca en 3 s o con `CAD3D_SOFTWARE_VIEW=1`; lo elige `ViewportHost`.
    - Editor de bocetos 2D (`SketchDialog`, lógica en `Sketch2D`): rejilla con ajuste, añadir/mover/borrar puntos,
      cotas de cada tramo editables, rectángulo/polígono/círculo y validación (cruces, área, radio negativo).
+   - Arcos en los bocetos: cada tramo del perfil lleva un abombamiento (`Bulges`, en el archivo `bulges`, como el *bulge* de DXF:
+     tan(ángulo/4), 0 = recto). Se convierte en arco arrastrando el cuadradito central del tramo o escribiendo su
+     radio; «Redondear esquina» mete un arco tangente; rectángulo con esquinas redondeadas y círculo exacto.
+     El motor recibe el perfil dividido con `Sketch2D.Tessellate` (error de cuerda 0,01 mm). Los `.cad3d` sin
+     `Bulges` se abren con todos los tramos rectos.
    - Ejemplos prediseñados (`Templates/Examples.cs`): cajas, soporte en L, engranaje, maceta, separador, atril.
    - «Caja para placa…»: abre un `.placa`, lo convierte con `PcbBoardExport.ToBoardExport` (Simulador.Circuitos,
      Y hacia arriba) y crea la caja con `EnclosureTemplate.FromBoard` (postes en los taladros de montaje,
      huecos para conectores).
-4. **Pendiente**: restricciones de boceto (paralelo, perpendicular, igual), arcos en bocetos, patrones y simetrías,
+4. **Pendiente**: restricciones de boceto (paralelo, perpendicular, igual), arcos exactos en OpenCASCADE (ahora
+   llegan divididos en tramos), patrones y simetrías,
    texto en relieve, ancho real de los huecos de conector desde la huella, ver los modelos STEP de los componentes
    dentro de la caja y exportar equipos animables `.sm3d` (contrato `Simulador.Core.Model3D`).
 

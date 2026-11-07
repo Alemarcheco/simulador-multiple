@@ -48,9 +48,12 @@ public sealed class RevolveFeature : Feature
 {
     public override string KindName => "Revolución";
     public List<Vec2> Profile { get; set; } = new() { new(0, 0), new(15, 0), new(12, 5), new(12, 25), new(0, 25) };
+    /// <summary>Arco de cada tramo del perfil (ver <see cref="Sketch2D"/>); vacío = todos rectos.</summary>
+    public List<double> Bulges { get; set; } = new();
     [Param("Ángulo", Min = 1, Max = 360, Step = 15)] public double Angle { get; set; } = 360;
     public override ISolid BuildLocal(IGeometryKernel k) =>
-        (k as IExactKernel ?? throw new NotSupportedException("necesita el motor exacto (OpenCASCADE)")).Revolve(Profile, Angle);
+        (k as IExactKernel ?? throw new NotSupportedException("necesita el motor exacto (OpenCASCADE)"))
+            .Revolve(Sketch2D.Tessellate(Profile, Bulges, 0.02), Angle);
 }
 
 /// <summary>Importa un modelo STEP (p. ej. los modelos 3D de componentes de KiCad o piezas de otros programas).</summary>
