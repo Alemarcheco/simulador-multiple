@@ -1,8 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Simulador.Core.Modules;
+using Simulador.Help;
 
 namespace Simulador.App;
 
@@ -10,6 +13,7 @@ namespace Simulador.App;
 public sealed class MainWindow : Window, IModuleHost
 {
     private readonly TextBlock _status = new() { Margin = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
+    private TabControl? _tabs;
 
     public IReadOnlyList<IModule> Modules { get; }
 
@@ -26,9 +30,25 @@ public sealed class MainWindow : Window, IModuleHost
         FitToScreen();
         WindowState = WindowState.Maximized;
 
+        // Ayuda: F1 en cualquier sitio (también dentro de un módulo) o el botón de la barra de estado.
+        AddHandler(KeyDownEvent, OnHelpKey, RoutingStrategies.Tunnel);
+        var helpButton = new Button
+        {
+            Content = "❓ Ayuda (F1)",
+            Padding = new Thickness(10, 2),
+            Margin = new Thickness(4, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(helpButton, "Guías de cada pestaña, preguntas frecuentes y buscador");
+        helpButton.Click += (_, _) => ShowHelp();
+        DockPanel.SetDock(helpButton, Dock.Right);
+        var statusContent = new DockPanel();
+        statusContent.Children.Add(helpButton);
+        statusContent.Children.Add(_status);
+
         var statusBar = new Border
         {
-            Child = _status,
+            Child = statusContent,
             BorderThickness = new Thickness(0, 1, 0, 0),
             BorderBrush = Brushes.Gray,
         };
@@ -78,6 +98,7 @@ public sealed class MainWindow : Window, IModuleHost
     private TabControl BuildTabs(IReadOnlyList<IModule> modules)
     {
         var tabs = new TabControl { Padding = new Thickness(0) };
+        _tabs = tabs;
         foreach (var module in modules)
         {
             tabs.Items.Add(new TabItem
@@ -99,6 +120,20 @@ public sealed class MainWindow : Window, IModuleHost
         tabs.SelectedIndex = 0;
         EnsureContent(tabs.SelectedItem as TabItem);
         return tabs;
+    }
+
+    private void OnHelpKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.F1 || e.KeyModifiers != KeyModifiers.None) return;
+        e.Handled = true;
+        ShowHelp();
+    }
+
+    /// <summary>Abre la ayuda en la guía de la pestaña activa (y de su sub-pestaña visible, si la guía la tiene).</summary>
+    private void ShowHelp()
+    {
+        var tab = _tabs?.SelectedItem as TabItem;
+        HelpWindow.ShowFor(this, (tab?.Tag as IModule)?.Id, tab?.Content as Control);
     }
 
     private void EnsureContent(TabItem? tab)

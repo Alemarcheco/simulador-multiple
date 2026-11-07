@@ -44,6 +44,7 @@ src/
   Simulador.Core.Libraries/  Importadores de librerías de componentes (KiCad .kicad_sym/.kicad_mod, SPICE .lib/.mod)
                              a un modelo neutro que puede usar cualquier simulador.
   Simulador.App/             Ventana principal: descubre los módulos y crea una pestaña por cada uno.
+  Simulador.Help/            Ayuda integrada (F1): guías de cada pestaña en Temas/*.md, preguntas frecuentes y buscador.
   Simulador.Circuitos/       Módulo de circuitos electrónicos y PCB.
   Simulador.Electrico.Engine/ Motor del simulador eléctrico (sin interfaz): librería de componentes, red por fasores,
                              bobinas, temporizadores, protecciones y motor de inducción.
