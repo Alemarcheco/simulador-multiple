@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Permiso para publicar la versión descargable (Release) al fusionar en main.
+permissions:
+  contents: write
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -67,3 +71,34 @@ jobs:
         with:
           name: SimuladorMultiple-win-x64
           path: publish/SimuladorMultiple
+      - name: Crear instalador y ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc /Q "/DAppVersion=0.1.${{ github.run_number }}" "/DSourceDir=$pwd\publish\SimuladorMultiple" "/DOutputDir=$pwd\dist" installer\SimuladorMultiple.iss
+          Compress-Archive -Path publish/SimuladorMultiple/* -DestinationPath dist/SimuladorMultiple-portable.zip
+          Get-ChildItem dist | Select-Object Name, Length
+      - name: Subir instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimuladorMultiple-Setup
+          path: dist/SimuladorMultiple-Setup.exe
+      - name: Publicar versión descargable
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Simulador multiple 0.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Versión para Windows 11 (64 bits).
+
+            - **SimuladorMultiple-Setup.exe**: instalador. Descárgalo, ábrelo y sigue los pasos.
+            - **SimuladorMultiple-portable.zip**: sin instalar. Descomprímelo y abre SimuladorMultiple.exe.
+          files: |
+            dist/SimuladorMultiple-Setup.exe
+            dist/SimuladorMultiple-portable.zip
