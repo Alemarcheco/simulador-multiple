@@ -19,6 +19,8 @@ Por eso `IModule.CreateRootView` devuelve `object`; en la práctica debe ser un 
 3. Añade `<ProjectReference>` a tu proyecto en `src/Simulador.App/Simulador.App.csproj` y `dotnet sln add` tu proyecto.
 4. Las pruebas van en `tests/`.
 5. Añade una descripción corta de tu simulador en `src/Simulador.App/HomeView.cs` (tarjeta de la pantalla de inicio).
+6. Escribe su guía de ayuda en `src/Simulador.Help/Temas/<Id>.md` (ver más abajo) y añade el `Id` a
+   `tests/Simulador.Help.Tests/HelpLibraryTests.cs`.
 
 ## Aspecto visual (tema común)
 
@@ -35,6 +37,21 @@ Por eso `IModule.CreateRootView` devuelve `object`; en la práctica debe ser un 
   En el PLC, `MenuPanel` sirve para un panel suelto. Los atajos de teclado los sigue gestionando cada vista.
 - La primera pestaña (Inicio) es la pantalla de inicio. El logotipo está en `Tema/Logo.cs` y `Assets/logo.svg`;
   `Assets/icono.ico` es el icono del .exe y de la ventana.
+
+## Ayuda (F1)
+
+`Simulador.Help` tiene la ventana de ayuda (`HelpWindow`), el buscador (`HelpLibrary`, sin Avalonia) y las guías en
+`Temas/*.md`, incrustadas en la DLL para que funcionen sin internet. `MainWindow` abre la ayuda con F1 (capturada en
+túnel, así que funciona aunque el foco esté dentro de un módulo) o con el menú Ayuda y el botón de la barra de estado, en la guía de la
+pestaña activa. Si la pestaña tiene sub-pestañas, abre el tema cuyo `contexto` coincide con la cabecera de la
+sub-pestaña visible más interna.
+
+Formato de cada guía: `<!-- modulo: <Id> -->` y `<!-- orden: N -->`, un `# Título` con la introducción, y un `## Tema`
+por sección (los que empiezan por «¿» salen en Preguntas frecuentes). Bajo cada `##` se puede poner
+`<!-- contexto: Nombre de sub-pestaña -->` y `<!-- palabras: sinónimos, para, el, buscador -->`. El texto admite
+párrafos, listas con `-` o `1.`, `###`, notas con `>`, **negrita**, `` `botones o teclas` `` y enlaces a otros temas
+`[texto](#modulo/tema)`. El buscador no distingue acentos ni mayúsculas, ignora palabras vacías y compara raíces
+(simular, simulo, simulación).
 
 ## Contratos compartidos
 

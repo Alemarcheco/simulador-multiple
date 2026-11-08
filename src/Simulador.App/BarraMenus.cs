@@ -26,7 +26,7 @@ public sealed class BarraMenus : Border
     // Para que le apliquen los estilos de "Border.menubar" (Tema/Estilo.axaml).
     protected override Type StyleKeyOverride => typeof(Border);
 
-    public BarraMenus(Func<Control?> activeView, Action goHome, Window owner)
+    public BarraMenus(Func<Control?> activeView, Action goHome, Window owner, Action? showHelp = null)
     {
         _activeView = activeView;
         Classes.Add("menubar");
@@ -44,6 +44,12 @@ public sealed class BarraMenus : Border
         home.Click += (_, _) => goHome();
         var about = new MenuItem { Header = "Acerca de Simulador múltiple…" };
         about.Click += (_, _) => _ = AboutDialog().ShowDialog(owner);
+        if (showHelp is not null)
+        {
+            var guide = new MenuItem { Header = "Ayuda de esta pestaña", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.F1) };
+            guide.Click += (_, _) => showHelp();
+            _help.Items.Add(guide);
+        }
         _help.Items.Add(home);
         _help.Items.Add(new Separator());
         _help.Items.Add(about);

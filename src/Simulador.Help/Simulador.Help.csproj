@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Ayuda integrada (F1): guías de cada pestaña, preguntas frecuentes y buscador. Funciona sin internet. -->
+  <PropertyGroup>
+    <RootNamespace>Simulador.Help</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Cada archivo .md es la guía de una pestaña; se incrustan en la DLL para no depender de archivos sueltos. -->
+    <EmbeddedResource Include="Temas\*.md" LogicalName="Simulador.Help.Temas.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Help.Tests" />
+  </ItemGroup>
+</Project>

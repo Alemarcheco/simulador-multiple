@@ -1,9 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Simulador.Core.Modules;
+using Simulador.Help;
 
 namespace Simulador.App;
 
@@ -18,6 +21,7 @@ public sealed class MainWindow : Window, IModuleHost
         TextWrapping = TextWrapping.NoWrap,
         MaxLines = 1,
     };
+    private TabControl? _tabs;
 
     public IReadOnlyList<IModule> Modules { get; }
 
@@ -35,7 +39,23 @@ public sealed class MainWindow : Window, IModuleHost
         FitToScreen();
         WindowState = WindowState.Maximized;
 
-        var statusBar = new Border { Child = _status };
+        // Ayuda: F1 en cualquier sitio (también dentro de un módulo), el menú Ayuda o el botón de la barra de estado.
+        AddHandler(KeyDownEvent, OnHelpKey, RoutingStrategies.Tunnel);
+        var helpButton = new Button
+        {
+            Content = "❓ Ayuda (F1)",
+            Padding = new Thickness(10, 2),
+            Margin = new Thickness(4, 2),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(helpButton, "Guías de cada pestaña, preguntas frecuentes y buscador");
+        helpButton.Click += (_, _) => ShowHelp();
+        DockPanel.SetDock(helpButton, Dock.Right);
+        var statusContent = new DockPanel();
+        statusContent.Children.Add(helpButton);
+        statusContent.Children.Add(_status);
+
+        var statusBar = new Border { Child = statusContent };
         statusBar.Classes.Add("statusbar");
         DockPanel.SetDock(statusBar, Dock.Bottom);
 
@@ -49,7 +69,7 @@ public sealed class MainWindow : Window, IModuleHost
         {
             var tabs = BuildTabs(modules);
             // Barra de menús arriba (Archivo, Editar…): sus órdenes vienen del simulador que se está viendo.
-            var menus = new BarraMenus(() => tabs.SelectedContent as Control, () => tabs.SelectedIndex = 0, this);
+            var menus = new BarraMenus(() => tabs.SelectedContent as Control, () => tabs.SelectedIndex = 0, this, ShowHelp);
             DockPanel.SetDock(menus, Dock.Top);
             root.Children.Add(menus);
             root.Children.Add(tabs);
@@ -100,6 +120,7 @@ public sealed class MainWindow : Window, IModuleHost
         // Pestañas principales dentro de la cabecera azul marino (ver Tema/Estilo.axaml, clase "shell").
         var tabs = new TabControl();
         tabs.Classes.Add("shell");
+        _tabs = tabs;
         tabs.ItemsPanel = new Avalonia.Controls.Templates.FuncTemplate<Panel?>(() => new WrapPanel());
 
         void Open(IModule module)
@@ -120,6 +141,20 @@ public sealed class MainWindow : Window, IModuleHost
         tabs.SelectionChanged += (_, _) => EnsureContent(tabs.SelectedItem as TabItem);
         tabs.SelectedIndex = 0;
         return tabs;
+    }
+
+    private void OnHelpKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.F1 || e.KeyModifiers != KeyModifiers.None) return;
+        e.Handled = true;
+        ShowHelp();
+    }
+
+    /// <summary>Abre la ayuda en la guía de la pestaña activa (y de su sub-pestaña visible, si la guía la tiene).</summary>
+    private void ShowHelp()
+    {
+        var tab = _tabs?.SelectedItem as TabItem;
+        HelpWindow.ShowFor(this, (tab?.Tag as IModule)?.Id, tab?.Content as Control);
     }
 
     private static Control TabHeader(string icon, string name) => new StackPanel
