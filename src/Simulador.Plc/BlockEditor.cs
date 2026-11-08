@@ -1,3 +1,4 @@
+using Simulador.Core.Modules;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -14,7 +15,7 @@ namespace Simulador.Plc;
 /// paleta por categorías; a la derecha el programa: «al encender» (setup) y «repetir siempre» (loop). Se hace clic en
 /// un bloque o en un hueco para seleccionarlo y luego en la paleta para añadir el bloque nuevo ahí.
 /// </summary>
-internal sealed class BlockEditor : UserControl
+internal sealed class BlockEditor : UserControl, IMenuSource
 {
     private static readonly IBrush Selected = Brushes.Black;
     private static readonly IBrush Running = new SolidColorBrush(Color.Parse("#FFD60A"));
@@ -54,12 +55,9 @@ internal sealed class BlockEditor : UserControl
         var down = ToolButton("↓ Bajar", "Baja el bloque seleccionado", () => Move(1));
         var dup = ToolButton("Duplicar", "Copia el bloque seleccionado debajo", Duplicate);
         var del = ToolButton("Borrar", "Quita el bloque o vacía el hueco seleccionado (tecla Supr)", Delete);
-        var clear = ToolButton("Nuevo", "Empieza un programa vacío", () => { _examples.SelectedIndex = -1; _description.Text = ""; Load(new BlockProgram()); });
-        var open = ToolButton("Abrir…", "Abre un programa de bloques (.bloques.json)", () => _ = OpenAsync());
-        var save = ToolButton("Guardar…", "Guarda el programa de bloques", () => _ = SaveAsync());
 
         var toolbar = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
-        foreach (var c in new Control[] { new TextBlock { Text = "Ejemplo:", VerticalAlignment = VerticalAlignment.Center }, _examples, up, down, dup, del, clear, open, save })
+        foreach (var c in new Control[] { new TextBlock { Text = "Ejemplo:", VerticalAlignment = VerticalAlignment.Center }, _examples, up, down, dup, del })
         {
             c.Margin = new Thickness(0, 0, 6, 4);
             toolbar.Children.Add(c);
@@ -619,6 +617,17 @@ internal sealed class BlockEditor : UserControl
     // ---- Archivos ----
 
     private static readonly FilePickerFileType JsonType = new("Programa de bloques") { Patterns = ["*.bloques.json", "*.json"] };
+
+    /// <summary>Órdenes de la barra de menús de arriba (sólo en la pestaña Bloques).</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
+    {
+        yield return new MenuCommand("Nuevo programa de bloques", () => { _examples.SelectedIndex = -1; _description.Text = ""; Load(new BlockProgram()); })
+        {
+            SeparatorBefore = true,
+        };
+        yield return new MenuCommand("Abrir bloques…", () => _ = OpenAsync()) { ToolTip = "Abre un programa de bloques (.bloques.json)" };
+        yield return new MenuCommand("Guardar bloques…", () => _ = SaveAsync());
+    }
 
     private async Task OpenAsync()
     {

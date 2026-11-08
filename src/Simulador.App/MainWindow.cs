@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Simulador.Core.Modules;
 
 namespace Simulador.App;
@@ -9,7 +10,14 @@ namespace Simulador.App;
 /// <summary>Ventana principal: una pestaña por simulador; cada vista se crea la primera vez que se abre.</summary>
 public sealed class MainWindow : Window, IModuleHost
 {
-    private readonly TextBlock _status = new() { Margin = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _status = new()
+    {
+        Margin = new Thickness(12, 5),
+        VerticalAlignment = VerticalAlignment.Center,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        TextWrapping = TextWrapping.NoWrap,
+        MaxLines = 1,
+    };
 
     public IReadOnlyList<IModule> Modules { get; }
 
@@ -17,6 +25,7 @@ public sealed class MainWindow : Window, IModuleHost
     {
         Modules = modules;
         Title = "Simulador múltiple";
+        Icon = LoadIcon();
         // Ventana normal de Windows: barra de título con minimizar, maximizar/restaurar y cerrar,
         // redimensionable, y abierta maximizada dentro del área de trabajo (sin tapar la barra de tareas).
         SystemDecorations = SystemDecorations.Full;
@@ -26,17 +35,28 @@ public sealed class MainWindow : Window, IModuleHost
         FitToScreen();
         WindowState = WindowState.Maximized;
 
-        var statusBar = new Border
-        {
-            Child = _status,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            BorderBrush = Brushes.Gray,
-        };
+        var statusBar = new Border { Child = _status };
+        statusBar.Classes.Add("statusbar");
         DockPanel.SetDock(statusBar, Dock.Bottom);
 
         var root = new DockPanel();
         root.Children.Add(statusBar);
-        root.Children.Add(modules.Count == 0 ? EmptyState() : BuildTabs(modules));
+        if (modules.Count == 0)
+        {
+            root.Children.Add(EmptyState());
+        }
+        else
+        {
+            var tabs = BuildTabs(modules);
+            // Barra de menús arriba (Archivo, Editar…): sus órdenes vienen del simulador que se está viendo.
+            var menus = new BarraMenus(() => tabs.SelectedContent as Control, () => tabs.SelectedIndex = 0, this);
+            DockPanel.SetDock(menus, Dock.Top);
+            root.Children.Add(menus);
+            root.Children.Add(tabs);
+            // Cualquier cambio de pestaña o sub-pestaña puede cambiar las órdenes disponibles.
+            AddHandler(Avalonia.Controls.Primitives.SelectingItemsControl.SelectionChangedEvent, (_, _) => menus.Refresh());
+            menus.Refresh();
+        }
         Content = root;
 
         SetStatus(loadErrors.Count == 0
@@ -77,28 +97,53 @@ public sealed class MainWindow : Window, IModuleHost
 
     private TabControl BuildTabs(IReadOnlyList<IModule> modules)
     {
-        var tabs = new TabControl { Padding = new Thickness(0) };
+        // Pestañas principales dentro de la cabecera azul marino (ver Tema/Estilo.axaml, clase "shell").
+        var tabs = new TabControl();
+        tabs.Classes.Add("shell");
+        tabs.ItemsPanel = new Avalonia.Controls.Templates.FuncTemplate<Panel?>(() => new WrapPanel());
+
+        void Open(IModule module)
+        {
+            foreach (var item in tabs.Items)
+                if (item is TabItem t && ReferenceEquals(t.Tag, module)) { tabs.SelectedItem = t; return; }
+        }
+
+        tabs.Items.Add(new TabItem { Header = TabHeader("🏠", "Inicio"), Content = new HomeView(modules, Open) });
         foreach (var module in modules)
         {
             tabs.Items.Add(new TabItem
             {
-                Header = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 6,
-                    Children =
-                    {
-                        new TextBlock { Text = module.Icon, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = module.Name, VerticalAlignment = VerticalAlignment.Center },
-                    },
-                },
+                Header = TabHeader(module.Icon, module.Name),
                 Tag = module,
             });
         }
         tabs.SelectionChanged += (_, _) => EnsureContent(tabs.SelectedItem as TabItem);
         tabs.SelectedIndex = 0;
-        EnsureContent(tabs.SelectedItem as TabItem);
         return tabs;
+    }
+
+    private static Control TabHeader(string icon, string name) => new StackPanel
+    {
+        Orientation = Orientation.Horizontal,
+        Spacing = 6,
+        Children =
+        {
+            new TextBlock { Text = icon, VerticalAlignment = VerticalAlignment.Center },
+            new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center },
+        },
+    };
+
+    private static WindowIcon? LoadIcon()
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri("avares://SimuladorMultiple/Assets/icono.ico"));
+            return new WindowIcon(stream);
+        }
+        catch
+        {
+            return null; // sin icono propio, Windows muestra el genérico
+        }
     }
 
     private void EnsureContent(TabItem? tab)
@@ -135,5 +180,11 @@ public sealed class MainWindow : Window, IModuleHost
         return dir;
     }
 
-    public void SetStatus(string text) => _status.Text = text;
+    public void SetStatus(string text)
+    {
+        // Una sola línea (los avisos largos no empujan el contenido); el texto completo, al pasar el ratón.
+        var firstLine = text.Split('\n', 2)[0].TrimEnd();
+        _status.Text = firstLine.Length < text.TrimEnd().Length ? firstLine + " …" : firstLine;
+        ToolTip.SetTip(_status, text.Length > firstLine.Length || text.Length > 120 ? text : null);
+    }
 }

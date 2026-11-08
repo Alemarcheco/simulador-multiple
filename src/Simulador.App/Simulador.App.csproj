@@ -6,12 +6,17 @@
     <AssemblyName>SimuladorMultiple</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <!-- Icono del .exe, del acceso directo y de la barra de tareas -->
+    <ApplicationIcon>Assets\icono.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\icono.ico" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
