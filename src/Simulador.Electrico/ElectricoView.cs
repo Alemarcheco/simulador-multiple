@@ -19,7 +19,7 @@ using Simulador.Plc.Runtime.Profiles;
 namespace Simulador.Electrico;
 
 /// <summary>Pestaña completa: librería a la izquierda, hoja en el centro, propiedades a la derecha y registro de eventos abajo.</summary>
-internal sealed class ElectricoView : DockPanel
+internal sealed class ElectricoView : DockPanel, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly ElementCatalog _catalog = ElementCatalog.Default;
@@ -110,16 +110,6 @@ internal sealed class ElectricoView : DockPanel
             return b;
         }
 
-        var examples = new Button { Content = "Ejemplos ▾" };
-        var menu = new MenuFlyout();
-        foreach (var (name, create) in Examples.All)
-        {
-            var item = new MenuItem { Header = name };
-            item.Click += (_, _) => { StopSim(); _path = null; _canvas.Load(create()); _dirty = false; UpdateTitle(); };
-            menu.Items.Add(item);
-        }
-        examples.Flyout = menu;
-
         foreach (var s in Speeds) _speed.Items.Add(s == 1 ? "Tiempo real" : $"× {s:0.##}");
         _speed.SelectedIndex = 2;
         ToolTip.SetTip(_speed, "Velocidad de la simulación");
@@ -137,23 +127,13 @@ internal sealed class ElectricoView : DockPanel
             Margin = new Thickness(8, 6),
             Children =
             {
-                B("Nuevo", NewSchematic, "Esquema vacío"),
-                B("Abrir…", () => _ = OpenAsync(), "Abrir un esquema .selx"),
-                B("Guardar", () => _ = SaveAsync(false), "Guardar el esquema"),
-                B("Guardar como…", () => _ = SaveAsync(true), "Guardar con otro nombre"),
-                examples,
-                new Separator { Width = 12 },
                 _run,
                 B("⟲ Reiniciar", ResetSim, "Vuelve todo a reposo y pone el tiempo a cero"),
                 _speed,
                 _clock,
                 _showCurrent,
                 _showVoltage,
-                new Separator { Width = 12 },
-                B("Importar catálogo CSV…", () => _ = ImportCatalogAsync(), "Añade aparatos reales de fabricante (contactores, guardamotores, motores…) desde un CSV"),
-                B("Importar símbolos QElectroTech…", () => _ = ImportQetAsync(),
-                    "Añade símbolos .elmt de QElectroTech (la librería libre con miles de aparatos de Schneider, Siemens, ABB, Legrand…). " +
-                    "Bobinas y contactos NA/NC se simulan; el resto queda como dibujo con bornes."),
+                new Border { Width = 1, Height = 22, Background = Brushes.Gray, Opacity = 0.4 },
                 B("Girar (R)", RotateSelected, "Gira 90° el elemento seleccionado"),
                 B("Borrar (Supr)", () => _canvas.DeleteSelection(), "Borra el elemento o conductor seleccionado"),
             },
@@ -162,6 +142,31 @@ internal sealed class ElectricoView : DockPanel
         var border = new Border { Child = bar, BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0, 0, 0, 1) };
         SetDock(border, Dock.Top);
         return border;
+    }
+
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
+    {
+        yield return new MenuCommand("Nuevo", NewSchematic) { ToolTip = "Esquema vacío" };
+        yield return new MenuCommand("Abrir…", () => _ = OpenAsync()) { ToolTip = "Abrir un esquema .selx" };
+        yield return new MenuCommand("Guardar", () => _ = SaveAsync(false));
+        yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
+        yield return MenuCommand.Submenu("Ejemplos", Examples.All.Select(e => new MenuCommand(e.Item1, () =>
+        {
+            StopSim(); _path = null; _canvas.Load(e.Item2()); _dirty = false; UpdateTitle();
+        }))) with { SeparatorBefore = true };
+        yield return new MenuCommand("Importar catálogo CSV…", () => _ = ImportCatalogAsync())
+        {
+            SeparatorBefore = true,
+            ToolTip = "Añade aparatos reales de fabricante (contactores, guardamotores, motores…) desde un CSV",
+        };
+        yield return new MenuCommand("Importar símbolos QElectroTech…", () => _ = ImportQetAsync())
+        {
+            ToolTip = "Añade símbolos .elmt de QElectroTech (la librería libre con miles de aparatos de Schneider, Siemens, ABB, Legrand…). " +
+                      "Bobinas y contactos NA/NC se simulan; el resto queda como dibujo con bornes.",
+        };
+        yield return new MenuCommand("Girar", RotateSelected) { Menu = MenuNames.Edit, Shortcut = "R" };
+        yield return new MenuCommand("Borrar", () => _canvas.DeleteSelection()) { Menu = MenuNames.Edit, Shortcut = "Delete" };
     }
 
     private Control BuildPalette()

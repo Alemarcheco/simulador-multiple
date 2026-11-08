@@ -4,7 +4,7 @@
 
 Dibuja circuitos de aire comprimido con símbolos ISO 1219 y simúlalos: los cilindros sacan y meten el vástago, las mangueras con presión se ven en azul y las válvulas cambian de casilla.
 
-> Para empezar: `Ejemplos ▾` › «Cilindro de simple efecto con pulsador», pulsa `▶ Simular` y mantén el clic sobre el pulsador.
+> Para empezar: **Archivo › Ejemplos** › «Cilindro de simple efecto con pulsador», pulsa `▶ Simular` y mantén el clic sobre el pulsador.
 
 ## Dibujar el circuito
 <!-- contexto: Esquema -->

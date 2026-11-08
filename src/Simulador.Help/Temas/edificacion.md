@@ -4,7 +4,7 @@
 
 Diseña el edificio (plantas, muros, puertas, ventanas, losas, escaleras y habitaciones) y coloca sobre él las instalaciones: tomas, interruptores, luces, tableros, puntos de agua, desagües, tanques y las rutas de tubos y tuberías. No hace cálculo estructural.
 
-> Para empezar: `Plantillas ▾` › «Casa de una planta» y mira la **Vista 3D**.
+> Para empezar: **Archivo › Plantillas** › «Casa de una planta» y mira la **Vista 3D**.
 
 ## Dibujar la planta
 <!-- contexto: Planta 2D -->
@@ -55,7 +55,7 @@ En **Capas** cambias la opacidad del calco y qué capas se ven.
 
 ## Exportar plano: PDF, DXF e IFC
 <!-- palabras: exportar, pdf, dxf, ifc, bim, revit, imprimir, escala, cajetin -->
-`🖨 Exportar (PDF, DXF, IFC)…`:
+**Archivo › Exportar (PDF, DXF, IFC)…**:
 - **PDF**: planos vectoriales a escala con cajetín y barra de escala, una hoja por nivel.
 - **DXF**: en metros, por capas (muros, huecos, escaleras, habitaciones, cotas, electricidad, hidráulica), para abrir en AutoCAD.
 - **IFC**: el edificio completo para programas BIM (Revit, ArchiCAD, BIMvision…).

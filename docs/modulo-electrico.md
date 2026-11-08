@@ -10,6 +10,9 @@ las protecciones.
 - **Cablear**: clic en un borne y clic en otro. Con Mayús se sigue cableando desde el último borne.
 - **Editar**: arrastra para mover, **R** gira 90°, **Supr** borra. A la derecha cambias designación, parámetros,
   numeración de bornes y el aparato de catálogo.
+- **Ver el plano**: la rueda del ratón acerca y aleja centrando en el cursor (Mayús + rueda desplaza en horizontal).
+  Arrastra el fondo de la hoja o usa el botón central para desplazarla. **Ctrl+0** vuelve al 100 %, **Ctrl +/−**
+  acerca y aleja, **F** ajusta la hoja entera a la ventana. Funciona también durante la simulación.
 - **Designaciones** (IEC 81346): todo lo que tiene la misma designación es un mismo aparato. La bobina `KM1` mueve
   todos los contactos `KM1`; el relé térmico `F2` abre su contacto `F2` (95-96); un pulsador doble son dos contactos `S1`.
 - **Simular** (▶): clic en pulsadores, interruptores, setas, finales de carrera y captadores. Clic en un magnetotérmico,

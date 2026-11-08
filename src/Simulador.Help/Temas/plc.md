@@ -27,7 +27,7 @@ El programa se dibuja en **segmentos**. Pulsa `+ Segmento`, selecciona un sitio 
 - Bloques: `TON`, `TOF` (temporizadores), `CTU`, `CTD` (contadores), `MOVE` y comparación `[CMP]`.
 - `⑂ Paralelo` abre una rama en paralelo (función O). Los elementos en serie hacen la función Y.
 
-`Guardar…` crea un `.ladder.json`, que también se puede cargar en el PLC dibujado en **Instalaciones eléctricas**.
+**Archivo › Guardar programa…** crea un `.ladder.json`, que también se puede cargar en el PLC dibujado en **Instalaciones eléctricas**.
 
 ## Bloques de función (FBD)
 <!-- contexto: Bloques de función (FBD) -->

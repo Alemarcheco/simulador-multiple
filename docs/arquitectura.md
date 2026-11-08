@@ -18,14 +18,31 @@ Por eso `IModule.CreateRootView` devuelve `object`; en la práctica debe ser un 
    libre (Circuitos usa 10).
 3. Añade `<ProjectReference>` a tu proyecto en `src/Simulador.App/Simulador.App.csproj` y `dotnet sln add` tu proyecto.
 4. Las pruebas van en `tests/`.
-5. Escribe su guía de ayuda en `src/Simulador.Help/Temas/<Id>.md` (ver más abajo) y añade el `Id` a
+5. Añade una descripción corta de tu simulador en `src/Simulador.App/HomeView.cs` (tarjeta de la pantalla de inicio).
+6. Escribe su guía de ayuda en `src/Simulador.Help/Temas/<Id>.md` (ver más abajo) y añade el `Id` a
    `tests/Simulador.Help.Tests/HelpLibraryTests.cs`.
+
+## Aspecto visual (tema común)
+
+- Toda la app usa Fluent en **modo claro fijo** con acento azul `#1F6FEB`, más `src/Simulador.App/Tema/Estilo.axaml`
+  (botones blancos con borde fino, pestañas compactas con subrayado azul, cabecera azul marino, barra de estado).
+  Los módulos lo heredan sin hacer nada: no fijes colores de fondo en botones ni tamaños de letra en pestañas.
+- Colores reutilizables desde código con `FindResource`: `SimAccentBrush`, `SimAccentSoftBrush`, `SimWindowBrush`,
+  `SimSurfaceBrush`, `SimLineBrush`, `SimInkBrush`, `SimMutedBrush`.
+- Los lienzos de dibujo (esquemas, planos) siguen siendo "papel" blanco; las vistas 3D y la PCB, fondo oscuro.
+- **Barra de menús** (Archivo, Editar, Ver, Herramientas, Ayuda) arriba del todo: lo poco usado (Nuevo, Abrir, Guardar,
+  Ejemplos, Plantillas, Importar/Exportar, Deshacer/Rehacer, encuadres) va ahí, no en la barra de herramientas.
+  Una vista lo aporta implementando `Simulador.Core.Modules.IMenuSource` (lista de `MenuCommand`); la ventana sólo
+  pregunta a las vistas que estén a la vista, así que cada sub-pestaña (Esquemático, PCB, Ladder…) tiene sus órdenes.
+  En el PLC, `MenuPanel` sirve para un panel suelto. Los atajos de teclado los sigue gestionando cada vista.
+- La primera pestaña (Inicio) es la pantalla de inicio. El logotipo está en `Tema/Logo.cs` y `Assets/logo.svg`;
+  `Assets/icono.ico` es el icono del .exe y de la ventana.
 
 ## Ayuda (F1)
 
 `Simulador.Help` tiene la ventana de ayuda (`HelpWindow`), el buscador (`HelpLibrary`, sin Avalonia) y las guías en
 `Temas/*.md`, incrustadas en la DLL para que funcionen sin internet. `MainWindow` abre la ayuda con F1 (capturada en
-túnel, así que funciona aunque el foco esté dentro de un módulo) o con el botón de la barra de estado, en la guía de la
+túnel, así que funciona aunque el foco esté dentro de un módulo) o con el menú Ayuda y el botón de la barra de estado, en la guía de la
 pestaña activa. Si la pestaña tiene sub-pestañas, abre el tema cuyo `contexto` coincide con la cabecera de la
 sub-pestaña visible más interna.
 

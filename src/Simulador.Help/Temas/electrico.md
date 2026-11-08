@@ -4,7 +4,7 @@
 
 Dibuja el esquema de mando y el de potencia en la misma hoja y simúlalo en tiempo real: pulsas con el ratón y ves cómo actúan contactores, relés y temporizadores, cómo arrancan los motores y cuándo disparan las protecciones.
 
-> Para empezar: menú **Ejemplos** › «Arranque directo con autorretención», pulsa `▶` y haz clic en el pulsador de marcha.
+> Para empezar: **Archivo › Ejemplos** › «Arranque directo con autorretención», pulsa `▶` y haz clic en el pulsador de marcha.
 
 ## Dibujar un esquema
 <!-- contexto: Esquema -->
@@ -57,11 +57,11 @@ El variador sigue la ley V/f, con rampas de aceleración y deceleración e inver
 <!-- palabras: catalogo, csv, schneider, siemens, abb, referencia, fabricante, excel, datos de placa -->
 Al seleccionar un componente aparece **Aparato de catálogo** para aplicarle una referencia real (Schneider, Siemens, ABB, motores IE3…) con sus datos de placa.
 
-Para añadir más referencias, `Importar catálogo CSV…` con columnas `Fabricante;Referencia;Tipo;Descripción;Parámetros`. Sirve para tablas copiadas de catálogos o exportadas desde Excel.
+Para añadir más referencias, **Archivo › Importar catálogo CSV…** con columnas `Fabricante;Referencia;Tipo;Descripción;Parámetros`. Sirve para tablas copiadas de catálogos o exportadas desde Excel.
 
 ## Símbolos de QElectroTech
 <!-- palabras: qelectrotech, elmt, importar simbolo -->
-`Importar símbolos QElectroTech…` lee archivos `.elmt`. Se conserva su dibujo y sus bornes, y el comportamiento se deduce del propio archivo (bobina, contacto NA, NC o temporizado) o del nombre. Lo que no se reconoce queda como dibujo con bornes.
+**Archivo › Importar símbolos QElectroTech…** lee archivos `.elmt`. Se conserva su dibujo y sus bornes, y el comportamiento se deduce del propio archivo (bobina, contacto NA, NC o temporizado) o del nombre. Lo que no se reconoce queda como dibujo con bornes.
 
 ## ¿Por qué no arranca el motor?
 <!-- palabras: motor no arranca, no gira, no funciona, falta fase -->

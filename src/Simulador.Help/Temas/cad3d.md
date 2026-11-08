@@ -4,16 +4,16 @@
 
 Diseña piezas para imprimir en 3D. Cada pieza es una lista de **operaciones** en orden (caja, cilindro, esfera, extrusión de un boceto, revolución, redondeo, chaflán, repetición, simetría, texto…) que suman, restan o intersecan. Puedes cambiar cualquier operación más tarde y la pieza se recalcula. Al final exportas a STL o 3MF para el programa de tu impresora.
 
-> Para empezar: `Ejemplos ▾` abre piezas ya hechas (cajas, soporte en L, engranaje, maceta, separador, atril) que puedes cambiar e imprimir.
+> Para empezar: **Archivo › Ejemplos** abre piezas ya hechas (cajas, soporte en L, engranaje, maceta, separador, atril) que puedes cambiar e imprimir.
 
 ## Crear una pieza
 <!-- palabras: pieza, operacion, caja, cilindro, esfera, sumar, restar, agujero, interseccion, historial, propiedades -->
-1. `Nuevo` empieza un diseño; `Añadir pieza` crea otra pieza dentro del mismo diseño.
+1. **Archivo › Nuevo** empieza un diseño; `Añadir pieza` crea otra pieza dentro del mismo diseño.
 2. Añade operaciones con los botones: `Caja`, `Caja redondeada`, `Cilindro o cono`, `Esfera`, `Agujero` (un cilindro que resta material), `Extrusión`, revolución…
 3. Selecciona una operación en **Operaciones (en orden)** y cambia a la derecha sus medidas (en mm), su posición y si **suma**, **resta** o **interseca**.
 4. Ordena con subir y bajar en el historial, `Duplicar` copia y `Eliminar` borra.
 
-Vistas rápidas: `Frente`, `Lado`, `Arriba`, `Iso` y `Encuadrar`. Ratón: izquierdo gira, derecho desplaza, rueda acerca.
+Vistas rápidas: `Frente`, `Lado`, `Arriba`, `Iso` y `Encuadrar` (también en el menú **Ver**). Ratón: izquierdo gira, derecho desplaza, rueda acerca.
 
 ## Dibujar un boceto (perfil 2D)
 <!-- palabras: boceto, sketch, perfil, extrusion, revolucion, puntos, cotas, arco, redondear esquina, rejilla, poligono, circulo, rectangulo -->
@@ -46,6 +46,8 @@ La operación de texto escribe letras con una fuente de Windows. Elige la altura
 
 ## Exportar para imprimir: STL, 3MF y STEP
 <!-- palabras: exportar, stl, 3mf, step, imprimir, impresora 3d, cura, prusaslicer, bambu, laminador, slicer, freecad -->
+Están en el menú **Archivo**:
+
 - `Exportar STL…`: el formato que acepta cualquier laminador (Cura, PrusaSlicer, Bambu Studio…). Junta todas las piezas visibles.
 - `Exportar 3MF…`: cada pieza va como un objeto separado y con su color.
 - `Exportar STEP…`: geometría exacta para otros programas CAD (FreeCAD, Fusion, SolidWorks). `Importar STEP…` añade un modelo STEP a la pieza, por ejemplo modelos 3D de componentes de KiCad.

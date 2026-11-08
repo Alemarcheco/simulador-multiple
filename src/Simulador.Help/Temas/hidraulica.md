@@ -4,7 +4,7 @@
 
 Diseña procesos con depósitos, tanques, tuberías, bombas, válvulas e instrumentos y simúlalos en el tiempo: caudales, presiones y niveles. También calcula aspersores, calderines (grupos de presión) y el golpe de ariete, y muestra la instalación en 3D.
 
-> Para empezar: `Ejemplos ▾` › «Bombeo a tanque elevado» y pulsa `▶ Simular`.
+> Para empezar: **Archivo › Ejemplos** › «Bombeo a tanque elevado» y pulsa `▶ Simular`.
 
 ## Dibujar la red
 <!-- contexto: Esquema -->
@@ -43,7 +43,7 @@ Sirve para conducciones simples: depósito o tanque, tuberías en serie y la vá
 
 ## Guardar e informe
 <!-- palabras: guardar, hidx, informe, lista de materiales, exportar -->
-`Guardar…` crea un `.hidx`. `Informe…` guarda un informe con la lista de materiales y los resultados de la simulación.
+En el menú **Archivo**: `Guardar` crea un `.hidx` e `Informe…` guarda un informe con la lista de materiales y los resultados de la simulación.
 
 ## ¿Por qué no sube el agua al tanque?
 <!-- palabras: no sube, no llega, caudal cero, bomba no bombea -->

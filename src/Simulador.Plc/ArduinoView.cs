@@ -20,7 +20,7 @@ namespace Simulador.Plc;
 /// Pestaña Arduino: código a la izquierda (con números de línea y la línea en ejecución marcada), la placa dibujada a la
 /// derecha con sus pines en vivo, controles para las entradas, monitor serie y variables.
 /// </summary>
-internal sealed partial class ArduinoView : UserControl
+internal sealed partial class ArduinoView : UserControl, IMenuSource
 {
     private static readonly FontFamily Mono = new("Cascadia Mono, Consolas, Menlo, monospace");
     private const double EditorFontSize = 13;
@@ -88,13 +88,9 @@ internal sealed partial class ArduinoView : UserControl
         run.Click += async (_, _) => await RunSketchAsync();
         var stop = new Button { Content = "■ Detener" };
         stop.Click += (_, _) => { _mcu.Stop(); UpdateStatus(); };
-        var open = new Button { Content = "Abrir…" };
-        open.Click += async (_, _) => await OpenAsync();
-        var save = new Button { Content = "Guardar…" };
-        save.Click += async (_, _) => await SaveAsync();
 
         var toolbar = new WrapPanel { Margin = new Thickness(8, 8, 8, 4) };
-        foreach (var c in new Control[] { Label("Placa:"), _boardBox, Label("Ejemplo:"), _examples, Label("Motor:"), _engine, verify, run, stop, open, save })
+        foreach (var c in new Control[] { Label("Placa:"), _boardBox, Label("Ejemplo:"), _examples, Label("Motor:"), _engine, verify, run, stop })
         {
             c.Margin = new Thickness(0, 0, 8, 4);
             toolbar.Children.Add(c);
@@ -638,6 +634,13 @@ internal sealed partial class ArduinoView : UserControl
     private static readonly FilePickerFileType InoType = new("Sketch de Arduino") { Patterns = ["*.ino", "*.cpp", "*.c"] };
     private static readonly FilePickerFileType PyFileType = new("Programa de MicroPython") { Patterns = ["*.py"] };
     private static readonly FilePickerFileType HexType = new("Programa compilado (chip real)") { Patterns = ["*.hex"] };
+
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
+    {
+        yield return new MenuCommand("Abrir programa…", () => _ = OpenAsync());
+        yield return new MenuCommand("Guardar programa…", () => _ = SaveAsync());
+    }
 
     private async Task OpenAsync()
     {

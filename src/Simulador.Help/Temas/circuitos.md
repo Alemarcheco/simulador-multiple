@@ -6,7 +6,7 @@ Diseña circuitos electrónicos de principio a fin: eliges componentes de las li
 
 La pestaña tiene cinco sub-pestañas que siguen ese orden: **Librerías**, **Esquemático**, **Simulación**, **PCB** y **Fabricación**.
 
-> Para empezar rápido: en **Esquemático** pulsa `Ejemplos ▾`, abre uno (por ejemplo el intermitente con 555) y ve a **Simulación**.
+> Para empezar rápido: en **Esquemático** abre **Archivo › Ejemplos**, elige uno (por ejemplo el intermitente con 555) y ve a **Simulación**.
 
 ## Librerías: importar componentes
 <!-- contexto: Librerías -->

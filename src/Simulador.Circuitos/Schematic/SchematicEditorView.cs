@@ -11,7 +11,7 @@ using Simulador.Core.Modules;
 namespace Simulador.Circuitos.Schematic;
 
 /// <summary>Pestaña "Esquemático": paleta de componentes, lienzo y panel de propiedades.</summary>
-public sealed class SchematicEditorView : DockPanel
+public sealed class SchematicEditorView : DockPanel, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly ComponentCatalog _catalog;
@@ -102,12 +102,6 @@ public sealed class SchematicEditorView : DockPanel
             Orientation = Orientation.Horizontal,
             Children =
             {
-                B("Nuevo", "Esquema vacío", New),
-                B("Abrir…", "Abrir un esquema", () => _ = OpenAsync()),
-                B("Guardar", "Guardar (Ctrl+S)", () => _ = SaveAsync(false)),
-                B("Guardar como…", "Guardar con otro nombre", () => _ = SaveAsync(true)),
-                ExamplesButton(),
-                Sep(),
                 B("Seleccionar", "Seleccionar y mover (Esc)", () => { _palette.SelectedItem = null; _canvas.SetTool(SchematicTool.Select); }),
                 B("Cable", "Dibujar cables (W)", () => _canvas.SetTool(SchematicTool.Wire)),
                 B("Etiqueta", "Etiqueta de red (L): une puntos con el mismo nombre", () => _canvas.SetTool(SchematicTool.Label)),
@@ -116,11 +110,6 @@ public sealed class SchematicEditorView : DockPanel
                 B("Girar", "Girar 90° (R)", _canvas.RotateSelected),
                 B("Espejo", "Reflejar (M)", _canvas.MirrorSelected),
                 B("Borrar", "Borrar lo seleccionado (Supr)", _canvas.DeleteSelected),
-                B("Deshacer", "Ctrl+Z", _canvas.Undo),
-                B("Rehacer", "Ctrl+Y", _canvas.Redo),
-                B("Ajustar", "Ver todo el esquema (F)", _canvas.ZoomToFit),
-                Sep(),
-                B("Netlist SPICE", "Ver la netlist que se enviará al simulador", ShowNetlist),
                 Sep(),
                 _liveButton,
             },
@@ -159,24 +148,24 @@ public sealed class SchematicEditorView : DockPanel
         }
     }
 
-    private Control ExamplesButton()
+    /// <summary>Órdenes de la barra de menús de arriba (Archivo, Editar, Ver, Herramientas).</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
     {
-        var menu = new MenuFlyout();
-        foreach (var (name, build) in Examples.All)
+        yield return new MenuCommand("Nuevo esquema", New) { ToolTip = "Esquema vacío" };
+        yield return new MenuCommand("Abrir…", () => _ = OpenAsync());
+        yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
+        yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
+        yield return MenuCommand.Submenu("Ejemplos", Examples.All.Select(e => new MenuCommand(e.Item1, () =>
         {
-            var item = new MenuItem { Header = name };
-            item.Click += (_, _) =>
-            {
-                _filePath = null;
-                _canvas.Load(build(_catalog));
-                ShowProperties();
-                _host.SetStatus("Ejemplo cargado: " + name);
-            };
-            menu.Items.Add(item);
-        }
-        var button = new Button { Content = "Ejemplos ▾", Padding = new Thickness(8, 4), Flyout = menu };
-        ToolTip.SetTip(button, "Abrir un esquema de ejemplo");
-        return button;
+            _filePath = null;
+            _canvas.Load(e.Item2(_catalog));
+            ShowProperties();
+            _host.SetStatus("Ejemplo cargado: " + e.Item1);
+        }))) with { SeparatorBefore = true };
+        yield return new MenuCommand("Deshacer", _canvas.Undo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Z" };
+        yield return new MenuCommand("Rehacer", _canvas.Redo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Y" };
+        yield return new MenuCommand("Ver todo el esquema", _canvas.ZoomToFit) { Menu = MenuNames.View, Shortcut = "F" };
+        yield return new MenuCommand("Netlist SPICE…", ShowNetlist) { Menu = MenuNames.Tools, ToolTip = "Ver la netlist que se enviará al simulador" };
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

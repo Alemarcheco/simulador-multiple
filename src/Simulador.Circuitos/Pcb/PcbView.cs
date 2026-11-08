@@ -13,7 +13,7 @@ using Simulador.Core.Modules;
 namespace Simulador.Circuitos.Pcb;
 
 /// <summary>Pestaña "PCB": pasar el esquema a la placa, colocar componentes, rutear pistas y comprobar reglas.</summary>
-public sealed class PcbView : DockPanel
+public sealed class PcbView : DockPanel, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly ComponentCatalog _catalog;
@@ -72,18 +72,10 @@ public sealed class PcbView : DockPanel
             {
                 B("⟳ Actualizar desde esquema", "Añade los componentes y conexiones del esquema a la placa", SyncFromSchematic),
                 Sep(),
-                B("Nueva", "Placa vacía", () => { _filePath = null; _canvas.Load(new PcbDocument()); }),
-                B("Abrir…", "Abrir una placa", () => _ = OpenAsync()),
-                B("Guardar", "Guardar la placa", () => _ = SaveAsync(false)),
-                B("Guardar como…", "Guardar con otro nombre", () => _ = SaveAsync(true)),
-                Sep(),
                 B("Seleccionar", "Seleccionar y mover componentes (Esc)", () => _canvas.SetTool(PcbTool.Select)),
                 B("Pista", "Dibujar pistas de cobre (X)", () => _canvas.SetTool(PcbTool.Track)),
                 B("Girar", "Girar 90° (R)", _canvas.RotateSelected),
                 B("Borrar", "Borrar lo seleccionado (Supr)", _canvas.DeleteSelected),
-                B("Deshacer", "Ctrl+Z", _canvas.Undo),
-                B("Rehacer", "Ctrl+Y", _canvas.Redo),
-                B("Ajustar", "Ver toda la placa (F)", _canvas.ZoomToFit),
                 Sep(),
                 B("✔ Comprobar (DRC)", "Comprobar separaciones, cortos y conexiones pendientes", RunDrc),
                 Sep(),
@@ -93,6 +85,18 @@ public sealed class PcbView : DockPanel
                 _counter,
             },
         };
+    }
+
+    /// <summary>Órdenes de la barra de menús de arriba.</summary>
+    public IEnumerable<MenuCommand> GetMenuCommands()
+    {
+        yield return new MenuCommand("Nueva placa", () => { _filePath = null; _canvas.Load(new PcbDocument()); }) { ToolTip = "Placa vacía" };
+        yield return new MenuCommand("Abrir placa…", () => _ = OpenAsync());
+        yield return new MenuCommand("Guardar placa", () => _ = SaveAsync(false));
+        yield return new MenuCommand("Guardar placa como…", () => _ = SaveAsync(true));
+        yield return new MenuCommand("Deshacer", _canvas.Undo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Z" };
+        yield return new MenuCommand("Rehacer", _canvas.Redo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Y" };
+        yield return new MenuCommand("Ver toda la placa", _canvas.ZoomToFit) { Menu = MenuNames.View, Shortcut = "F" };
     }
 
     private void UpdateCounter()

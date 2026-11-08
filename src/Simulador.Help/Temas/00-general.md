@@ -2,7 +2,7 @@
 <!-- orden: 0 -->
 # Cómo usar el programa
 
-Simulador múltiple reúne varios simuladores en una sola ventana. Cada uno está en su propia pestaña, arriba: **Circuitos y PCB**, **Edificación**, **Instalaciones eléctricas**, **PLC y microcontroladores**, **Hidráulica**, **Neumática**, **Diseño 3D** y **Banco de pruebas**.
+Simulador múltiple reúne varios simuladores en una sola ventana. La pestaña **Inicio** presenta cada uno con una tarjeta; los simuladores están en sus propias pestañas: **Circuitos y PCB**, **Edificación**, **Instalaciones eléctricas**, **PLC y microcontroladores**, **Hidráulica**, **Neumática**, **Diseño 3D** y **Banco de pruebas**.
 
 > Pulsa `F1` en cualquier momento para abrir esta ayuda justo en la guía de la pestaña en la que estás. Arriba de esta ventana puedes escribir una pregunta o unas palabras para buscar.
 
@@ -11,9 +11,9 @@ Todo funciona sin conexión a internet: las guías, los ejemplos y los simulador
 ## Primeros pasos
 <!-- palabras: empezar, comenzar, inicio, principiante, tutorial, aprender -->
 1. Elige una pestaña arriba. La primera vez que la abres tarda un momento en prepararse.
-2. Casi todas las pestañas tienen un botón `Ejemplos ▾`. Abrir un ejemplo y pulsar `▶ Simular` es la forma más rápida de ver cómo funciona.
+2. Casi todas las pestañas tienen ejemplos en el menú **Archivo › Ejemplos** (en Edificación, **Archivo › Plantillas**). Abrir un ejemplo y pulsar `▶ Simular` es la forma más rápida de ver cómo funciona.
 3. Cambia algo del ejemplo (un valor, un componente, una conexión) y vuelve a simular para ver la diferencia.
-4. Cuando quieras empezar algo tuyo, pulsa `Nuevo` y guarda con `Guardar…` o `Ctrl+S`.
+4. Cuando quieras empezar algo tuyo, usa **Archivo › Nuevo** y guarda con **Archivo › Guardar** o `Ctrl+S`.
 
 La **barra de estado**, abajo del todo, te cuenta lo que acaba de pasar: archivo abierto, errores al compilar o simular, avisos, etc. Si algo no responde como esperas, mírala primero.
 
@@ -84,6 +84,12 @@ Cada simulador se prepara la primera vez que abres su pestaña, para que el prog
 <!-- palabras: deshacer, volver atras, ctrl z, borre sin querer -->
 Sí, en los editores de esquemas, placas y planos: `Ctrl+Z` deshace y `Ctrl+Y` rehace. Si cerraste sin guardar, el cambio no se puede recuperar, así que guarda a menudo con `Ctrl+S`.
 
-## ¿El programa se ve claro u oscuro?
+## ¿Dónde están Nuevo, Abrir, Guardar y los ejemplos?
+<!-- palabras: menu, archivo, editar, ver, herramientas, barra de menus, abrir, guardar, ejemplos, plantillas, exportar -->
+En la **barra de menús** de arriba (Archivo, Editar, Ver, Herramientas, Ayuda). Sus órdenes cambian según la pestaña y la sub-pestaña que estás viendo: en Circuitos › PCB, por ejemplo, Archivo ofrece abrir y guardar placas. Lo que se usa a cada momento (herramientas de dibujo, Simular) sigue en la barra de cada pestaña.
+
+El menú **Ayuda** también abre esta ayuda y la pantalla de **Inicio**.
+
+## ¿Puedo poner el programa en modo oscuro?
 <!-- palabras: tema oscuro, modo oscuro, colores, apariencia -->
-Sigue el modo claro u oscuro de Windows. Cámbialo en Configuración de Windows › Personalización › Colores y el programa lo sigue.
+No por ahora: el programa usa siempre el modo claro, con los planos y esquemas sobre fondo blanco como el papel. Las vistas 3D y la PCB usan fondo oscuro para que se vean mejor.
