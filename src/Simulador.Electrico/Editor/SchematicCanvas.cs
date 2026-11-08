@@ -2,11 +2,14 @@ using System.Numerics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Simulador.Electrico.Engine.Catalog;
 using Simulador.Electrico.Engine.Model;
 using Simulador.Electrico.Engine.Sim;
 using static Simulador.Electrico.Editor.SymbolPainter;
+using Vector = Avalonia.Vector;
 
 namespace Simulador.Electrico.Editor;
 
@@ -18,6 +21,11 @@ internal sealed class SchematicCanvas : Control
     private const double Margin0 = 2 * G;
     public const int SheetWidth = 110;
     public const int SheetHeight = 70;
+    private const double BaseWidth = SheetWidth * G + 2 * Margin0;
+    private const double BaseHeight = SheetHeight * G + 2 * Margin0;
+    private const double MinZoom = 0.25;
+    private const double MaxZoom = 6;
+    private const double WheelStep = 1.15;
 
     private readonly ElementCatalog _catalog;
     private Point _mouse;
@@ -27,6 +35,9 @@ internal sealed class SchematicCanvas : Control
     private bool _dragMoved;
     private Guid? _simPressed;
     private string? _placing;
+    private double _zoom = 1;
+    private Point? _panStart;
+    private Vector _panScroll;
 
     public Schematic Schematic { get; private set; } = new();
     public Simulator? Sim { get; set; }
@@ -46,8 +57,11 @@ internal sealed class SchematicCanvas : Control
     {
         _catalog = catalog;
         Focusable = true;
-        Width = SheetWidth * G + 2 * Margin0;
-        Height = SheetHeight * G + 2 * Margin0;
+        Width = BaseWidth;
+        Height = BaseHeight;
+        // Arriba a la izquierda dentro del ScrollViewer, para que posición en la hoja = posición en pantalla + desplazamiento.
+        HorizontalAlignment = HorizontalAlignment.Left;
+        VerticalAlignment = VerticalAlignment.Top;
         ClipToBounds = true;
     }
 
@@ -71,6 +85,79 @@ internal sealed class SchematicCanvas : Control
         _wireStart = null;
         SelectionChanged?.Invoke();
         InvalidateVisual();
+    }
+
+    // ------------------------------------------------------------------ zoom y desplazamiento
+
+    /// <summary>Escala de la hoja (1 = 100 %).</summary>
+    public double Zoom => _zoom;
+
+    private ScrollViewer? Scroller => this.FindAncestorOfType<ScrollViewer>();
+
+    /// <summary>Posición del ratón en la hoja sin escalar (la que usan el dibujo y la detección de clics).</summary>
+    private Point SheetPosition(PointerEventArgs e)
+    {
+        var p = e.GetPosition(this);
+        return new Point(p.X / _zoom, p.Y / _zoom);
+    }
+
+    /// <summary>
+    /// Cambia el zoom manteniendo quieto bajo el ratón (o en el centro de la vista) el punto de la hoja que había allí.
+    /// <paramref name="anchor"/> va en coordenadas de este control, ya escaladas.
+    /// </summary>
+    public void SetZoom(double zoom, Point? anchor = null)
+    {
+        zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
+        if (Math.Abs(zoom - _zoom) < 1e-9) return;
+        var sv = Scroller;
+        var offset = sv?.Offset ?? default;
+        var a = anchor ?? (sv is null
+            ? new Point(Bounds.Width / 2, Bounds.Height / 2)
+            : new Point(offset.X + sv.Viewport.Width / 2, offset.Y + sv.Viewport.Height / 2));
+        var sheet = new Point(a.X / _zoom, a.Y / _zoom);
+        var inView = new Vector(a.X - offset.X, a.Y - offset.Y);
+
+        _zoom = zoom;
+        Width = BaseWidth * zoom;
+        Height = BaseHeight * zoom;
+        if (sv is not null)
+        {
+            sv.UpdateLayout();
+            sv.Offset = new Vector(Math.Max(0, sheet.X * zoom - inView.X), Math.Max(0, sheet.Y * zoom - inView.Y));
+        }
+        InvalidateVisual();
+        Hint?.Invoke($"Zoom {zoom * 100:0} %  ·  Rueda: acercar/alejar  ·  Arrastrar el fondo o botón central: desplazar  ·  Ctrl+0: 100 %  ·  F: ajustar");
+    }
+
+    /// <summary>Ajusta el zoom para ver la hoja entera en la ventana.</summary>
+    public void ZoomToFit()
+    {
+        var sv = Scroller;
+        if (sv is null || sv.Viewport.Width < 10 || sv.Viewport.Height < 10) return;
+        SetZoom(Math.Min(sv.Viewport.Width / BaseWidth, sv.Viewport.Height / BaseHeight));
+        sv.Offset = default;
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        // Mayús + rueda: la deja pasar al ScrollViewer para desplazar en horizontal.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) || e.Delta.Y == 0)
+        {
+            base.OnPointerWheelChanged(e);
+            return;
+        }
+        SetZoom(_zoom * Math.Pow(WheelStep, e.Delta.Y), e.GetPosition(this));
+        _mouse = SheetPosition(e);
+        e.Handled = true;
+    }
+
+    private void StartPan(PointerPressedEventArgs e)
+    {
+        if (Scroller is not { } sv) return;
+        _panStart = e.GetPosition(sv);
+        _panScroll = sv.Offset;
+        Cursor = new Cursor(StandardCursorType.SizeAll);
+        e.Pointer.Capture(this);
     }
 
     // ------------------------------------------------------------------ coordenadas
@@ -331,7 +418,13 @@ internal sealed class SchematicCanvas : Control
 
     public override void Render(DrawingContext dc)
     {
-        dc.DrawRectangle(Paper, null, new Rect(Bounds.Size));
+        using (dc.PushTransform(Matrix.CreateScale(_zoom, _zoom)))
+            RenderSheet(dc);
+    }
+
+    private void RenderSheet(DrawingContext dc)
+    {
+        dc.DrawRectangle(Paper, null, new Rect(0, 0, BaseWidth, BaseHeight));
         DrawGrid(dc);
 
         // Conductores (en simulación, en rojo los que tienen tensión).
@@ -506,7 +599,14 @@ internal sealed class SchematicCanvas : Control
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
-        _mouse = e.GetPosition(this);
+        if (_panStart is { } start && Scroller is { } sv)
+        {
+            var d = e.GetPosition(sv) - start;
+            sv.Offset = new Vector(Math.Max(0, _panScroll.X - d.X), Math.Max(0, _panScroll.Y - d.Y));
+            _mouse = SheetPosition(e);
+            return;
+        }
+        _mouse = SheetPosition(e);
         if (_drag is not null && Sim is null)
         {
             var (gx, gy) = ToGrid(_mouse);
@@ -520,8 +620,15 @@ internal sealed class SchematicCanvas : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
-        _mouse = e.GetPosition(this);
+        _mouse = SheetPosition(e);
         var props = e.GetCurrentPoint(this).Properties;
+
+        // Botón central: desplazar la hoja, tanto editando como simulando.
+        if (props.IsMiddleButtonPressed)
+        {
+            StartPan(e);
+            return;
+        }
 
         if (Sim is not null)
         {
@@ -533,6 +640,7 @@ internal sealed class SchematicCanvas : Control
                 e.Pointer.Capture(this);
                 SelectElement(el);
             }
+            else StartPan(e);
             return;
         }
 
@@ -604,11 +712,18 @@ internal sealed class SchematicCanvas : Control
             InvalidateVisual();
             return;
         }
+        // Clic en el fondo: quita la selección y, si se arrastra, desplaza la hoja.
         SelectElement(null);
+        StartPan(e);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (_panStart is not null)
+        {
+            _panStart = null;
+            Cursor = null;
+        }
         if (_simPressed is { } id && Sim is not null)
         {
             Sim.PointerUp(id);
@@ -621,6 +736,26 @@ internal sealed class SchematicCanvas : Control
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        switch (e.Key)
+        {
+            case Key.D0 or Key.NumPad0 when ctrl:
+                SetZoom(1);
+                e.Handled = true;
+                return;
+            case Key.OemPlus or Key.Add when ctrl:
+                SetZoom(_zoom * WheelStep * WheelStep);
+                e.Handled = true;
+                return;
+            case Key.OemMinus or Key.Subtract when ctrl:
+                SetZoom(_zoom / (WheelStep * WheelStep));
+                e.Handled = true;
+                return;
+            case Key.F when !ctrl:
+                ZoomToFit();
+                e.Handled = true;
+                return;
+        }
         if (Sim is not null) return;
         switch (e.Key)
         {
