@@ -22,6 +22,26 @@ A la izquierda está la lista de **piezas**, agrupada: Mando y señales, PLC y A
 
 En edición, cada pieza enseña sus datos principales; en marcha, sus valores en vivo (velocidad, corriente, nivel…).
 
+La mesa se ve de dos formas, en dos pestañas sobre el mismo montaje: **🧊 Vista 3D** (los equipos sobre la mesa) y **🔗 Diagrama de bloques** (cómo se conecta cada pieza por dentro). Lo que cambias en una se ve en la otra.
+
+## Vista 3D: los equipos sobre la mesa
+<!-- contexto: Vista 3D -->
+<!-- palabras: 3d, tres dimensiones, vista 3d, equipos, maqueta, girar, orbitar, mesa 3d, ver en 3d -->
+Cada pieza aparece como un equipo sobre su placa: cajas de pulsadores y pilotos, el PLC con sus LED de entradas y salidas, la placa Arduino con sus relés, el contactor, el motor con aletas, la turbina, el tanque transparente con el agua dentro, el multímetro, el osciloscopio… Los **bornes** son los tacos de color del borde de cada placa (los mismos colores que en el diagrama) y los **cables** salen de ellos y se apoyan en la mesa.
+
+- **Girar**: arrastra el fondo con el botón izquierdo. **Desplazar**: botón derecho. **Acercar**: rueda del ratón. **Doble clic** en el fondo o `⤢ Ver todo` encuadra la mesa.
+- **Elegir** una pieza: haz clic en ella; su placa se pone azul y su ficha sale a la derecha.
+- **Mover**: arrastra la pieza por la mesa.
+- **Unir**: arrastra desde un borne hasta otro, igual que en el diagrama. Pasa el ratón por un borne para ver qué es.
+- **Poner** una pieza nueva: elígela en la lista y haz clic en la mesa.
+
+En marcha, todo se mueve con la simulación: los ejes de motores, turbinas, bombas y compresores giran a su velocidad, el agua del tanque sube y baja, los pilotos y los LED se encienden, y por los cables que llevan algo corren unas cuentas de luz (azules en las tuberías). Haz clic sobre un pulsador o un selector para accionarlo. Una placa roja o amarilla avisa de un error o de un aviso en esa pieza.
+
+## Diagrama de bloques: cómo se conecta cada pieza
+<!-- contexto: Diagrama de bloques -->
+<!-- palabras: diagrama de bloques, bloques, esquema, conexiones, detras, como se conecta, cableado, 2d -->
+Es lo que hay detrás de la vista 3D: cada pieza es un **bloque** con su nombre, sus bornes a los lados y sus datos o valores en vivo abajo, y cada unión es una línea del color de lo que lleva. Aquí se ve de un vistazo qué está unido con qué, y es la forma más cómoda de cablear montajes grandes. En marcha, los cables que llevan señal o energía se iluminan y muestran el sentido.
+
 ## Unir piezas: los bornes y sus colores
 <!-- palabras: cablear, cable, conectar, unir, borne, tuberia, eje, colores, arrastrar -->
 Para unir dos piezas, **arrastra desde un borne hasta otro**. El color del borne dice qué es:
