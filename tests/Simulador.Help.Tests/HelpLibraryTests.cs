@@ -91,6 +91,10 @@ public class HelpLibraryTests
     {
         Assert.Equal("circuitos/disenar-la-placa-pcb", Library.ForContext("circuitos", ["PCB", "Circuitos y PCB"]).Id);
         Assert.Equal("edificacion/vista-3d-recorrido-y-sol", Library.ForContext("edificacion", ["Vista 3D"]).Id);
+        // Banco de pruebas: la pestaña interna de la mesa (Avisos, Instrumentos) gana a «Mesa libre».
+        Assert.StartsWith("banco/instrumentos", Library.ForContext("banco", ["Instrumentos", "🧩 Mesa libre"]).Id);
+        Assert.StartsWith("banco/avisos", Library.ForContext("banco", ["Avisos", "🧩 Mesa libre"]).Id);
+        Assert.StartsWith("banco/mesa-libre", Library.ForContext("banco", ["🧩 Mesa libre"]).Id);
         // Sub-pestaña sin tema propio: la introducción de la guía.
         Assert.Equal("circuitos", Library.ForContext("circuitos", ["Mensajes de ngspice"]).Id);
         // Pestaña sin guía (o ninguna): la guía general.
