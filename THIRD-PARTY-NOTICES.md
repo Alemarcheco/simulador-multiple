@@ -29,6 +29,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## PdfPig
+
+La importación de planos en PDF de Tableros eléctricos usa la biblioteca [PdfPig](https://github.com/UglyToad/PdfPig)
+0.1.13 (paquete NuGet `PdfPig`), distribuida con la licencia Apache 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). Copyright (c) 2017-2024 UglyToad y colaboradores. Se usa sin cambios.
+
 ## Núcleo de Arduino (solo en las pruebas)
 
 Los archivos `tests/Simulador.Arduino.Tests/Fixtures/sketches/*.hex` son programas de ejemplo compilados con el núcleo

@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Simulador.Core.Modules;
 using Simulador.Electrico.Engine.Model;
+using Simulador.Tableros.Import;
 using Simulador.Tableros.Model;
 using Simulador.Tableros.Rendering;
 
@@ -154,6 +155,8 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         yield return new MenuCommand("Nuevo desde el esquema de Instalaciones eléctricas", FromOpenSchematic)
         { ToolTip = "Monta el tablero del esquema que tienes abierto en la pestaña Instalaciones eléctricas" };
         yield return new MenuCommand("Nuevo desde un esquema .selx…", () => _ = FromSelxAsync());
+        yield return new MenuCommand("Importar plano PDF…", () => _ = ImportPdfAsync())
+        { ToolTip = "Lee un plano eléctrico en PDF (de cualquier programa de CAD) y monta el tablero solo: aparatos, bornes, hilos, envolvente y canaletas" };
         yield return new MenuCommand("Abrir…", () => _ = OpenAsync()) { ToolTip = "Abrir un tablero .tablero", SeparatorBefore = true };
         yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
         yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
@@ -384,6 +387,38 @@ internal sealed class TablerosView : DockPanel, IMenuSource
             _host.SetStatus($"No se pudo leer {Path.GetFileName(path)}: {ex.Message}");
         }
     }
+
+    private async Task ImportPdfAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Plano eléctrico en PDF", FileTypeFilter = [new FilePickerFileType("Plano PDF") { Patterns = ["*.pdf"] }, FilePickerFileTypes.All],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        _host.SetStatus($"Leyendo {Path.GetFileName(path)}…");
+        try
+        {
+            // Un plano de cien páginas tarda unos segundos (varios minutos si hay que reconocer letras dibujadas):
+            // se lee fuera de la interfaz y la barra de estado dice por qué página va.
+            var progress = new Progress<string>(m => _host.SetStatus($"{Path.GetFileName(path)}: {m}"));
+            var result = await Task.Run(() => PlanImporter.Import(path, PlanOcr.Default(), progress));
+            Load(result.Document, null);
+            _dirty = true;
+            Refresh();
+            _tabs.SelectedIndex = result.Document.Devices.Count > 0 ? 0 : ChecksTabIndex;
+            var d = result.Document;
+            _host.SetStatus(d.Devices.Count == 0
+                ? $"{Path.GetFileName(path)}: no se encontraron aparatos. Mira el informe en Comprobaciones."
+                : $"{Path.GetFileName(path)}: {result.Pages} páginas, {d.Devices.Count} aparatos y {d.Wires.Count} hilos. Informe completo en Comprobaciones.");
+        }
+        catch (Exception ex)
+        {
+            _host.SetStatus($"No se pudo leer {Path.GetFileName(path)}: {ex.Message}");
+        }
+    }
+
+    private const int ChecksTabIndex = 6;
 
     private async Task OpenAsync()
     {
