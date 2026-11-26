@@ -46,6 +46,7 @@ public static class PanelChecks
         var e = doc.Enclosure;
         var plate = doc.OnPlate.ToList();
         string N(double v, string f = "0") => v.ToString(f, Es);
+        foreach (var note in doc.ImportNotes) list.Add(new(CheckLevel.Info, "Plano PDF: " + note));
 
         foreach (var d in plate)
         {

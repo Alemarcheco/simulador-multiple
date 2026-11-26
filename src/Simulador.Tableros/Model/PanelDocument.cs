@@ -23,6 +23,8 @@ public sealed class PanelDocument
     public List<FieldCable> Cables { get; set; } = [];
     /// <summary>Copia del esquema eléctrico del que sale el tablero (para actualizarlo y regenerar el cableado).</summary>
     public Schematic? Schematic { get; set; }
+    /// <summary>Informe de la importación desde un plano PDF (lo encontrado y lo supuesto). Vacío si no viene de un PDF.</summary>
+    public List<string> ImportNotes { get; set; } = [];
 
     public PanelDevice? FindDevice(Guid id) => Devices.FirstOrDefault(d => d.Id == id);
     public PanelDevice? FindTag(string tag) => Devices.FirstOrDefault(d => string.Equals(d.Tag, tag, StringComparison.OrdinalIgnoreCase));

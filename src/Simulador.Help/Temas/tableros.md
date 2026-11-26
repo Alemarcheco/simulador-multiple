@@ -17,6 +17,22 @@ El programa junta en **un aparato** todo lo que tiene la misma designación (la 
 
 Si cambias el esquema, pulsa `🔄 Actualizar desde el esquema`: añade lo nuevo en el primer hueco libre, quita lo que ya no está y deja en su sitio lo que ya habías colocado.
 
+## Importar un plano en PDF
+<!-- palabras: pdf, plano, importar pdf, eplan, solidworks electrical, autocad electrical, leer plano, otro programa, cad -->
+**Archivo › Importar plano PDF…** lee un plano eléctrico hecho con otro programa (EPLAN, SolidWorks Electrical, AutoCAD Electrical, See Electrical…) y monta el tablero solo:
+
+1. Busca las **designaciones** de los aparatos (`-Q1`, `-KM1`, `=A1+B2-K3`…) en todas las páginas.
+2. En la **lista de materiales** lee la descripción, la referencia y el calibre (`C16`, `25 A`, `9-14 A`, `3P`, `5,5 kW`), y con eso decide qué es cada aparato y su ancho.
+3. En las **listas de cables** y los **planos de bornes** lee qué borne va con cuál (`-KM1:2 → -X1:1`, o en columnas `-KM1 | 2 | -X1 | 1`), con el número de hilo, la sección y el color.
+4. Elige la envolvente, coloca los aparatos en carriles con sus canaletas, pone los mandos en la puerta, tiende los hilos, saca los cables de campo y calcula si hace falta ventilador.
+
+El informe de lo que encontró y lo que supuso sale arriba en **Comprobaciones** (líneas «Plano PDF»). Después puedes mover, cambiar medidas o referencias como en cualquier tablero y guardarlo como `.tablero`.
+
+Ten en cuenta:
+- Solo se lee el **texto** del PDF, no los dibujos. Lo que está solo dibujado (una línea entre dos bornes sin lista de cables) no se puede leer: los aparatos salen colocados pero sin esos hilos. Si tu programa de CAD puede sacar la lista de cables o de bornes, inclúyela en el PDF.
+- Un PDF **escaneado** (una foto del papel) no tiene texto. Expórtalo de nuevo desde el programa de CAD, o pásalo antes por un reconocedor de texto (OCR).
+- Los aparatos que no reconoce quedan como «Aparato genérico» y el informe los nombra para que los revises.
+
 ## Placa de montaje
 <!-- contexto: Placa de montaje -->
 <!-- palabras: placa, mover, arrastrar, carril, din, canaleta, iman, colocar, aparato, zoom -->
