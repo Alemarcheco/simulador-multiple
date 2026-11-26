@@ -9,7 +9,7 @@ public class HelpLibraryTests
     // Los Id de las pestañas de la aplicación (IModule.Id). Si se añade un módulo, añade aquí su guía.
     public static TheoryData<string> ModuleIds => new()
     {
-        "general", "circuitos", "edificacion", "electrico", "plc", "hidraulica", "neumatica", "cad3d", "banco",
+        "general", "circuitos", "edificacion", "electrico", "tableros", "plc", "hidraulica", "neumatica", "cad3d", "banco",
     };
 
     [Theory]

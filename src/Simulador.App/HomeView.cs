@@ -16,6 +16,7 @@ public sealed class HomeView : UserControl
         ["circuitos"] = "Esquemas electrónicos, simulación con osciloscopio, placa PCB y archivos para fabricarla.",
         ["edificacion"] = "Planos de vivienda en 2D, vista 3D, recorrido, soleamiento y exportación DXF, PDF e IFC.",
         ["electrico"] = "Esquemas de mando y potencia con contactores, protecciones y motores simulados en tiempo real.",
+        ["tableros"] = "Diseño físico de cuadros y paneles: placa, carril DIN, canaletas, puerta, 3D, cableado y materiales.",
         ["plc"] = "Programa el PLC en Ladder, FBD, ST, IL o GRAFCET, y Arduino, ESP32 o Pico con bloques o código.",
         ["hidraulica"] = "Redes de tuberías con bombas, depósitos y válvulas: presiones, caudales y golpe de ariete.",
         ["neumatica"] = "Cilindros, válvulas y compresores, con el movimiento simulado y vista en 3D.",

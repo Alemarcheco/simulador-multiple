@@ -54,6 +54,8 @@ internal sealed class ElectricoView : DockPanel, IMenuSource
         LoadImportedSymbols();
 
         _canvas = new SchematicCanvas(_catalog);
+        // La pestaña Tableros eléctricos puede pedir el esquema abierto para montar su tablero.
+        ModuleExchange.Publish(ModuleExchange.ElectricSchematic, () => _canvas.Schematic.ToJson());
         _props = new PropertiesPanel(_catalog, () => _presets);
         _canvas.SelectionChanged += () => _props.Show(_canvas.Selected, _sim is not null);
         _canvas.Modified += () => { _dirty = true; UpdateTitle(); };
