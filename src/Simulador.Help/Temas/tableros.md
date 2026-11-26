@@ -91,6 +91,26 @@ Haz clic en un aviso con designación para ir al aparato.
 <!-- palabras: envolvente, armario, caja, medida, tamaño, ip, fondo, poliester, pie -->
 Sin nada seleccionado, Propiedades muestra la envolvente: tipo (mural, de pie, poliéster), medida normalizada o a medida, **doble frente**, grado IP, temperatura ambiente, máxima interior y ventilador. `Redistribuir en esta medida` recoloca los aparatos sin cambiar la caja.
 
+## Armarios de fabricante
+<!-- palabras: armario, envolvente, gabinete, caja, fabricante, marca, rittal, ax, vx25, eaton, xeffect, cs, hoffman, nvent, concept, csd, schneider, crn, panelset, himel, abb, sr2, placa de montaje, dos hojas, zocalo -->
+Sin nada seleccionado, en Propiedades (Envolvente) elige **Fabricante del armario**, luego la **Serie** y el **Modelo** (alto × ancho × fondo en mm). La placa de montaje, la puerta (una o dos hojas), el grado IP, el color y el zócalo de los armarios de pie toman las medidas del modelo, en la placa, la puerta, la Vista 3D y la lista de materiales.
+
+| Fabricante | Serie | Tipo | Modelos |
+|---|---|---|---|
+| Rittal | AX | caja compacta mural, IP66/IP55 | 23 |
+| Rittal | VX25 | armario de pie, IP55, 1 o 2 hojas | 15 |
+| Eaton | xEffect CS | armario mural, IP66 (IP55 con 2 hojas) | 55 |
+| nVent Hoffman | Concept CSD | armario mural, NEMA 4/12, IP66 | 46 |
+| Schneider Electric | PanelSeT CRN (antes Himel CRN) | armario mural, IP66 | 13 |
+| ABB | SR2 | armario mural, IP65 | 23 |
+
+- **Elegir el más pequeño que sirva** prueba los modelos de la marca de menor a mayor y redistribuye los aparatos en el primero en que caben. Si ninguno alcanza, vuelve a las medidas genéricas.
+- Con **Doble frente** solo valen armarios de pie de 500 mm de fondo o más (Rittal VX25).
+- Si cambias a mano el ancho, el alto o el fondo, la envolvente pasa a ser **a medida** y la placa vuelve a ser la caja menos 25 mm por lado.
+- Bajo el modelo se indica qué medidas son **oficiales** (leídas en la ficha o el catálogo del fabricante) y cuáles **supuestas**. En ABB la placa es supuesta (50 mm menos que la caja), porque el catálogo no da su medida útil. En Schneider, las cajas cuya ficha no se pudo leer llevan la medida que indica su referencia (alto, ancho y fondo), y la placa sale de la ficha oficial NSYMM.
+- Con dos hojas, los mandos se colocan en la hoja izquierda, y las comprobaciones avisan si uno cae sobre la junta del centro.
+- No hay logotipos ni modelos 3D del fabricante: el armario se dibuja con sus medidas y su color (RAL 7035, o ANSI 61 en Hoffman).
+
 ## Armario de doble frente
 <!-- palabras: doble frente, doble cara, delantera, trasera, detras, espalda, dos placas, dos puertas, back to back -->
 Un armario de doble frente tiene **dos placas de montaje espalda con espalda**, una que se ve desde delante y otra desde detrás, **cada una con su puerta**. Sirve para tableros grandes que no caben en una sola cara sin hacerse muy anchos.

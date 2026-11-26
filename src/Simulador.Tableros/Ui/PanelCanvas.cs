@@ -65,10 +65,11 @@ internal sealed class PanelCanvas : Control
     // ------------------------------------------------------------------ coordenadas
 
     /// <summary>Origen de la placa dentro de la envolvente (la puerta usa el de la envolvente).</summary>
-    private double Off => _mode == Mode.Plate ? _doc.Enclosure.PlateMargin : 0;
+    private double OffX => _mode == Mode.Plate ? _doc.Enclosure.PlateLeft : 0;
+    private double OffY => _mode == Mode.Plate ? _doc.Enclosure.PlateTop : 0;
 
-    private Point ToPx(double xmm, double ymm) => new(_ox + (xmm + Off) * _scale, _oy + (ymm + Off) * _scale);
-    private (double X, double Y) ToMm(Point p) => ((p.X - _ox) / _scale - Off, (p.Y - _oy) / _scale - Off);
+    private Point ToPx(double xmm, double ymm) => new(_ox + (xmm + OffX) * _scale, _oy + (ymm + OffY) * _scale);
+    private (double X, double Y) ToMm(Point p) => ((p.X - _ox) / _scale - OffX, (p.Y - _oy) / _scale - OffY);
     private Rect R(double x, double y, double w, double h) => new(ToPx(x, y), new Size(Math.Max(0, w * _scale), Math.Max(0, h * _scale)));
 
     private void AutoFit()
@@ -106,7 +107,7 @@ internal sealed class PanelCanvas : Control
         ctx.DrawRectangle(EnclosureFill, new Pen(Brushes.DimGray, 2), outer, 4, 4);
         if (_mode == Mode.Plate) RenderPlate(ctx);
         else RenderDoor(ctx);
-        DrawText(ctx, $"{e.Width:0} × {e.Height:0} × {e.Depth:0} mm", outer.BottomLeft + new Point(0, 4), 11, Brushes.DimGray);
+        DrawText(ctx, (e.Reference is null ? "" : $"{e.Brand} {e.Reference} · ") + $"{e.Width:0} × {e.Height:0} × {e.Depth:0} mm (an × al × f) · placa {e.PlateWidth:0} × {e.PlateHeight:0}", outer.BottomLeft + new Point(0, 4), 11, Brushes.DimGray);
     }
 
     private void RenderPlate(DrawingContext ctx)
@@ -166,11 +167,25 @@ internal sealed class PanelCanvas : Control
         var e = _doc.Enclosure;
         // Silueta de lo que hay detrás en la placa, para no chocar con los mandos.
         foreach (var d in _doc.PlateOf(Rear))
-            ctx.FillRectangle(Ghost, R(d.X + e.PlateMargin, d.Y + e.PlateMargin, d.Width, d.Height));
-        // Maneta.
-        ctx.FillRectangle(Brushes.DimGray, R(e.Width - 45, e.Height / 2 - 60, 18, 120), 4);
-        // Bisagras a la izquierda.
-        for (var y = 0.15; y < 1; y += 0.7) ctx.FillRectangle(Brushes.Gray, R(-6, e.Height * y, 8, 50));
+            ctx.FillRectangle(Ghost, R(d.X + e.PlateLeft, d.Y + e.PlateTop, d.Width, d.Height));
+        if (e.Doors > 1)
+        {
+            // Dos hojas: junta en el centro, manetas a los lados de la junta y bisagras a los dos lados.
+            ctx.DrawLine(new Pen(Brushes.DimGray, 2), ToPx(e.Width / 2, 0), ToPx(e.Width / 2, e.Height));
+            ctx.FillRectangle(Brushes.DimGray, R(e.Width / 2 - 40, e.Height / 2 - 60, 18, 120), 4);
+            for (var y = 0.15; y < 1; y += 0.7)
+            {
+                ctx.FillRectangle(Brushes.Gray, R(-6, e.Height * y, 8, 50));
+                ctx.FillRectangle(Brushes.Gray, R(e.Width - 2, e.Height * y, 8, 50));
+            }
+        }
+        else
+        {
+            // Maneta.
+            ctx.FillRectangle(Brushes.DimGray, R(e.Width - 45, e.Height / 2 - 60, 18, 120), 4);
+            // Bisagras a la izquierda.
+            for (var y = 0.15; y < 1; y += 0.7) ctx.FillRectangle(Brushes.Gray, R(-6, e.Height * y, 8, 50));
+        }
         foreach (var d in _doc.DoorOf(Rear)) DrawDevice(ctx, d);
     }
 

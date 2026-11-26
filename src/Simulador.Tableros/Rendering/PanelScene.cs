@@ -20,7 +20,7 @@ public sealed class PanelScene
     public Vector3 Min { get; private set; }
     public Vector3 Max { get; private set; }
 
-    private const uint EnclosureColor = 0xFFD5D8D4, PlateColor = 0xFFDCCFA6, RailColor = 0xFFB9C0C7, DuctColor = 0xFF9EA4AA, DuctCover = 0xFFB4BAC0;
+    private const uint DefaultEnclosureColor = 0xFFD5D8D4, PlinthColor = 0xFF2E3236, PlateColor = 0xFFDCCFA6, RailColor = 0xFFB9C0C7, DuctColor = 0xFF9EA4AA, DuctCover = 0xFFB4BAC0;
 
     /// <summary>Sistema local (u a lo ancho, v hacia fuera, w hacia arriba) para poner cajas giradas (puerta).</summary>
     private readonly record struct Basis(Vector3 Origin, Vector3 U, Vector3 V, Vector3 W)
@@ -35,10 +35,14 @@ public sealed class PanelScene
         return s;
     }
 
+    /// <summary>Color de la chapa: el del modelo de catálogo (RAL 7035, ANSI 61…) o el gris de serie.</summary>
+    private uint EnclosureColor = DefaultEnclosureColor;
+
     private void Compose(PanelDocument doc, IReadOnlyList<WireRoute>? routes, PanelSceneOptions o)
     {
         var e = doc.Enclosure;
-        double W = e.Width / 1000, H = e.Height / 1000, D = e.Depth / 1000, m = e.PlateMargin / 1000;
+        EnclosureColor = e.Color ?? DefaultEnclosureColor;
+        double W = e.Width / 1000, H = e.Height / 1000, D = e.Depth / 1000;
         const double t = 0.0015;
         // Mundo: X = ancho, Y = fondo (0 = frente), Z = alto. "Frente" local: v hacia −Y.
         var front = new Basis(Vector3.Zero, Vector3.UnitX, -Vector3.UnitY, Vector3.UnitZ);
@@ -53,11 +57,14 @@ public sealed class PanelScene
             Box(new(0, 0, 0), new((float)W, (float)D, (float)t), EnclosureColor);
         }
 
+        // Zócalo de 100 mm (armarios de pie), algo metido hacia dentro.
+        if (e.Plinth) Box(new(0.01f, 0.01f, -0.1f), new((float)W - 0.01f, (float)D - 0.01f, 0), PlinthColor);
+
         Side(doc, routes, o, rear: false);
         if (e.DoubleFront) Side(doc, routes, o, rear: true);
 
         // Caja envolvente para encuadrar.
-        var min = new Vector3(0, 0, 0);
+        var min = new Vector3(0, 0, e.Plinth ? -0.1f : 0);
         var max = new Vector3((float)W, (float)D, (float)H);
         if (o.ShowDoor && o.DoorAngleDeg > 5)
         {
@@ -76,15 +83,15 @@ public sealed class PanelScene
     private void Side(PanelDocument doc, IReadOnlyList<WireRoute>? routes, PanelSceneOptions o, bool rear)
     {
         var e = doc.Enclosure;
-        double W = e.Width / 1000, H = e.Height / 1000, D = e.Depth / 1000, m = e.PlateMargin / 1000;
+        double W = e.Width / 1000, H = e.Height / 1000, D = e.Depth / 1000, mx = e.PlateLeft / 1000, mz = e.PlateTop / 1000;
         double pw = e.PlateWidth / 1000, ph = e.PlateHeight / 1000;
         double plateY = e.DoubleFront ? (rear ? D / 2 + 0.002 : D / 2 - 0.002) : D - 0.02;
-        if (rear) Box(new((float)m, (float)(plateY - 0.002), (float)(H - m - ph)), new((float)(m + pw), (float)plateY, (float)(H - m)), PlateColor);
-        else Box(new((float)m, (float)plateY, (float)(H - m - ph)), new((float)(m + pw), (float)(plateY + 0.002), (float)(H - m)), PlateColor);
+        if (rear) Box(new((float)mx, (float)(plateY - 0.002), (float)(H - mz - ph)), new((float)(mx + pw), (float)plateY, (float)(H - mz)), PlateColor);
+        else Box(new((float)mx, (float)plateY, (float)(H - mz - ph)), new((float)(mx + pw), (float)(plateY + 0.002), (float)(H - mz)), PlateColor);
 
         Vector3 P(double xmm, double ymm, double depthFromPlate) => rear
-            ? new((float)(W - m - xmm / 1000), (float)(plateY + depthFromPlate), (float)(H - m - ymm / 1000))
-            : new((float)(m + xmm / 1000), (float)(plateY - depthFromPlate), (float)(H - m - ymm / 1000));
+            ? new((float)(W - mx - xmm / 1000), (float)(plateY + depthFromPlate), (float)(H - mz - ymm / 1000))
+            : new((float)(mx + xmm / 1000), (float)(plateY - depthFromPlate), (float)(H - mz - ymm / 1000));
 
         foreach (var r in doc.RailsOf(rear))
         {
@@ -124,26 +131,47 @@ public sealed class PanelScene
         // Puerta: la delantera con bisagra a la izquierda; la trasera, a la izquierda vista desde detrás.
         if (!o.ShowDoor) return;
         var ang = Math.Clamp(o.DoorAngleDeg, 0, 180) * Math.PI / 180;
-        var door = rear
-            ? new Basis(new Vector3((float)W, (float)D, 0), new Vector3((float)-Math.Cos(ang), (float)Math.Sin(ang), 0),
-                new Vector3((float)Math.Sin(ang), (float)Math.Cos(ang), 0), Vector3.UnitZ)
-            : new Basis(Vector3.Zero, new Vector3((float)Math.Cos(ang), (float)-Math.Sin(ang), 0),
-                new Vector3((float)-Math.Sin(ang), (float)-Math.Cos(ang), 0), Vector3.UnitZ);
-        BoxIn(door, 0, W, 0, 0.02, 0, H, EnclosureColor);
-        // Junta de goma alrededor y bolsillo para planos.
-        BoxIn(door, 0.02, W - 0.02, -0.004, 0, 0.02, 0.03, 0xFF2B2F33);
-        BoxIn(door, 0.02, W - 0.02, -0.004, 0, H - 0.03, H - 0.02, 0xFF2B2F33);
-        BoxIn(door, 0.02, 0.03, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
-        BoxIn(door, W - 0.03, W - 0.02, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
-        BoxIn(door, W * 0.25, W * 0.75, -0.012, 0, 0.08, 0.08 + Math.Min(0.3, H * 0.3), 0xFF5C6670);
-        foreach (var d in doc.DoorOf(rear)) DoorDevice(door, d, H);
-        // Maneta.
-        BoxIn(door, W - 0.06, W - 0.035, 0.02, 0.045, H / 2 - 0.06, H / 2 + 0.06, 0xFF2B2F33);
+        float c = (float)Math.Cos(ang), sn = (float)Math.Sin(ang);
+        // Cada hoja con su base: At(x, …) recibe la X de la puerta cerrada (0 = bisagra izquierda vista de frente).
+        var hinged = rear
+            ? new Basis(new Vector3((float)W, (float)D, 0), new Vector3(-c, sn, 0), new Vector3(sn, c, 0), Vector3.UnitZ)
+            : new Basis(Vector3.Zero, new Vector3(c, -sn, 0), new Vector3(-sn, -c, 0), Vector3.UnitZ);
+        var leaves = new List<(Basis B, double U0, double U1, bool HandleRight)>();
+        if (e.Doors > 1)
+        {
+            // Dos hojas: la segunda con bisagra al otro lado, gira al revés.
+            var second = rear
+                ? new Basis(new Vector3((float)W * c, (float)(D + W * sn), 0), new Vector3(-c, -sn, 0), new Vector3(-sn, c, 0), Vector3.UnitZ)
+                : new Basis(new Vector3((float)(W - W * c), (float)(-W * sn), 0), new Vector3(c, sn, 0), new Vector3(sn, -c, 0), Vector3.UnitZ);
+            leaves.Add((hinged, 0, W / 2, true));
+            leaves.Add((second, W / 2, W, false));
+        }
+        else leaves.Add((hinged, 0, W, true));
+        foreach (var (door, u0, u1, handleRight) in leaves)
+        {
+            BoxIn(door, u0 + 0.001, u1 - 0.001, 0, 0.02, 0, H, EnclosureColor);
+            // Junta de goma alrededor.
+            BoxIn(door, u0 + 0.02, u1 - 0.02, -0.004, 0, 0.02, 0.03, 0xFF2B2F33);
+            BoxIn(door, u0 + 0.02, u1 - 0.02, -0.004, 0, H - 0.03, H - 0.02, 0xFF2B2F33);
+            BoxIn(door, u0 + 0.02, u0 + 0.03, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
+            BoxIn(door, u1 - 0.03, u1 - 0.02, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
+            // Maneta junto al cierre.
+            var hx = handleRight ? u1 - 0.06 : u0 + 0.035;
+            BoxIn(door, hx, hx + 0.025, 0.02, 0.045, H / 2 - 0.06, H / 2 + 0.06, 0xFF2B2F33);
+        }
+        // Bolsillo para planos en la primera hoja.
+        var (first, f0, f1, _) = leaves[0];
+        BoxIn(first, f0 + (f1 - f0) * 0.25, f0 + (f1 - f0) * 0.75, -0.012, 0, 0.08, 0.08 + Math.Min(0.3, H * 0.3), 0xFF5C6670);
+        foreach (var d in doc.DoorOf(rear))
+        {
+            var cx = (d.X + d.Width / 2) / 1000;
+            DoorDevice(leaves.Count > 1 && cx >= W / 2 ? leaves[1].B : leaves[0].B, d, H);
+        }
         if (!rear && o.ShowWires && routes is not null && routes.Any(r => r.FromDoor || r.ToDoor))
         {
             // Manguera de la puerta: de la canaleta izquierda a la bisagra.
             var z = H / 2;
-            Lines.Add((new Vector3((float)(m + 0.02), (float)(plateY - 0.03), (float)z), new Vector3(0.01f, 0.01f, (float)z), 0xFF505860, 3f));
+            Lines.Add((new Vector3((float)(mx + 0.02), (float)(plateY - 0.03), (float)z), new Vector3(0.01f, 0.01f, (float)z), 0xFF505860, 3f));
         }
     }
 
