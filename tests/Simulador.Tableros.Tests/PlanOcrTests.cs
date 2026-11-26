@@ -70,9 +70,10 @@ public class PlanOcrTests
             Assert.InRange(first.X, 90, 125);
 
             var r = PlanImporter.Import(Drawn, ocr);
-            Assert.NotNull(r.Document.FindTag("CB1"));
-            Assert.NotNull(r.Document.FindTag("CB120"));
-            Assert.NotEmpty(r.Document.Wires);
+            var seen = $"{ocr.Name} leyó: {text} | aparatos: {string.Join(", ", r.Document.Devices.Select(d => d.Tag))}";
+            Assert.True(r.Document.FindTag("CB1") is not null, seen);
+            Assert.True(r.Document.FindTag("CB120") is not null, seen);
+            Assert.True(r.Document.Wires.Count > 0, seen);
         }
     }
 }

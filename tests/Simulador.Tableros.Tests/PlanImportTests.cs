@@ -149,7 +149,7 @@ public class PlanImportTests
         Line(140, "F1(L)", "/", "TB-120L-1(1),", "TB-120L-1(1)", "/", "CB1(4)");
         Line(160, "CB1");
         Line(168, "6", "AMP");
-        Line(200, "CB2(3)", "/", "CB120(4)");
+        Line(200, "CB2", "(3)", "/", "CB120(", "4)"); // partido por el OCR
         Line(220, "CBL(4)", "/", "CB2(4)"); // ruido del OCR: «CBL» sin número, una sola vez
         plan.Pages.Add(new PlanPage { Number = 13, Width = 1190, Height = 842, Words = words });
 

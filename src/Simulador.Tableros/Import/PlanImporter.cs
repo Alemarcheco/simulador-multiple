@@ -396,6 +396,9 @@ public static partial class PlanImporter
     [GeneratedRegex(@"([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\(([A-Za-z0-9+\-]{1,5})\)\s*/\s*([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\(([A-Za-z0-9+\-]{1,5})\)")]
     private static partial Regex WireLabelRx();
 
+    [GeneratedRegex(@"(?<=[A-Za-z0-9])\s+(?=\()|(?<=\()\s+|\s+(?=\))")]
+    private static partial Regex SpacesInRefRx();
+
     [GeneratedRegex(@"^(TB|TS|XT|XD|X)-?([A-Z0-9]+(?:-[A-Z0-9]+)*)-(\d{1,3})$")]
     private static partial Regex StripTerminalRx();
 
@@ -404,6 +407,8 @@ public static partial class PlanImporter
     {
         var text = string.Join(' ', line.Select(w => w.Text));
         if (!text.Contains('/') || !text.Contains('(')) yield break;
+        // Cada OCR parte distinto: «CB1 (3)», «CB1( 3 )», «CB1(3)/CB120(4)».
+        text = SpacesInRefRx().Replace(text, "");
         foreach (Match m in WireLabelRx().Matches(text))
         {
             var a = NormalizeRef(m.Groups[1].Value, m.Groups[2].Value);
