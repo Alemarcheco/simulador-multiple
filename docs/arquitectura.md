@@ -66,6 +66,7 @@ Los contratos entre simuladores se acuerdan entre los responsables de cada módu
 | `Simulador.Core.Pcb` | `BoardExport` (contorno, taladros, componentes de una placa) | Circuitos y PCB |
 | `Simulador.Core.Libraries` | Importadores KiCad/SPICE y modelo neutro de símbolos, huellas y modelos | Circuitos y PCB |
 | `Simulador.Core.Building` | `IBuildingModel`: niveles, muros, huecos, losas, habitaciones, elementos colocados (`PlacedFixture`) y rutas (`Route`) | Edificación |
+| `Simulador.Core.Modules.ModuleExchange` | Documento abierto que una pestaña ofrece a otra (el esquema de Instalaciones eléctricas para Tableros) | Tableros eléctricos |
 | `Simulador.Core.Model3D` | `AnimatedModel` (piezas móviles y conectores para la vista animada) | Diseño 3D |
 
 ## Unidades
@@ -192,3 +193,16 @@ Pestaña que junta piezas de varios módulos en una sola simulación con el relo
 - **Montajes** (`Scenarios/`): llenado de tanque (PLC real en texto estructurado → contactor con térmico → motor → bomba y red hidráulica real del módulo Hidráulica → tanque con transmisor de nivel), turbogenerador en isla con regulador PI y turbocompresor con depósito de aire regulado por el PLC.
 - **Equipos genéricos** (`Generic/`): red trifásica, contactor con relé térmico, motor asíncrono (Kloss), generador síncrono en isla, carga eléctrica, turbina (vapor, gas o hidráulica) con limitador y disparo por sobrevelocidad, compresor, depósito de aire, transmisores de señal y regulador PI. Son modelos sencillos con parámetros de placa; cuando cada módulo publique su `ISimComponentFactory` se usan los suyos.
 - **Vista** (`Ui/`): animación 2D, marcha/pausa/paso/velocidad, mandos y fallos, valores, lista de conexiones (bornes, cables, ejes, tuberías), programa del PLC y tendencias. Los cambios desde la interfaz pasan por `SimRunner.Post`, que los ejecuta en el hilo de simulación.
+
+## Tableros eléctricos (`Simulador.Tableros`, Order 22)
+
+Diseño físico de cuadros y paneles de automatización a partir del esquema de Instalaciones eléctricas (archivo `.tablero`, JSON, medidas en mm).
+
+- **Modelo** (`Model/`): `PanelDocument` (envolvente, carriles DIN, canaletas, aparatos, hilos, cables de campo y copia del esquema). `DeviceLibrary`: modelos genéricos con medidas típicas (módulos de 18 mm, contactores de 45 mm, Ø22 mm en la puerta), sin catálogo de ninguna marca; el usuario escribe su referencia.
+- **Enlace con el esquema** (`SchematicImport`): un aparato por designación (bobina + polos + contactos de `KM1` = un contactor), ubicación placa/puerta/campo, regletas `X0` (acometida) y `X1` (campo), bornes sueltos del esquema en su regleta, potenciales con tipo, sección y color (potencia negro, neutro azul claro, mando rojo, continua azul oscuro, PE verde-amarillo) y cables de campo. `PanelBuilder.UpdateFromSchematic` conserva lo colocado. La pestaña lee el esquema abierto con `ModuleExchange.ElectricSchematic`.
+- **Distribución** (`AutoLayout`): envolvente normalizada más pequeña, filas de carril separadas por canaletas, mandos de la puerta sin chocar por fondo con lo de detrás.
+- **Cableado** (`DuctRouter`): hilos en cadena por potencial (máximo dos por borne) y recorrido más corto por el eje de las canaletas (Dijkstra), longitud con 60 mm por punta y bucle de 30 cm para la puerta; llenado de cada canaleta.
+- **Comprobaciones** (`PanelChecks`): solapes, fuera de placa, sin carril, fondo, canaletas > 50/75 %, reserva de carril, bornes con más de dos hilos, coherencia con el esquema y temperatura interior (superficie eficaz de IEC 60890, ventilador necesario).
+- **Listas** (`Reports`): materiales, cableado de-a, plano de bornes y cables de campo, a CSV (`;`) o al portapapeles.
+- **Vista** (`Ui/`, `Rendering/PanelScene.cs`): placa y puerta editables con imán al carril, 3D con el rasterizador común (puerta con apertura regulable).
+- **Pendiente**: exportar a PDF/DXF el frente y el taladrado de la puerta, peines de conexión, canaletas con tapas de colores, enlace con el Banco de pruebas.

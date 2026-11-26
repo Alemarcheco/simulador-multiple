@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Módulo "Tableros eléctricos": diseño de cuadros y paneles de automatización (envolvente, placa, carril DIN,
+       canaletas, aparamenta, borneras, cableado, listas de materiales y vista 3D) a partir del esquema eléctrico. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Simulador.Tableros</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+    <ProjectReference Include="..\Simulador.Electrico.Engine\Simulador.Electrico.Engine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Simulador.Tableros.Tests" />
+  </ItemGroup>
+</Project>
