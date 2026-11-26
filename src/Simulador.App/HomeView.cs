@@ -24,7 +24,7 @@ public sealed class HomeView : UserControl
         ["banco"] = "Une varios simuladores: PLC, contactores, motores, bombas, tanques y turbinas trabajando juntos.",
     };
 
-    public HomeView(IReadOnlyList<IModule> modules, Action<IModule> open)
+    public HomeView(IReadOnlyList<IModule> modules, Action<IModule> open, Action? checkUpdates = null)
     {
         var muted = (IBrush)Application.Current!.FindResource("SimMutedBrush")!;
 
@@ -50,6 +50,7 @@ public sealed class HomeView : UserControl
                             Foreground = muted,
                             TextWrapping = TextWrapping.Wrap,
                         },
+                        UpdateRow(muted, checkUpdates),
                     },
                 },
             },
@@ -89,6 +90,34 @@ public sealed class HomeView : UserControl
         };
 
         Content = new ScrollViewer { Content = body };
+    }
+
+    /// <summary>Versión instalada y botón "Buscar actualizaciones".</summary>
+    private static Control UpdateRow(IBrush muted, Action? checkUpdates)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 8, 0, 0) };
+        row.Children.Add(new TextBlock
+        {
+            Text = $"Versión {Actualizador.VersionActual}",
+            FontSize = 13,
+            Foreground = muted,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        if (checkUpdates is not null)
+        {
+            var button = new Button { Content = "🔄 Buscar actualizaciones", Padding = new Thickness(10, 3), FontSize = 13 };
+            ToolTip.SetTip(button, "Mira si hay una versión nueva del programa y la instala");
+            button.Click += (_, _) => checkUpdates();
+            void Nueva(VersionPublicada v)
+            {
+                button.Content = $"⬇ Actualizar a la versión {v.Version}";
+                button.Classes.Add("accent");
+            }
+            if (Actualizador.Disponible is { } ya) Nueva(ya);
+            Actualizador.HayNueva += v => Avalonia.Threading.Dispatcher.UIThread.Post(() => Nueva(v));
+            row.Children.Add(button);
+        }
+        return row;
     }
 
     private static Button Card(IModule module, Action<IModule> open, IBrush muted)

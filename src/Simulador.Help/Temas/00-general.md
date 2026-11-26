@@ -61,8 +61,16 @@ Las pestañas no son islas:
 - El **Banco de pruebas** junta en una sola simulación piezas de varios módulos: PLC, esquema eléctrico, motor, bomba, red hidráulica, turbinas y generadores.
 
 ## Instalar y actualizar
-<!-- palabras: descargar, instalador, version, actualizacion, nueva version, windows protegio -->
-Cada mejora publica una versión nueva. El instalador de la última versión está en la página de Releases del proyecto en GitHub (`SimuladorMultiple-Setup.exe`). No pide permisos de administrador ni necesita instalar .NET.
+<!-- palabras: descargar, instalador, version, actualizacion, actualizar, nueva version, buscar actualizaciones, windows protegio -->
+Cada mejora publica una versión nueva. Para ponerte al día desde el propio programa:
+
+1. Abre **Ayuda › Buscar actualizaciones…** (o el botón **🔄 Buscar actualizaciones** de la pestaña **Inicio**). Al arrancar, el programa también lo mira solo: si hay una versión nueva aparece un botón verde **⬇ Actualizar a la versión …** arriba a la derecha.
+2. Si hay una versión más nueva, pulsa **Actualizar ahora**. Guarda antes lo que tengas abierto.
+3. El programa descarga el instalador, se cierra, se instala encima y se vuelve a abrir solo.
+
+Hace falta conexión a internet solo para este paso. Tu versión se ve en la pestaña **Inicio** y en **Ayuda › Acerca de**.
+
+El instalador de la última versión también está en la página de Releases del proyecto en GitHub (`SimuladorMultiple-Setup.exe`). No pide permisos de administrador ni necesita instalar .NET.
 
 Como el instalador no está firmado, Windows puede mostrar «Windows protegió su PC». Pulsa **Más información** y luego **Ejecutar de todas formas**. También hay una versión portable en `.zip` que se usa sin instalar.
 

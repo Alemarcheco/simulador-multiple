@@ -21,6 +21,7 @@ public sealed class BarraMenus : Border
     private readonly Func<Control?> _activeView;
     private readonly IReadOnlyList<MenuItem> _top;
     private readonly MenuItem _help;
+    private readonly Button _actualizar;
     private bool _refreshQueued;
 
     // Para que le apliquen los estilos de "Border.menubar" (Tema/Estilo.axaml).
@@ -52,13 +53,34 @@ public sealed class BarraMenus : Border
         }
         _help.Items.Add(home);
         _help.Items.Add(new Separator());
+        var updates = new MenuItem { Header = "Buscar actualizaciones…" };
+        updates.Click += (_, _) => VentanaActualizacion.Mostrar(owner);
+        _help.Items.Add(updates);
         _help.Items.Add(about);
         _menu.Items.Add(_help);
+
+        // Aviso a la derecha de la barra cuando, al arrancar, se ve que hay una versión nueva.
+        _actualizar = new Button
+        {
+            Padding = new Thickness(10, 2),
+            Margin = new Thickness(0, 3, 8, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Color.Parse("#2EA043")),
+            Foreground = Brushes.White,
+            FontSize = 12.5,
+            IsVisible = false,
+        };
+        ToolTip.SetTip(_actualizar, "Descarga e instala la versión nueva del programa");
+        _actualizar.Click += (_, _) => VentanaActualizacion.Mostrar(owner);
+        DockPanel.SetDock(_actualizar, Avalonia.Controls.Dock.Right);
+        Actualizador.HayNueva += v => Dispatcher.UIThread.Post(() => MostrarAviso(v));
+        if (Actualizador.Disponible is { } ya) MostrarAviso(ya);
 
         Child = new DockPanel
         {
             Children =
             {
+                _actualizar,
                 Dock(new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
@@ -80,6 +102,12 @@ public sealed class BarraMenus : Border
                 _menu,
             },
         };
+    }
+
+    private void MostrarAviso(VersionPublicada v)
+    {
+        _actualizar.Content = $"⬇ Actualizar a la versión {v.Version}";
+        _actualizar.IsVisible = true;
     }
 
     private static Control Dock(Control c)

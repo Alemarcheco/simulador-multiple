@@ -31,6 +31,8 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\SimuladorMultiple.exe
+; Al actualizar desde el programa, cierra el Simulador si aún sigue abierto.
+CloseApplications=force
 ; Icono del propio instalador (el mismo logotipo que la aplicación).
 SetupIconFile=..\src\Simulador.App\Assets\icono.ico
 
@@ -49,3 +51,12 @@ Name: "{autodesktop}\Simulador multiple"; Filename: "{app}\SimuladorMultiple.exe
 
 [Run]
 Filename: "{app}\SimuladorMultiple.exe"; Description: "{cm:LaunchProgram,Simulador multiple}"; Flags: nowait postinstall skipifsilent
+; Actualización desde el propio programa (Ayuda › Buscar actualizaciones): se instala en silencio con /RELANZAR=1
+; y el programa se vuelve a abrir solo al terminar.
+Filename: "{app}\SimuladorMultiple.exe"; Flags: nowait; Check: Relanzar
+
+[Code]
+function Relanzar: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELANZAR|0}') = '1');
+end;

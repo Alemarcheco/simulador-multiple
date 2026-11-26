@@ -8,6 +8,8 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <!-- Icono del .exe, del acceso directo y de la barra de tareas -->
     <ApplicationIcon>Assets\icono.ico</ApplicationIcon>
+    <!-- Versión de las compilaciones locales; la CI pone la real con -p:Version=0.1.N (la del Release). -->
+    <Version>0.1.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
