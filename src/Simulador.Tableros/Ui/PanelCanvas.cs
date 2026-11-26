@@ -186,7 +186,17 @@ internal sealed class PanelCanvas : Control
             // Mandos redondos: anillo y botón.
             var c = rect.Center;
             var r = Math.Min(rect.Width, rect.Height) / 2;
-            if (d.Kind == "instrumento")
+            if (d.Kind == "controlador")
+            {
+                // Equipo de panel (Woodward 505, ProTech…): marco, pantalla arriba y teclado abajo.
+                ctx.DrawRectangle(body, Thin, rect, 4, 4);
+                var screen = new Rect(rect.X + rect.Width * 0.1, rect.Y + rect.Height * 0.1, rect.Width * 0.8, rect.Height * 0.38);
+                ctx.DrawRectangle(Brush(0xFF9DB7A6), Thin, screen, 2, 2);
+                for (var i = 0; i < 3; i++)
+                for (var j = 0; j < 4; j++)
+                    ctx.DrawRectangle(front, null, new Rect(rect.X + rect.Width * (0.14 + j * 0.19), rect.Y + rect.Height * (0.56 + i * 0.12), rect.Width * 0.14, rect.Height * 0.08), 1, 1);
+            }
+            else if (d.Kind == "instrumento")
             {
                 ctx.DrawRectangle(body, Thin, rect, 3, 3);
                 ctx.DrawRectangle(front, null, rect.Deflate(r * 0.15));

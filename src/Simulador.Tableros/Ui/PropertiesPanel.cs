@@ -106,6 +106,21 @@ internal sealed class PropertiesPanel : ScrollViewer
         Text("Designación", d.Tag, v => d.Tag = v.Trim());
         Text("Descripción", d.Description, v => d.Description = v);
         Text("Referencia del fabricante", d.Reference, v => d.Reference = v, "Marca y código de catálogo");
+        // Librería de fabricante: los modelos del mismo tipo (todos si el aparato es genérico).
+        var items = ManufacturerCatalog.All.Where(i => d.Kind == "aparato" || i.Kind == d.Kind).ToList();
+        if (items.Count > 0 && d.Location != DeviceLocation.Field)
+        {
+            var current = ManufacturerCatalog.Find(d.Reference);
+            Combo("Modelo de la librería de fabricante", items.Select(i => i.Display).Prepend("— Genérico (medidas típicas) —").ToArray(),
+                current is null ? 0 : items.IndexOf(current) + 1,
+                i => { if (i > 0) ManufacturerCatalog.Apply(d, items[i - 1]); });
+            if (current is not null)
+                _stack.Children.Add(new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7,
+                    Text = current.Verified ? $"Medidas de la ficha del fabricante ({current.Source})." : "Medidas típicas: la ficha del fabricante no las da; compruébalas en su catálogo.",
+                });
+        }
         Combo("Ubicación", ["Placa de montaje", "Puerta", "Fuera del tablero (campo)"], (int)d.Location, i => d.Location = (DeviceLocation)i);
         if (d.Location == DeviceLocation.Field)
         {

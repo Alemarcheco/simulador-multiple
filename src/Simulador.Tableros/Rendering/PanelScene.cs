@@ -240,6 +240,17 @@ public sealed class PanelScene
         double r = d.Width / 2000;
         switch (d.Kind)
         {
+            case "controlador":
+            {
+                // Equipo de panel: marco que sobresale, pantalla y teclado.
+                double hw = d.Width / 2000, hh = d.Height / 2000;
+                BoxIn(door, cx - hw, cx + hw, 0.02, 0.035, cz - hh, cz + hh, model.Body);
+                BoxIn(door, cx - hw * 0.8, cx + hw * 0.8, 0.035, 0.036, cz + hh * 0.02, cz + hh * 0.8, 0xFF9DB7A6);
+                BoxIn(door, cx - hw * 0.7, cx + hw * 0.7, 0.035, 0.038, cz - hh * 0.8, cz - hh * 0.2, model.Front);
+                // Por dentro, el cuerpo hacia la placa.
+                BoxIn(door, cx - hw * 0.9, cx + hw * 0.9, -d.Depth / 1000, 0, cz - hh * 0.9, cz + hh * 0.9, 0xFF3A4652);
+                break;
+            }
             case "instrumento":
                 BoxIn(door, cx - r, cx + r, 0.02, 0.03, cz - r, cz + r, model.Body);
                 BoxIn(door, cx - r * 0.85, cx + r * 0.85, 0.03, 0.031, cz - r * 0.85, cz + r * 0.85, model.Front);

@@ -111,6 +111,16 @@ Al actualizar desde el esquema, lo nuevo se pone en el primer hueco libre del ca
 <!-- palabras: sin hilos, no cablea, manual, añadido a mano -->
 Los hilos salen del esquema. Un aparato añadido a mano en el tablero no está en el esquema, así que no tiene conexiones: añádelo en **Instalaciones eléctricas** con la misma designación y pulsa `🔄 Actualizar desde el esquema`.
 
+## Librerías de fabricante
+<!-- palabras: fabricante, marca, schneider, siemens, abb, allen bradley, rockwell, woodward, 505, protech, catalogo, referencia, libreria -->
+Además de los aparatos genéricos hay librerías de **ABB**, **Allen-Bradley**, **Schneider Electric** y **Woodward**, con referencias comerciales y sus medidas. Los datos salen solo de las fichas gratuitas que publica cada fabricante en su web. No llevan logotipos: el aparato se dibuja como su tipo, pero con la medida real.
+
+- **Añadir**: `🧩 Añadir aparato › Librería Woodward` (o la marca que quieras) y elige el modelo.
+- **Cambiar un aparato que ya está**: selecciónalo y elige el modelo en **Modelo de la librería de fabricante** (Propiedades). Se ponen la referencia, la descripción, las medidas y el calor.
+- **Medidas comprobadas o típicas**: debajo del modelo se indica si las medidas vienen de la ficha del fabricante (y de cuál) o si son típicas porque la ficha no las da. Las típicas hay que comprobarlas en el catálogo antes de taladrar.
+- **Al importar un plano**: si la lista de materiales trae la referencia, se usa. Si el plano no la trae, el programa busca el texto que hay junto a cada designación: «1606-XLS» al lado de F2 la convierte en una fuente Allen-Bradley, y «PROTECH» junto a TPS-A, TPS-B y TPS-C los convierte en los tres módulos de un Woodward ProTech-TPS en la puerta. Si el plano nombra un controlador sin designación propia (por ejemplo «CONTROLADOR PRIMARIO 505D»), lo añade en la puerta. El informe de Comprobaciones dice qué aparatos asoció.
+- **Woodward**: control 505 de turbinas de vapor (356×279×102 mm, montaje en panel, o en caja NEMA 4 de 508×508×193 mm) y protección de sobrevelocidad ProTech-TPS (330×445×159 mm, en una puerta de 610 mm).
+
 ## ¿Es el catálogo de algún fabricante?
-<!-- palabras: fabricante, marca, schneider, siemens, abb, catalogo, propanel -->
-No. Son modelos genéricos con medidas típicas para que el diseño sea realista. Escribe en cada aparato la referencia de la marca que uses; las medidas se pueden ajustar en Propiedades.
+<!-- palabras: generico, medidas tipicas -->
+Los aparatos de la lista principal son genéricos, con medidas típicas para que el diseño sea realista. Para usar una marca, mira **Librerías de fabricante**, o escribe en cada aparato la referencia que uses: las medidas se pueden ajustar en Propiedades.

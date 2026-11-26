@@ -109,9 +109,10 @@ public static class AutoLayout
     {
         var door = doc.OnDoor.ToList();
         if (door.Count == 0) return true;
-        var perRow = Math.Max(1, (int)((doc.Enclosure.Width - 100) / 60));
-        var rows = (door.Count + perRow - 1) / perRow;
-        return 80 + rows * 90 < doc.Enclosure.Height * 0.6;
+        // Filas de puerta (de Ø22 y de controladores grandes) en el 60 % de arriba de la altura.
+        var rows = DoorRows(door.OrderBy(d => d.Kind == "controlador" ? 0 : 1).ToList(), doc.Enclosure.Width);
+        return rows.All(r => r.Sum(Pitch) <= doc.Enclosure.Width - 100 + 0.01)
+               && 80 + rows.Sum(r => r.Max(d => Math.Max(30, d.Height)) + 60) < doc.Enclosure.Height * 0.7;
     }
 
     /// <summary>Reparte los aparatos de la placa en filas. Con <paramref name="apply"/> = false solo comprueba si caben.</summary>
@@ -213,17 +214,14 @@ public static class AutoLayout
     public static void ArrangeDoor(PanelDocument doc)
     {
         foreach (var d in doc.OnDoor) d.Rear = false;
-        var door = doc.OnDoor.OrderBy(d => d.Kind switch { "instrumento" => 0, "seta" => 1, "selector" => 2, "pulsador" => 3, "piloto" => 4, _ => 5 })
+        var door = doc.OnDoor.OrderBy(d => d.Kind switch { "controlador" => -1, "instrumento" => 0, "seta" => 1, "selector" => 2, "pulsador" => 3, "piloto" => 4, _ => 5 })
             .ThenBy(d => d.Tag, TagComparer.Instance).ToList();
         if (door.Count == 0) return;
         var w = doc.Enclosure.Width;
-        const double pitch = 60;
-        var perRow = Math.Max(1, (int)((w - 100) / pitch));
         var y = Math.Min(200, doc.Enclosure.Height * 0.2);
-        for (var start = 0; start < door.Count; start += perRow)
+        foreach (var row in DoorRows(door, w))
         {
-            var row = door.Skip(start).Take(perRow).ToList();
-            var rowW = row.Count * pitch;
+            var rowW = row.Sum(Pitch);
             var x = (w - rowW) / 2;
             var h = row.Max(d => d.Height);
             // Baja la fila hasta que lo que lleva detrás no choque con un aparato hondo de la placa.
@@ -232,15 +230,36 @@ public static class AutoLayout
                 var xx = x;
                 foreach (var d in row)
                 {
-                    d.X = Math.Round(xx + (pitch - d.Width) / 2, 1);
+                    d.X = Math.Round(xx + (Pitch(d) - d.Width) / 2, 1);
                     d.Y = Math.Round(y + (h - d.Height) / 2, 1);
-                    xx += pitch;
+                    xx += Pitch(d);
                 }
                 if (!row.Any(d => ClashesBehind(doc, d)) || y + h > doc.Enclosure.Height - 80) break;
                 y += 10;
             }
             y += h + 60;
         }
+    }
+
+    /// <summary>Paso de un aparato de puerta: 60 mm para los de Ø22, su ancho y 30 mm para los grandes (controladores).</summary>
+    private static double Pitch(PanelDevice d) => Math.Max(60, d.Width + 30);
+
+    private static List<List<PanelDevice>> DoorRows(List<PanelDevice> door, double width)
+    {
+        var rows = new List<List<PanelDevice>>();
+        List<PanelDevice>? row = null;
+        double used = 0;
+        foreach (var d in door)
+        {
+            if (row is null || used + Pitch(d) > width - 100)
+            {
+                rows.Add(row = []);
+                used = 0;
+            }
+            row.Add(d);
+            used += Pitch(d);
+        }
+        return rows;
     }
 
     /// <summary>true si un mando de la puerta choca (por fondo) con el aparato de la placa que tiene detrás.</summary>

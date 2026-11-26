@@ -231,6 +231,9 @@ public static partial class PlanImporter
         foreach (var f in accepted.Values.OrderBy(f => f.Tag, TagComparer.Instance))
             doc.Devices.Add(MakeDevice(f));
 
+        // Librerías de fabricante: por referencia o por el texto que hay junto a la designación.
+        var catalog = CatalogMatcher.Apply(plan, doc);
+
         // Potenciales: une los extremos que comparten borne (un renglón de la lista = un potencial).
         var nets = BuildNets(links, doc);
         AddFieldCables(doc, nets);
@@ -272,6 +275,11 @@ public static partial class PlanImporter
         if (labelCount > 0) result.Notes.Add($"{labelCount} conexiones leídas de las etiquetas de los hilos («CB1(3) / CB120(4)»).");
         if (links.Count > 0) result.Notes.Add($"{links.Count} conexiones en total ({PagesText(listPages)}); salen {doc.Wires.Count} hilos.");
         else result.Notes.Add("No se encontraron listas de cables ni de bornes con texto: los aparatos quedan colocados pero sin hilos. Si el programa de CAD puede sacar la lista de conexiones, inclúyela en el PDF.");
+        if (catalog.Count > 0)
+            result.Notes.Add($"{catalog.Count} aparatos asociados a la librería de fabricante: " +
+                             string.Join("; ", catalog.GroupBy(m => m.Item).Select(g => $"{g.Key.FullReference} ({string.Join(", ", g.Select(m => m.Tag))})")) +
+                             ". Comprueba el modelo exacto (por ejemplo la potencia de la fuente) en Propiedades." +
+                             (catalog.Any(m => !m.Item.Verified) ? " Las que no traen medidas en la ficha del fabricante llevan medidas típicas." : ""));
         var guessed = doc.Devices.Where(d => d.Kind == "aparato").Select(d => d.Tag).ToList();
         if (guessed.Count > 0) result.Notes.Add($"Sin tipo reconocido (quedan como aparato genérico, revísalos): {string.Join(", ", guessed)}.");
         if (doc.Enclosure.DoubleFront)

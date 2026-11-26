@@ -111,6 +111,18 @@ internal sealed class TablerosView : DockPanel, IMenuSource
                 item.Click += (_, _) => AddDevice(m.Kind);
                 flyout.Items.Add(item);
             }
+        // Librerías por fabricante, en submenús por marca.
+        foreach (var brand in ManufacturerCatalog.Brands)
+        {
+            var sub = new MenuItem { Header = $"Librería {brand}" };
+            foreach (var it in ManufacturerCatalog.OfBrand(brand))
+            {
+                var item = new MenuItem { Header = $"{it.Reference} · {it.Description}" };
+                item.Click += (_, _) => AddCatalogDevice(it);
+                sub.Items.Add(item);
+            }
+            flyout.Items.Add(sub);
+        }
         add.Flyout = flyout;
         ToolTip.SetTip(add, "Añade un aparato genérico en el primer hueco libre del carril (o de la puerta).");
         bar.Children.Add(add);
@@ -310,6 +322,21 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         AutoLayout.PlaceInFreeSpot(_doc, d);
         _tabs.SelectedIndex = d.Location == DeviceLocation.Door ? 1 : 0;
         Commit($"Añadido {d.Tag}");
+        (d.Location == DeviceLocation.Door ? _door : _plate).Select(d);
+    }
+
+    private void AddCatalogDevice(CatalogItem it)
+    {
+        var model = DeviceLibrary.Get(it.Kind);
+        var n = 1;
+        while (_doc.FindTag($"{model.TagPrefix}{n}") is not null) n++;
+        var d = DeviceLibrary.Create(it.Kind, $"{model.TagPrefix}{n}");
+        ManufacturerCatalog.Apply(d, it);
+        d.Rear = Rear;
+        _doc.Devices.Add(d);
+        AutoLayout.PlaceInFreeSpot(_doc, d);
+        _tabs.SelectedIndex = d.Location == DeviceLocation.Door ? 1 : 0;
+        Commit($"Añadido {d.Tag} ({it.FullReference})");
         (d.Location == DeviceLocation.Door ? _door : _plate).Select(d);
     }
 
