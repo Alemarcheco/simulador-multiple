@@ -146,6 +146,7 @@ public sealed class WindowsOcr : IPlanOcr
     /// <summary>Script de PowerShell 5.1: abre el PDF, pasa cada página por el OCR y escribe una palabra por renglón.</summary>
     internal const string Script = """
         param([string]$Pdf, [string]$Pages, [int]$Dpi = 400)
+        # Ojo: en PowerShell las variables no distinguen mayusculas ($pageW no es $word).
         $ErrorActionPreference = 'Stop'
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         try {
@@ -190,14 +191,14 @@ public sealed class WindowsOcr : IPlanOcr
             if ($n -lt 1 -or $n -gt $doc.PageCount) { continue }
             Write-Output "PAGE`t$n"
             $page = $doc.GetPage([uint32]($n - 1))
-            $W = $page.Size.Width; $H = $page.Size.Height
+            $pageW = $page.Size.Width; $pageH = $page.Size.Height
             $tileDip = $maxPx / $scale
-            $nx = [Math]::Max(1, [Math]::Ceiling($W / ($tileDip * 0.9)))
-            $ny = [Math]::Max(1, [Math]::Ceiling($H / ($tileDip * 0.9)))
-            $tw = [Math]::Min($W, $W / $nx * 1.08); $th = [Math]::Min($H, $H / $ny * 1.08)
+            $nx = [Math]::Max(1, [Math]::Ceiling($pageW / ($tileDip * 0.9)))
+            $ny = [Math]::Max(1, [Math]::Ceiling($pageH / ($tileDip * 0.9)))
+            $tw = [Math]::Min($pageW, $pageW / $nx * 1.08); $th = [Math]::Min($pageH, $pageH / $ny * 1.08)
             for ($iy = 0; $iy -lt $ny; $iy++) {
               for ($ix = 0; $ix -lt $nx; $ix++) {
-                $x0 = [Math]::Min($W - $tw, $ix * $W / $nx); $y0 = [Math]::Min($H - $th, $iy * $H / $ny)
+                $x0 = [Math]::Min($pageW - $tw, $ix * $pageW / $nx); $y0 = [Math]::Min($pageH - $th, $iy * $pageH / $ny)
                 $opt = New-Object Windows.Data.Pdf.PdfPageRenderOptions
                 $opt.SourceRect = New-Object Windows.Foundation.Rect($x0, $y0, $tw, $th)
                 $opt.DestinationWidth = [uint32][Math]::Round($tw * $scale)
@@ -209,12 +210,12 @@ public sealed class WindowsOcr : IPlanOcr
                 $bmp = Await ($dec.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
                 $res = Await ($engine.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])
                 foreach ($line in $res.Lines) {
-                  foreach ($w in $line.Words) {
-                    $r = $w.BoundingRect
+                  foreach ($word in $line.Words) {
+                    $r = $word.BoundingRect
                     # pixeles del trozo -> DIP de la pagina -> puntos PDF (72/96)
                     $x = ($x0 + $r.X / $scale) * 0.75; $y = ($y0 + $r.Y / $scale) * 0.75
                     $ww = $r.Width / $scale * 0.75; $hh = $r.Height / $scale * 0.75
-                    $txt = $w.Text -replace "`t", ' '
+                    $txt = $word.Text -replace "`t", ' '
                     Write-Output ("W`t{0}`t{1}`t{2}`t{3}`t{4}" -f $x.ToString('0.##', $inv), $y.ToString('0.##', $inv), $ww.ToString('0.##', $inv), $hh.ToString('0.##', $inv), $txt)
                   }
                 }
