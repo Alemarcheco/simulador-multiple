@@ -22,33 +22,87 @@ public static class AutoLayout
     public const double Gap = 0; // los aparatos modulares van juntos
     public const double BigGap = 10;
 
+    /// <summary>Armarios de pie de doble frente (dos placas espalda con espalda): ancho × alto × fondo total.</summary>
+    public static readonly (double W, double H, double D)[] DoubleFrontSizes =
+    [
+        (600, 1800, 600), (800, 1800, 600), (800, 2000, 600), (1000, 2000, 600), (1200, 2000, 800), (1600, 2000, 800),
+        (2000, 2000, 800), (2400, 2000, 800), (3200, 2000, 800),
+    ];
+
     /// <summary>Coloca todo y ajusta la envolvente. Devuelve false si ni el armario más grande alcanza.</summary>
     public static bool Arrange(PanelDocument doc, bool chooseEnclosure = true)
     {
-        var plate = doc.OnPlate.ToList();
+        var plate = doc.OnPlate.OrderBy(d => SchematicImport.Order(d.Kind)).ThenBy(d => d.Tag, TagComparer.Instance).ToList();
         var maxDepth = plate.Select(d => d.Depth).DefaultIfEmpty(0).Max();
+        var e = doc.Enclosure;
         var fits = false;
+        var front = plate;
+        List<PanelDevice> rear = [];
         if (chooseEnclosure)
         {
-            foreach (var (w, h, dp) in StandardSizes)
+            foreach (var (w, h, dp) in e.DoubleFront ? DoubleFrontSizes : StandardSizes)
             {
-                if (dp - 35 < maxDepth + 10) continue;
-                doc.Enclosure.Width = w;
-                doc.Enclosure.Height = h;
-                doc.Enclosure.Depth = dp;
-                doc.Enclosure.Kind = h >= 1800 ? EnclosureKind.ArmarioDePie : EnclosureKind.MuralMetalico;
-                doc.Enclosure.AgainstWall = h < 1800;
-                if (TryRows(doc, plate, apply: false) && DoorFits(doc)) { fits = true; break; }
+                (e.Width, e.Height, e.Depth) = (w, h, dp);
+                if (e.UsableDepth < maxDepth + 10) continue;
+                e.Kind = h >= 1800 ? EnclosureKind.ArmarioDePie : EnclosureKind.MuralMetalico;
+                e.AgainstWall = h < 1800 && !e.DoubleFront;
+                (front, rear) = Split(doc, plate);
+                if (TryRows(doc, front, false, apply: false) && TryRows(doc, rear, true, apply: false) && DoorFits(doc)) { fits = true; break; }
             }
             if (!fits)
             {
-                var (w, h, dp) = StandardSizes[^1];
-                (doc.Enclosure.Width, doc.Enclosure.Height, doc.Enclosure.Depth) = (w, h, dp);
+                var (w, h, dp) = (e.DoubleFront ? DoubleFrontSizes : StandardSizes)[^1];
+                (e.Width, e.Height, e.Depth) = (w, h, dp);
+                (front, rear) = Split(doc, plate);
             }
         }
-        fits = TryRows(doc, plate, apply: true) | fits;
+        else (front, rear) = Split(doc, plate);
+        // Sin doble frente no queda nada detrás.
+        if (!e.DoubleFront)
+        {
+            foreach (var d in doc.Devices) d.Rear = false;
+            doc.Rails.RemoveAll(r => r.Rear);
+            doc.Ducts.RemoveAll(k => k.Rear);
+        }
+        fits = TryRows(doc, front, false, apply: true) & (rear.Count == 0 || TryRows(doc, rear, true, apply: true)) | fits;
+        if (e.DoubleFront && rear.Count == 0)
+        {
+            doc.Rails.RemoveAll(r => r.Rear);
+            doc.Ducts.RemoveAll(k => k.Rear);
+        }
         ArrangeDoor(doc);
         return fits;
+    }
+
+    /// <summary>
+    /// Doble frente: llena la placa delantera por orden (de la alimentación a los receptores: protecciones y
+    /// potencia delante) y lo que no cabe va a la trasera (mando, autómatas, regletas). Si todo cabe delante, se
+    /// reparte por mitades para dejar reserva en las dos caras.
+    /// </summary>
+    private static (List<PanelDevice> Front, List<PanelDevice> Rear) Split(PanelDocument doc, List<PanelDevice> plate)
+    {
+        if (!doc.Enclosure.DoubleFront || plate.Count < 2) return (plate, []);
+        var k = plate.Count;
+        while (k > 0 && !TryRows(doc, plate.Take(k).ToList(), false, apply: false)) k--;
+        // Reparto equilibrado: como mucho la mitad de la anchura total delante, sin partir un grupo si se puede.
+        var total = plate.Sum(d => d.Width);
+        var half = 0;
+        double acc = 0;
+        while (half < k && acc + plate[half].Width <= total / 2 + 1) acc += plate[half++].Width;
+        var cut = Math.Min(k, Math.Max(1, half));
+        // Si el corte cae dentro de un grupo, lo lleva al principio del grupo siguiente.
+        var grouped = cut;
+        while (grouped < k && grouped > 0 && Group(plate[grouped].Kind) == Group(plate[grouped - 1].Kind)) grouped++;
+        bool Fits(int c) => TryRows(doc, plate.Take(c).ToList(), false, apply: false) && TryRows(doc, plate.Skip(c).ToList(), true, apply: false);
+        if (Fits(grouped)) cut = grouped;
+        else
+        {
+            // Si no, el corte más cercano a la mitad con el que caben las dos caras (primero en cambios de grupo).
+            var candidates = Enumerable.Range(1, k).OrderBy(c => c < k && Group(plate[c].Kind) == Group(plate[c - 1].Kind) ? 1 : 0).ThenBy(c => Math.Abs(c - cut));
+            var found = candidates.Cast<int?>().FirstOrDefault(c => Fits(c!.Value));
+            cut = found ?? grouped;
+        }
+        return (plate.Take(cut).ToList(), plate.Skip(cut).ToList());
     }
 
     private static bool DoorFits(PanelDocument doc)
@@ -61,8 +115,9 @@ public static class AutoLayout
     }
 
     /// <summary>Reparte los aparatos de la placa en filas. Con <paramref name="apply"/> = false solo comprueba si caben.</summary>
-    private static bool TryRows(PanelDocument doc, List<PanelDevice> devices, bool apply)
+    private static bool TryRows(PanelDocument doc, List<PanelDevice> devices, bool rear, bool apply)
     {
+        if (devices.Count == 0 && !apply) return true;
         var pw = doc.Enclosure.PlateWidth;
         var ph = doc.Enclosure.PlateHeight;
         double x0 = SideDuct + Clearance - 10, x1 = pw - SideDuct - Clearance + 10;
@@ -106,11 +161,12 @@ public static class AutoLayout
         var ok = y <= ph && devices.All(d => d.Width <= usable);
         if (!apply) return ok;
 
-        doc.Rails.Clear();
-        doc.Ducts.Clear();
-        doc.Ducts.Add(new Duct { X = 0, Y = 0, Length = pw, Width = DuctWidth, Depth = DuctDepth });
-        doc.Ducts.Add(new Duct { X = 0, Y = DuctWidth, Length = ph - DuctWidth, Vertical = true, Width = SideDuct, Depth = DuctDepth });
-        doc.Ducts.Add(new Duct { X = pw - SideDuct, Y = DuctWidth, Length = ph - DuctWidth, Vertical = true, Width = SideDuct, Depth = DuctDepth });
+        doc.Rails.RemoveAll(r => r.Rear == rear);
+        doc.Ducts.RemoveAll(k => k.Rear == rear);
+        foreach (var d in devices) d.Rear = rear;
+        doc.Ducts.Add(new Duct { X = 0, Y = 0, Length = pw, Width = DuctWidth, Depth = DuctDepth, Rear = rear });
+        doc.Ducts.Add(new Duct { X = 0, Y = DuctWidth, Length = ph - DuctWidth, Vertical = true, Width = SideDuct, Depth = DuctDepth, Rear = rear });
+        doc.Ducts.Add(new Duct { X = pw - SideDuct, Y = DuctWidth, Length = ph - DuctWidth, Vertical = true, Width = SideDuct, Depth = DuctDepth, Rear = rear });
 
         for (var i = 0; i < rows.Count; i++)
         {
@@ -122,7 +178,7 @@ public static class AutoLayout
             if (railDevices.Count > 0)
             {
                 // El carril va a la altura del centro de los aparatos más altos de la fila.
-                rail = new DinRail { X = SideDuct + 5, Y = top + h / 2 - DinRail.RailHeight / 2, Length = pw - 2 * SideDuct - 10 };
+                rail = new DinRail { X = SideDuct + 5, Y = top + h / 2 - DinRail.RailHeight / 2, Length = pw - 2 * SideDuct - 10, Rear = rear };
                 doc.Rails.Add(rail);
             }
             var x = x0;
@@ -136,7 +192,7 @@ public static class AutoLayout
                 prev = d;
             }
             var ductY = top + h + Clearance;
-            doc.Ducts.Add(new Duct { X = SideDuct, Y = ductY, Length = pw - 2 * SideDuct, Width = DuctWidth, Depth = DuctDepth });
+            doc.Ducts.Add(new Duct { X = SideDuct, Y = ductY, Length = pw - 2 * SideDuct, Width = DuctWidth, Depth = DuctDepth, Rear = rear });
         }
 
         return ok;
@@ -156,6 +212,7 @@ public static class AutoLayout
     /// <summary>Mandos y pilotos en la puerta: filas centradas en la mitad superior, setas primero.</summary>
     public static void ArrangeDoor(PanelDocument doc)
     {
+        foreach (var d in doc.OnDoor) d.Rear = false;
         var door = doc.OnDoor.OrderBy(d => d.Kind switch { "instrumento" => 0, "seta" => 1, "selector" => 2, "pulsador" => 3, "piloto" => 4, _ => 5 })
             .ThenBy(d => d.Tag, TagComparer.Instance).ToList();
         if (door.Count == 0) return;
@@ -190,7 +247,7 @@ public static class AutoLayout
     public static bool ClashesBehind(PanelDocument doc, PanelDevice door)
     {
         var e = doc.Enclosure;
-        return doc.OnPlate.Any(p => p.X + e.PlateMargin < door.X + door.Width && door.X < p.X + e.PlateMargin + p.Width
+        return doc.PlateOf(door.Rear).Any(p => p.X + e.PlateMargin < door.X + door.Width && door.X < p.X + e.PlateMargin + p.Width
                                     && p.Y + e.PlateMargin < door.Y + door.Height && door.Y < p.Y + e.PlateMargin + p.Height
                                     && p.Depth + door.Depth > e.UsableDepth + 10);
     }
@@ -203,23 +260,24 @@ public static class AutoLayout
     {
         if (d.Location == DeviceLocation.Door)
         {
-            var maxY = doc.OnDoor.Where(o => o != d).Select(o => o.Y + o.Height).DefaultIfEmpty(100).Max();
+            var maxY = doc.DoorOf(d.Rear).Where(o => o != d).Select(o => o.Y + o.Height).DefaultIfEmpty(100).Max();
             d.X = doc.Enclosure.Width / 2 - d.Width / 2;
             d.Y = maxY + 30;
             return;
         }
         if (d.Location == DeviceLocation.Field) return;
-        var others = doc.OnPlate.Where(o => o != d).ToList();
+        var others = doc.PlateOf(d.Rear).Where(o => o != d).ToList();
+        var ducts = doc.DuctsOf(d.Rear).ToList();
         if (d.OnRail)
         {
-            foreach (var rail in doc.Rails.OrderBy(r => r.Y))
+            foreach (var rail in doc.RailsOf(d.Rear).OrderBy(r => r.Y))
             {
                 var y = rail.CenterY - d.Height / 2;
                 for (var x = rail.X + 5; x + d.Width <= rail.X + rail.Length - 5; x += 1)
                 {
                     d.X = x;
                     d.Y = y;
-                    if (!others.Any(o => o.Overlaps(d)) && !doc.Ducts.Any(k => Intersects(k, d))) return;
+                    if (!others.Any(o => o.Overlaps(d)) && !ducts.Any(k => Intersects(k, d))) return;
                 }
             }
         }
@@ -232,7 +290,7 @@ public static class AutoLayout
                 {
                     d.X = x;
                     d.Y = y;
-                    if (!others.Any(o => o.Overlaps(d)) && !doc.Ducts.Any(k => Intersects(k, d))) return;
+                    if (!others.Any(o => o.Overlaps(d)) && !ducts.Any(k => Intersects(k, d))) return;
                 }
         }
         d.X = doc.Enclosure.PlateWidth + 40;

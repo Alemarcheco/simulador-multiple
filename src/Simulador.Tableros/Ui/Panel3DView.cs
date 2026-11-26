@@ -84,7 +84,8 @@ internal sealed class Panel3DView : Control
         foreach (var (pos, text) in _scene.Labels)
         {
             if (_renderer.Project(pos) is not { } p) continue;
-            if (!_renderer.IsVisible(p.X, p.Y, p.Depth)) continue;
+            // Margen corto: en un armario de doble frente, lo de la placa trasera queda a pocos centímetros detrás.
+            if (!_renderer.IsVisible(p.X, p.Y, p.Depth, 0.03f)) continue;
             var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.Bold), 11, Brushes.White);
             var at = new Point(p.X / scaling - ft.Width / 2, p.Y / scaling - ft.Height / 2);

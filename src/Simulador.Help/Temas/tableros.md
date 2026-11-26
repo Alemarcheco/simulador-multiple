@@ -89,7 +89,19 @@ Haz clic en un aviso con designación para ir al aparato.
 
 ## Envolvente
 <!-- palabras: envolvente, armario, caja, medida, tamaño, ip, fondo, poliester, pie -->
-Sin nada seleccionado, Propiedades muestra la envolvente: tipo (mural, de pie, poliéster), medida normalizada o a medida, grado IP, temperatura ambiente, máxima interior y ventilador. `Redistribuir en esta medida` recoloca los aparatos sin cambiar la caja.
+Sin nada seleccionado, Propiedades muestra la envolvente: tipo (mural, de pie, poliéster), medida normalizada o a medida, **doble frente**, grado IP, temperatura ambiente, máxima interior y ventilador. `Redistribuir en esta medida` recoloca los aparatos sin cambiar la caja.
+
+## Armario de doble frente
+<!-- palabras: doble frente, doble cara, delantera, trasera, detras, espalda, dos placas, dos puertas, back to back -->
+Un armario de doble frente tiene **dos placas de montaje espalda con espalda**, una que se ve desde delante y otra desde detrás, **cada una con su puerta**. Sirve para tableros grandes que no caben en una sola cara sin hacerse muy anchos.
+
+- **En un tablero ya hecho**: sin nada seleccionado, marca **Doble frente** en Propiedades (Envolvente). Se elige un armario de doble frente y los aparatos se reparten: la alimentación y las protecciones delante, y el mando, los autómatas y las regletas detrás.
+- **Al importar un plano**: usa **Archivo › Importar plano PDF en armario de doble frente…**. Con **Importar plano PDF…** el programa elige solo: pasa a doble frente cuando el plano lo dice o cuando a una sola cara el armario saldría de más de 1200 mm de ancho y con doble frente sale más estrecho.
+- **Ver y editar cada cara**: el botón `↻ Cara delantera` / `↻ Cara trasera` de la barra cambia la placa y la puerta que ves. La trasera se dibuja como la ve quien está detrás del armario. Lo que añadas (aparatos, carriles, canaletas) va a la cara que estás viendo.
+- **Hilos entre caras**: pasan por el hueco entre las dos placas, por la esquina de arriba a la izquierda vista de frente. A su largo se suma medio fondo del armario más 10 cm.
+- **Vista 3D**: gira el armario para ver la placa y la puerta traseras.
+- La lista de materiales cuenta dos placas de montaje, y las comprobaciones (carriles, canaletas, choques) se hacen en cada cara por separado.
+
 
 ## ¿Por qué un aparato sale fuera de la placa, a la derecha?
 <!-- palabras: fuera, derecha, no cabe, sin colocar -->

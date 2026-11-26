@@ -28,6 +28,9 @@ internal sealed class TablerosView : DockPanel, IMenuSource
     private readonly ContentControl _wireTab = new(), _terminalTab = new(), _bomTab = new(), _checksTab = new();
     private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly ToggleButton _showWires = new() { Content = "〰 Hilos", IsChecked = true };
+    /// <summary>Armario de doble frente: qué cara se ve y edita (sin marcar, la delantera).</summary>
+    private readonly ToggleButton _rearSide = new() { Content = "↻ Cara delantera", IsVisible = false };
+    private bool Rear => _doc.Enclosure.DoubleFront && _rearSide.IsChecked == true;
     private readonly List<string> _history = [];
     private int _historyPos = -1;
     private PanelDocument _doc;
@@ -48,6 +51,15 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         _door.Hint += t => _host.SetStatus(t);
         _props.Changed += Commit;
         _props.ArrangeRequested += () => { AutoLayout.Arrange(_doc, chooseEnclosure: false); Commit("Redistribuir"); };
+        _props.DoubleFrontChanged += () =>
+        {
+            AutoLayout.Arrange(_doc);
+            PanelBuilder.SuggestFan(_doc);
+            if (!_doc.Enclosure.DoubleFront) _rearSide.IsChecked = false;
+            _plate.Fit();
+            _door.Fit();
+            Commit(_doc.Enclosure.DoubleFront ? "Doble frente: aparatos repartidos entre la cara delantera y la trasera (botón «↻ Cara» para cambiar)" : "Una sola cara");
+        };
         _showWires.IsCheckedChanged += (_, _) => { _plate.ShowWires = _showWires.IsChecked == true; _plate.InvalidateVisual(); };
 
         var toolbar = BuildToolbar();
@@ -116,6 +128,9 @@ internal sealed class TablerosView : DockPanel, IMenuSource
             Commit("Distribuir automáticamente");
         });
         B("🔄 Actualizar desde el esquema", "Vuelve a leer el esquema abierto en Instalaciones eléctricas y añade o quita aparatos sin mover los que ya están", UpdateFromOpenSchematic);
+        bar.Children.Add(_rearSide);
+        ToolTip.SetTip(_rearSide, "Armario de doble frente: cambia entre la placa y la puerta delanteras y las traseras. Lo que añadas va a la cara que estás viendo.");
+        _rearSide.IsCheckedChanged += (_, _) => { _plate.Select(null, notify: false); _door.Select(null, notify: false); Refresh(); _plate.Fit(); _door.Fit(); };
         bar.Children.Add(_showWires);
         ToolTip.SetTip(_showWires, "Dibuja el recorrido de los hilos por las canaletas");
         B("⤢ Ajustar", "Encuadra la vista", () => { _plate.Fit(); _door.Fit(); _view3d.ResetView(); });
@@ -155,8 +170,10 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         yield return new MenuCommand("Nuevo desde el esquema de Instalaciones eléctricas", FromOpenSchematic)
         { ToolTip = "Monta el tablero del esquema que tienes abierto en la pestaña Instalaciones eléctricas" };
         yield return new MenuCommand("Nuevo desde un esquema .selx…", () => _ = FromSelxAsync());
-        yield return new MenuCommand("Importar plano PDF…", () => _ = ImportPdfAsync())
-        { ToolTip = "Lee un plano eléctrico en PDF (de cualquier programa de CAD) y monta el tablero solo: aparatos, bornes, hilos, envolvente y canaletas" };
+        yield return new MenuCommand("Importar plano PDF…", () => _ = ImportPdfAsync(null))
+        { ToolTip = "Lee un plano eléctrico en PDF (de cualquier programa de CAD) y monta el tablero solo: aparatos, bornes, hilos, envolvente y canaletas. Si a una cara sale de más de 1200 mm de ancho, propone doble frente" };
+        yield return new MenuCommand("Importar plano PDF en armario de doble frente…", () => _ = ImportPdfAsync(true))
+        { ToolTip = "Igual, pero reparte los aparatos entre la placa delantera y la trasera de un armario de doble frente" };
         yield return new MenuCommand("Abrir…", () => _ = OpenAsync()) { ToolTip = "Abrir un tablero .tablero", SeparatorBefore = true };
         yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
         yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
@@ -215,6 +232,9 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         _routes = DuctRouter.Rebuild(_doc);
         var checks = PanelChecks.Run(_doc, _routes);
         var problems = checks.Where(c => c.Level != CheckLevel.Info && c.Tag is not null).Select(c => c.Tag!);
+        _rearSide.IsVisible = _doc.Enclosure.DoubleFront;
+        _rearSide.Content = Rear ? "↻ Cara trasera" : "↻ Cara delantera";
+        _plate.Rear = _door.Rear = Rear;
         _plate.Load(_doc, _routes, problems);
         _door.Load(_doc, _routes, problems);
         _view3d.Load(_doc, _routes);
@@ -285,6 +305,7 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         var n = 1;
         while (_doc.FindTag($"{model.TagPrefix}{n}") is not null) n++;
         var d = DeviceLibrary.Create(kind, $"{model.TagPrefix}{n}");
+        d.Rear = Rear;
         _doc.Devices.Add(d);
         AutoLayout.PlaceInFreeSpot(_doc, d);
         _tabs.SelectedIndex = d.Location == DeviceLocation.Door ? 1 : 0;
@@ -294,8 +315,8 @@ internal sealed class TablerosView : DockPanel, IMenuSource
 
     private void AddRail()
     {
-        var y = _doc.Rails.Select(r => r.Y + 150).DefaultIfEmpty(100).Max();
-        var rail = new DinRail { X = 45, Y = Math.Min(y, _doc.Enclosure.PlateHeight - 60), Length = Math.Max(100, _doc.Enclosure.PlateWidth - 90) };
+        var y = _doc.RailsOf(Rear).Select(r => r.Y + 150).DefaultIfEmpty(100).Max();
+        var rail = new DinRail { Rear = Rear, X = 45, Y = Math.Min(y, _doc.Enclosure.PlateHeight - 60), Length = Math.Max(100, _doc.Enclosure.PlateWidth - 90) };
         _doc.Rails.Add(rail);
         _tabs.SelectedIndex = 0;
         Commit("Añadido carril");
@@ -306,8 +327,8 @@ internal sealed class TablerosView : DockPanel, IMenuSource
     {
         var e = _doc.Enclosure;
         var k = vertical
-            ? new Duct { Vertical = true, X = e.PlateWidth / 2 - 20, Y = 40, Length = e.PlateHeight - 40 }
-            : new Duct { X = 40, Y = e.PlateHeight / 2, Length = e.PlateWidth - 80 };
+            ? new Duct { Rear = Rear, Vertical = true, X = e.PlateWidth / 2 - 20, Y = 40, Length = e.PlateHeight - 40 }
+            : new Duct { Rear = Rear, X = 40, Y = e.PlateHeight / 2, Length = e.PlateWidth - 80 };
         _doc.Ducts.Add(k);
         _tabs.SelectedIndex = 0;
         Commit("Añadida canaleta");
@@ -388,7 +409,7 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         }
     }
 
-    private async Task ImportPdfAsync()
+    private async Task ImportPdfAsync(bool? doubleFront)
     {
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -402,7 +423,8 @@ internal sealed class TablerosView : DockPanel, IMenuSource
             // Un plano de cien páginas tarda unos segundos (varios minutos si hay que reconocer letras dibujadas):
             // se lee fuera de la interfaz y la barra de estado dice por qué página va.
             var progress = new Progress<string>(m => _host.SetStatus($"{Path.GetFileName(path)}: {m}"));
-            var result = await Task.Run(() => PlanImporter.Import(path, PlanOcr.Default(), progress));
+            var result = await Task.Run(() => PlanImporter.Import(path, PlanOcr.Default(), progress, doubleFront: doubleFront));
+            _rearSide.IsChecked = false;
             Load(result.Document, null);
             _dirty = true;
             Refresh();
