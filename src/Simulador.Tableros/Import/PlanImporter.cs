@@ -28,7 +28,9 @@ public static partial class PlanImporter
     /// <summary>Prefijos de designación que se aceptan siempre que el texto aparezca al menos dos veces.</summary>
     private static readonly HashSet<string> StrongPrefixes =
         ["Q", "QA", "QF", "QM", "QS", "F", "FU", "FR", "FC", "K", "KA", "KM", "KT", "KF", "KL", "S", "SB", "SA", "SF", "SJ",
-         "SQ", "H", "HL", "HA", "PF", "M", "MA", "X", "XT", "XD", "T", "TA", "TC", "TV", "U", "TB", "G", "GB", "GD", "P", "PG", "B", "BG", "PE"];
+         "SQ", "H", "HL", "HA", "PF", "M", "MA", "X", "XT", "XD", "T", "TA", "TC", "TV", "U", "TB", "G", "GB", "GD", "P", "PG", "B", "BG", "PE",
+         // Nomenclatura americana (NEMA/ANSI), habitual en México: CB1, TB-120N, PS1, CR1…
+         "CB", "TB", "TS", "PS", "CR", "PB", "PL", "SS", "LT", "TR", "DS", "FU", "SPD", "RY", "LS", "PLC", "VFD", "MCB", "MS"];
     /// <summary>Prefijos ambiguos (A3 es también un formato de hoja…): solo con guion delante o dentro de una lista.</summary>
     private static readonly HashSet<string> WeakPrefixes = ["A", "E", "EA", "R", "Y", "YV", "MB", "W", "WD", "Z", "C"];
 
@@ -88,6 +90,14 @@ public static partial class PlanImporter
 
     public static PlanImportResult Import(string path) => Import(PlanText.ReadPdf(path));
 
+    /// <summary>Lee el PDF (con OCR para las páginas de letras dibujadas, si hay reconocedor) y monta el tablero.</summary>
+    public static PlanImportResult Import(string path, IPlanOcr? ocr, IProgress<string>? progress = null, CancellationToken ct = default)
+    {
+        var plan = PlanText.ReadPdf(path, ocr, progress, ct);
+        progress?.Report("Montando el tablero…");
+        return Import(plan);
+    }
+
     public static PlanImportResult Import(PlanText plan)
     {
         var found = new Dictionary<string, Found>(StringComparer.OrdinalIgnoreCase);
@@ -95,6 +105,7 @@ public static partial class PlanImporter
         var bomPages = new List<int>();
         var listPages = new List<int>();
         var withText = plan.Pages.Count(p => p.Words.Count > 0);
+        var labelCount = 0;
 
         foreach (var page in plan.Pages)
         {
@@ -120,6 +131,15 @@ public static partial class PlanImporter
                 }
                 foreach (var (_, t) in tags) Count(found, t, isBom || isList);
 
+                // Etiquetas de hilo «CB1(3) / CB120(4)» (SolidWorks Electrical y otros): cada una es una conexión.
+                foreach (var l in ReadWireLabels(line))
+                {
+                    foreach (var e in l.Ends) Count(found, new TagToken(e.Tag, PrefixOf(e.Tag), e.Terminal, true), true);
+                    links.Add(l);
+                    labelCount++;
+                    if (!listPages.Contains(page.Number)) listPages.Add(page.Number);
+                }
+
                 // Lista de materiales: una designación al principio del renglón y texto detrás.
                 if (isBom && tags.Count >= 1 && tags[0].Index <= 2 && tags[0].T.Terminal is null)
                     ReadBomLine(found[tags[0].T.Tag], tokens.Skip(tags[0].Index + 1).ToList());
@@ -139,11 +159,28 @@ public static partial class PlanImporter
                 links.Add(link);
                 if (!listPages.Contains(page.Number)) listPages.Add(page.Number);
             }
+
+            // En los esquemas el calibre va debajo de la designación («CB1» y debajo «6 AMP»).
+            foreach (var w in page.Words)
+            {
+                if (ParseTag(w.Text) is not { Terminal: null } t || !found.TryGetValue(t.Tag, out var f)) continue;
+                var below = page.Words.Where(o => o != w && o.Y > w.Y && o.Y < w.Y + w.Height * 3.2
+                                                  && Math.Abs((o.X + o.Width / 2) - (w.X + w.Width / 2)) < 40)
+                    .OrderBy(o => o.Y).ThenBy(o => o.X).Select(o => o.Text).ToList();
+                if (below.Count > 0) ReadRatings(f, below, -1);
+            }
         }
+
+        // El OCR confunde letras parecidas (C1RLY → CIRLY): se juntan con la designación más repetida.
+        var merged = MergeConfusables(found);
+        if (merged.Count > 0)
+            foreach (var l in links)
+                for (var i = 0; i < l.Ends.Count; i++)
+                    if (merged.TryGetValue(l.Ends[i].Tag, out var to)) l.Ends[i] = l.Ends[i] with { Tag = to };
 
         // Designaciones aceptadas.
         var accepted = found.Values.Where(f =>
-                f.Dashed || f.InList && (StrongPrefixes.Contains(f.Prefix) || f.Description is not null)
+                f.Dashed && (f.Tag.Any(char.IsDigit) || f.Count >= 2 || f.Tag == "PE") || f.InList && (StrongPrefixes.Contains(f.Prefix) || f.Description is not null)
                          || StrongPrefixes.Contains(f.Prefix) && f.Count >= 2)
             .ToDictionary(f => f.Tag, StringComparer.OrdinalIgnoreCase);
 
@@ -164,9 +201,11 @@ public static partial class PlanImporter
         };
         var result = new PlanImportResult { Document = doc, Pages = plan.Pages.Count, PagesWithText = withText, Connections = links.Count };
 
-        if (withText == 0)
+        if (withText == 0 || plan.Pages.Count > 0 && plan.UnreadPages.Count == plan.Pages.Count)
         {
-            result.Notes.Add("El PDF no tiene texto (parece escaneado o exportado como imagen). Expórtalo de nuevo desde el programa de CAD como PDF con texto, o pásalo antes por un reconocedor de texto (OCR).");
+            result.Notes.Add(plan.OcrError is not null
+                ? $"El PDF no tiene texto (las letras están dibujadas o escaneadas) y el reconocimiento de texto falló: {plan.OcrError}"
+                : "El PDF no tiene texto (las letras están dibujadas o escaneadas) y este equipo no tiene reconocedor de texto (OCR). En Windows 10/11 se usa el de Windows; si no funciona, exporta el PDF desde el programa de CAD con «texto como texto» (TrueType en vez de SHX).");
             doc.ImportNotes.AddRange(result.Notes);
             return result;
         }
@@ -189,7 +228,14 @@ public static partial class PlanImporter
         result.Notes.Add($"Leídas {plan.Pages.Count} páginas ({withText} con texto). Encontrados {doc.Devices.Count(d => d.Kind != "barra_pe")} aparatos: {plate} en la placa, {doc.OnDoor.Count()} en la puerta y {doc.InField.Count()} en campo.");
         if (bomPages.Count > 0) result.Notes.Add($"Lista de materiales en {PagesText(bomPages)}.");
         else result.Notes.Add("No se encontró lista de materiales: las descripciones y medidas son las típicas de cada tipo de aparato.");
-        if (links.Count > 0) result.Notes.Add($"{links.Count} conexiones leídas de las listas de bornes y cables ({PagesText(listPages)}); salen {doc.Wires.Count} hilos.");
+        if (plan.OcrPages.Count > 0)
+            result.Notes.Add($"{plan.OcrPages.Count} páginas traían las letras dibujadas y se leyeron con {plan.OcrName}. Revisa las designaciones: el reconocimiento puede confundir letras parecidas (B/8, O/0, S/5).");
+        if (plan.UnreadPages.Count > 0)
+            result.Notes.Add(plan.OcrError is not null
+                ? $"No se pudieron reconocer {plan.UnreadPages.Count} páginas con letras dibujadas: {plan.OcrError}"
+                : $"{plan.UnreadPages.Count} páginas traen las letras dibujadas como trazos y este equipo no tiene reconocedor de texto (OCR): no se leyeron.");
+        if (labelCount > 0) result.Notes.Add($"{labelCount} conexiones leídas de las etiquetas de los hilos («CB1(3) / CB120(4)»).");
+        if (links.Count > 0) result.Notes.Add($"{links.Count} conexiones en total ({PagesText(listPages)}); salen {doc.Wires.Count} hilos.");
         else result.Notes.Add("No se encontraron listas de cables ni de bornes con texto: los aparatos quedan colocados pero sin hilos. Si el programa de CAD puede sacar la lista de conexiones, inclúyela en el PDF.");
         var guessed = doc.Devices.Where(d => d.Kind == "aparato").Select(d => d.Tag).ToList();
         if (guessed.Count > 0) result.Notes.Add($"Sin tipo reconocido (quedan como aparato genérico, revísalos): {string.Join(", ", guessed)}.");
@@ -255,10 +301,13 @@ public static partial class PlanImporter
             var t = tokens[i];
             f.Context += " " + t.ToLowerInvariant();
             if (CurveRx().Match(t) is { Success: true } c) f.RatedA = Math.Max(f.RatedA, double.Parse(c.Groups[2].Value, Es));
+            else if (t.Length is >= 3 and <= 5 && t[0] == 'A' && t.Skip(1).All(char.IsDigit)) f.RatedA = Math.Max(f.RatedA, double.Parse(t[1..], Es)); // «A63»
             else if (RatingRx().Match(t.Replace(" ", "")) is { Success: true } r)
                 Rating(f, r.Groups[1].Value, r.Groups[2].Value);
             else if (i + 1 < tokens.Count && NumberRx().IsMatch(t) && tokens[i + 1] is "A" or "kW" or "KW" or "kVA" or "VA" or "V" or "mA")
                 Rating(f, t, tokens[i + 1]);
+            else if (i + 1 < tokens.Count && NumberRx().IsMatch(t) && tokens[i + 1].ToUpperInvariant() is "AMP" or "AMPS" or "AMPERES" or "AMPERIOS")
+                Rating(f, t, "A");
             else if (RangeRx().Match(t) is { Success: true } g && (g.Groups[2].Success || i + 1 < tokens.Count && tokens[i + 1] == "A"))
                 Rating(f, g.Groups[1].Value, "A");
             else if (PolesRx().Match(t) is { Success: true } p) f.Poles = int.Parse(p.Groups[1].Value, Es) + (t.Contains('N') ? 1 : 0);
@@ -344,9 +393,114 @@ public static partial class PlanImporter
         };
     }
 
+    [GeneratedRegex(@"([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\(([A-Za-z0-9+\-]{1,5})\)\s*/\s*([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)\(([A-Za-z0-9+\-]{1,5})\)")]
+    private static partial Regex WireLabelRx();
+
+    [GeneratedRegex(@"^(TB|TS|XT|XD|X)-?([A-Z0-9]+(?:-[A-Z0-9]+)*)-(\d{1,3})$")]
+    private static partial Regex StripTerminalRx();
+
+    /// <summary>Etiquetas «A(x) / B(y)» de un renglón (puede haber varias separadas por comas).</summary>
+    private static IEnumerable<Link> ReadWireLabels(List<PlanWord> line)
+    {
+        var text = string.Join(' ', line.Select(w => w.Text));
+        if (!text.Contains('/') || !text.Contains('(')) yield break;
+        foreach (Match m in WireLabelRx().Matches(text))
+        {
+            var a = NormalizeRef(m.Groups[1].Value, m.Groups[2].Value);
+            var b = NormalizeRef(m.Groups[3].Value, m.Groups[4].Value);
+            if (a == b) continue;
+            var l = new Link();
+            l.Ends.Add(a);
+            l.Ends.Add(b);
+            yield return l;
+        }
+    }
+
+    /// <summary>
+    /// «TB-120N-1(1)» es el borne 1 de la regleta TB-120N (el paréntesis es el punto de conexión del borne);
+    /// «CB1(3)» es el borne 3 del aparato CB1.
+    /// </summary>
+    internal static WireEnd NormalizeRef(string tag, string terminal)
+    {
+        var m = StripTerminalRx().Match(tag);
+        if (m.Success) return new WireEnd($"{m.Groups[1].Value}-{m.Groups[2].Value}", m.Groups[3].Value);
+        return new WireEnd(tag, terminal);
+    }
+
+    private static string PrefixOf(string tag) => new(tag.TakeWhile(char.IsLetter).ToArray());
+
     // ------------------------------------------------------------------ montaje
 
     /// <summary>Tipo de aparato por la descripción (si la hay) o por el prefijo de la designación.</summary>
+    [GeneratedRegex(@"^([A-Z]{2,5})-(\d{2,5}[A-Z]{0,3}|[A-Z]{1,2}\d{1,3}[A-Z]{0,2}|X{1,2}\d?)$")]
+    private static partial Regex IsaRx();
+
+    private static readonly HashSet<string> IoSegments = ["DI", "DO", "AI", "AO", "AQ", "AOQ", "RLY", "MPU", "ACT", "AL", "AT", "IO", "CPU", "MOD", "COM"];
+
+    /// <summary>
+    /// Tipo por la forma de la designación, para las nomenclaturas que no usan los prefijos IEC: instrumentos ISA
+    /// (PIT-3202 transmisor, PSH-81A presostato, FCV-3201 válvula), módulos de E/S de un controlador (C1-DI, DO-C1,
+    /// C2R1, C1RLY) y lámparas (LZ1).
+    /// </summary>
+    internal static string? KindByTag(string tag)
+    {
+        var isa = IsaRx().Match(tag);
+        if (isa.Success && isa.Groups[1].Value is var l && l[0] is 'P' or 'T' or 'F' or 'L' or 'Z' or 'A' or 'W' or 'D' or 'S' or 'V' or 'H' or 'X'
+            && !StrongPrefixes.Contains(l) && l is not ("TB" or "TS"))
+        {
+            if (l.EndsWith("CV") || l.EndsWith('V') && l.Length >= 2 || l.EndsWith("Y")) return "receptor";
+            return "captador";
+        }
+        var segs = tag.Split('-');
+        if (segs.Length >= 2 && segs.Any(x => IoSegments.Contains(x)) && segs.Any(x => x.Length >= 2 && x[0] == 'C' && char.IsDigit(x[1]))) return "plc";
+        if (System.Text.RegularExpressions.Regex.IsMatch(tag, @"^C\d{1,2}(R\d{1,2}|RLY|-RLY)?$")) return "plc";
+        if (System.Text.RegularExpressions.Regex.IsMatch(tag, @"^LZ\d{1,3}$")) return "piloto";
+        if (tag.StartsWith("HMI", StringComparison.Ordinal)) return "instrumento";
+        return null;
+    }
+
+    private static readonly Dictionary<char, char[]> Confusable = new()
+    {
+        ['I'] = ['1'], ['L'] = ['1'], ['A'] = ['1'], ['O'] = ['0'], ['0'] = ['O'], ['S'] = ['5'], ['5'] = ['S'],
+        ['B'] = ['8'], ['8'] = ['B'], ['Z'] = ['2'], ['2'] = ['Z'], ['G'] = ['6'], ['6'] = ['G'], ['1'] = ['I', 'L'],
+    };
+
+    /// <summary>Junta las designaciones que difieren en una letra confundible con otra mucho más repetida.</summary>
+    private static Dictionary<string, string> MergeConfusables(Dictionary<string, Found> found)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in found.Values.OrderBy(f => f.Count).ToList())
+        {
+            if (!found.ContainsKey(f.Tag)) continue;
+            Found? best = null;
+            for (var i = 0; i < f.Tag.Length && best is null; i++)
+            {
+                if (!Confusable.TryGetValue(f.Tag[i], out var alts)) continue;
+                foreach (var a in alts)
+                {
+                    var v = f.Tag[..i] + a + f.Tag[(i + 1)..];
+                    if (found.TryGetValue(v, out var g) && (g.Count > f.Count || g.Count == f.Count && char.IsDigit(a) && !char.IsDigit(f.Tag[i])))
+                    {
+                        best = g;
+                        break;
+                    }
+                }
+            }
+            if (best is null) continue;
+            best.Count += f.Count;
+            best.Dashed |= f.Dashed;
+            best.InList |= f.InList;
+            best.RatedA = Math.Max(best.RatedA, f.RatedA);
+            foreach (var t in f.Terminals) best.Terminals.Add(t);
+            found.Remove(f.Tag);
+            map[f.Tag] = best.Tag;
+        }
+        // Cadenas (A → B → C): cada una a la final.
+        foreach (var k in map.Keys.ToList())
+            while (map.TryGetValue(map[k], out var next)) map[k] = next;
+        return map;
+    }
+
     internal static string KindFor(string prefix, string text)
     {
         var t = text.ToLowerInvariant();
@@ -389,13 +543,24 @@ public static partial class PlanImporter
             "KT" => "temporizador",
             "KF" => "plc",
             "S" or "SB" or "SF" or "SJ" => "pulsador",
+            "SS" => "selector",
             "SA" => "selector",
             "SQ" or "B" or "BG" => "captador",
             "H" or "HL" or "HA" or "PF" => "piloto",
             "M" or "MA" => "motor",
             "X" or "XT" or "XD" => "regleta",
             "T" or "TA" or "TC" or "TV" => "trafo_mando",
-            "U" or "TB" => "variador",
+            "U" or "VFD" => "variador",
+            "CB" or "MCB" or "DS" => "magnetotermico",
+            "TB" or "TS" => "regleta",
+            "PS" => "fuente",
+            "CR" or "RY" => "rele",
+            "PB" => "pulsador",
+            "PL" or "LT" => "piloto",
+            "LS" => "captador",
+            "TR" => "trafo_mando",
+            "PLC" => "plc",
+            "MS" => "guardamotor",
             "G" or "GB" or "GD" => "fuente",
             "P" or "PG" => "instrumento",
             "E" or "EA" or "R" or "Y" or "YV" or "MB" => "receptor",
@@ -405,7 +570,7 @@ public static partial class PlanImporter
 
     private static PanelDevice MakeDevice(Found f)
     {
-        var kind = KindFor(f.Prefix, (f.Description ?? "") + " " + f.Context);
+        var kind = KindByTag(f.Tag) ?? KindFor(f.Prefix, (f.Description ?? "") + " " + f.Context);
         var d = DeviceLibrary.Create(kind, f.Tag);
         if (f.Description is not null) d.Description = Cap(f.Description);
         if (f.Reference is not null) d.Reference = f.Reference;

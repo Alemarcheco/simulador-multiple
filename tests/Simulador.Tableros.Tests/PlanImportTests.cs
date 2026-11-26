@@ -127,6 +127,58 @@ public class PlanImportTests
         Assert.Contains(r.Notes, n => n.Contains("sin hilos"));
     }
 
+    [Fact]
+    public void LeeLasEtiquetasDeHiloDeSolidWorksElectrical()
+    {
+        // Como sale del OCR de una hoja de SolidWorks Electrical: nomenclatura americana y «origen / destino» en cada hilo.
+        var plan = new PlanText { FileName = "lazos.pdf" };
+        var words = new List<PlanWord>();
+        void Line(double y, params string[] texts)
+        {
+            var x = 40.0;
+            foreach (var t in texts)
+            {
+                words.Add(new PlanWord(t, x, y, t.Length * 4, 6));
+                x += t.Length * 4 + 4;
+            }
+        }
+        Line(50, "CB120");
+        Line(58, "A63", "Braker", "Principal");
+        Line(100, "CB1(3)", "/", "CB120(4)");
+        Line(120, "TB-120L-1(1)", "/", "CB1(4)");
+        Line(140, "F1(L)", "/", "TB-120L-1(1),", "TB-120L-1(1)", "/", "CB1(4)");
+        Line(160, "CB1");
+        Line(168, "6", "AMP");
+        Line(200, "CB2(3)", "/", "CB120(4)");
+        Line(220, "CBL(4)", "/", "CB2(4)"); // ruido del OCR: «CBL» sin número, una sola vez
+        plan.Pages.Add(new PlanPage { Number = 13, Width = 1190, Height = 842, Words = words });
+
+        var r = PlanImporter.Import(plan);
+        var doc = r.Document;
+        Assert.Equal("magnetotermico", doc.FindTag("CB1")!.Kind);
+        Assert.Equal(6, doc.FindTag("CB1")!.RatedA);
+        Assert.Equal(63, doc.FindTag("CB120")!.RatedA);
+        var tb = doc.FindTag("TB-120L")!;
+        Assert.Equal("regleta", tb.Kind);
+        Assert.NotNull(tb.Terminal("1"));
+        Assert.Null(doc.FindTag("CBL"));
+        // CB1:3, CB120:4 y CB2:3 son el mismo potencial; F1:L, TB-120L:1 y CB1:4 otro.
+        bool Same(string a, string b) => doc.Wires.Where(w => w.From.ToString() == a || w.To.ToString() == a).Select(w => w.Number)
+            .Intersect(doc.Wires.Where(w => w.From.ToString() == b || w.To.ToString() == b).Select(w => w.Number)).Any();
+        Assert.True(Same("CB1:3", "CB2:3"));
+        Assert.True(Same("F1:L", "CB1:4"));
+        Assert.False(Same("CB1:3", "CB1:4"));
+        Assert.Contains(r.Notes, n => n.Contains("etiquetas de los hilos"));
+    }
+
+    [Theory]
+    [InlineData("TB-120N-1", "1", "TB-120N", "1")]
+    [InlineData("TB-120L-5", "5", "TB-120L", "5")]
+    [InlineData("CB1", "3", "CB1", "3")]
+    [InlineData("F1", "N", "F1", "N")]
+    public void UnBorneDeRegletaSeNombraPorSuRegleta(string tag, string term, string strip, string label) =>
+        Assert.Equal(new WireEnd(strip, label), PlanImporter.NormalizeRef(tag, term));
+
     [Theory]
     [InlineData("1", TerminalSide.Top)]
     [InlineData("14", TerminalSide.Bottom)]

@@ -399,8 +399,10 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         _host.SetStatus($"Leyendo {Path.GetFileName(path)}…");
         try
         {
-            // Un plano de cien páginas tarda unos segundos: se lee fuera de la interfaz.
-            var result = await Task.Run(() => PlanImporter.Import(path));
+            // Un plano de cien páginas tarda unos segundos (varios minutos si hay que reconocer letras dibujadas):
+            // se lee fuera de la interfaz y la barra de estado dice por qué página va.
+            var progress = new Progress<string>(m => _host.SetStatus($"{Path.GetFileName(path)}: {m}"));
+            var result = await Task.Run(() => PlanImporter.Import(path, PlanOcr.Default(), progress));
             Load(result.Document, null);
             _dirty = true;
             Refresh();

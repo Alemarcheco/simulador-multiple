@@ -12,6 +12,8 @@ public static class AutoLayout
     [
         (300, 400, 200), (400, 500, 200), (400, 600, 250), (500, 700, 250), (600, 800, 250), (600, 1000, 300),
         (800, 1000, 300), (800, 1200, 300), (600, 1800, 400), (800, 1800, 400), (1000, 2000, 400), (1200, 2000, 500),
+        // Armarios de varios cuerpos (para planos grandes).
+        (1600, 2000, 500), (2000, 2000, 600), (2400, 2000, 600), (3200, 2000, 600),
     ];
 
     public const double DuctWidth = 40, DuctDepth = 60, SideDuct = 40;
@@ -77,7 +79,7 @@ public static class AutoLayout
             var need = d.Width + (current.Count > 0 ? GapBetween(current[^1], d) : 0);
             // Cambio de grupo (protecciones → mando → borneras): nueva fila si la actual ya va llena a medias.
             var newRow = current.Count > 0 && (width + need > usable || (group != lastGroup && (group == "bornes" || width > usable * 0.6)));
-            if (d.Width > usable) return false;
+            if (d.Width > usable && !apply) return false;
             if (newRow)
             {
                 rows.Add(current);
@@ -100,8 +102,9 @@ public static class AutoLayout
             rowY.Add(y);
             y += r.Max(d => d.Height) + Clearance + DuctWidth;
         }
-        if (y > ph) return false;
-        if (!apply) return true;
+        // Si no cabe, con apply se coloca igual (lo que sobra queda por debajo de la placa y lo marcan las comprobaciones).
+        var ok = y <= ph && devices.All(d => d.Width <= usable);
+        if (!apply) return ok;
 
         doc.Rails.Clear();
         doc.Ducts.Clear();
@@ -136,8 +139,7 @@ public static class AutoLayout
             doc.Ducts.Add(new Duct { X = SideDuct, Y = ductY, Length = pw - 2 * SideDuct, Width = DuctWidth, Depth = DuctDepth });
         }
 
-        // Si sobra altura, la canaleta inferior baja al fondo de la placa (espacio libre para ampliar).
-        return true;
+        return ok;
     }
 
     private static string Group(string kind) => kind switch

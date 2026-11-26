@@ -12,7 +12,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Fixtures\plano-ejemplo.pdf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\*.pdf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Simulador.Tableros\Simulador.Tableros.csproj" />

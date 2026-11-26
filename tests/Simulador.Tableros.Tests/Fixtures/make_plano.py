@@ -102,3 +102,27 @@ tabla(H - 110, [
 c.showPage()
 c.save()
 print(out)
+
+# plano-dibujado.pdf: misma idea, pero las letras van como imagen (como un PDF de SolidWorks Electrical con
+# fuentes SHX, o un escaneo): no hay texto que leer y hace falta OCR.
+from PIL import Image, ImageDraw, ImageFont
+from reportlab.lib.utils import ImageReader
+dpi = 200
+img = Image.new("L", (int(W / 72 * dpi), int(H / 72 * dpi)), 255)
+d = ImageDraw.Draw(img)
+try:
+    font = ImageFont.truetype("DejaVuSans.ttf", 36)
+except OSError:
+    font = ImageFont.load_default()
+lines = ["ALIMENTACION PRINCIPAL", "CB120", "A63", "CB1(3) / CB120(4)", "TB-120L-1(1) / CB1(4)",
+         "F1(L) / TB-120L-1(1)", "CB2(3) / CB120(4)", "CB1", "6 AMP", "CB2", "6 AMP"]
+for i, t in enumerate(lines):
+    d.text((300, 300 + i * 120), t, fill=0, font=font)
+out2 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plano-dibujado.pdf")
+c2 = canvas.Canvas(out2, pagesize=(W, H))
+c2.drawImage(ImageReader(img), 0, 0, W, H)
+c2.setFont("Helvetica", 8)
+c2.drawString(W - 300, 30, "Hoja 1 / 1")  # el cajetín sí trae algo de texto, como en el plano real
+c2.showPage()
+c2.save()
+print(out2)
