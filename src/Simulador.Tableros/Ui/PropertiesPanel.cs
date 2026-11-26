@@ -118,7 +118,8 @@ internal sealed class PropertiesPanel : ScrollViewer
                 _stack.Children.Add(new TextBlock
                 {
                     TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7,
-                    Text = current.Verified ? $"Medidas de la ficha del fabricante ({current.Source})." : "Medidas típicas: la ficha del fabricante no las da; compruébalas en su catálogo.",
+                    Text = current.Source.StartsWith("Pieza escaneada", StringComparison.Ordinal) ? $"Medidas del escaneo ({current.Source})."
+                        : current.Verified ? $"Medidas de la ficha del fabricante ({current.Source})." : "Medidas típicas: la ficha del fabricante no las da; compruébalas en su catálogo.",
                 });
         }
         Combo("Ubicación", ["Placa de montaje", "Puerta", "Fuera del tablero (campo)"], (int)d.Location, i => d.Location = (DeviceLocation)i);

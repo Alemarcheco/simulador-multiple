@@ -45,6 +45,14 @@ public static class LibraryStore
         return new(items, notes);
     }
 
+    /// <summary>Lee un paquete que ya está en su sitio (p. ej. el que acaba de guardar Diseño 3D) y lo añade a la librería.</summary>
+    public static EdzImporter.Result LoadFile(string path)
+    {
+        var r = EdzImporter.Read(path);
+        ManufacturerCatalog.Register(r.Items);
+        return r;
+    }
+
     /// <summary>Lee los paquetes elegidos, los copia a la carpeta del usuario y los añade a la librería.</summary>
     public static EdzImporter.Result Import(IEnumerable<string> paths, string? targetFolder = null)
     {

@@ -16,5 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Simulador.Tableros\Simulador.Tableros.csproj" />
+    <!-- Para comprobar que las piezas escaneadas que guarda Diseño 3D se leen bien aquí. -->
+    <ProjectReference Include="..\..\src\Simulador.Cad3D.Geometry\Simulador.Cad3D.Geometry.csproj" />
   </ItemGroup>
 </Project>

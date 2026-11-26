@@ -41,6 +41,8 @@ internal sealed class PropertyEditor : ScrollViewer
         Text("Nombre", part.Name, v => { part.Name = v; Renamed?.Invoke(); });
         Text("Color (#RRGGBB)", part.Color, v => { if (TryColor(v)) { part.Color = v; Changed?.Invoke(); } });
         Check("Visible", part.Visible, v => { part.Visible = v; Changed?.Invoke(); });
+        if (part.Features.Any(f => f is ScanFeature))
+            Check("Ver los colores del escaneo", part.ShowScanColors, v => { part.ShowScanColors = v; Changed?.Invoke(); });
         _stack.Children.Add(new TextBlock
         {
             Text = "Cada pieza se exporta como un objeto separado en 3MF; en STL se juntan todas las visibles.",
@@ -85,6 +87,11 @@ internal sealed class PropertyEditor : ScrollViewer
         foreach (var prop in f.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (prop.GetCustomAttribute<ParamAttribute>() is not { } param || !prop.CanWrite) continue;
+            if (prop.PropertyType == typeof(bool))
+            {
+                Check(param.Label, (bool)prop.GetValue(f)!, v => { prop.SetValue(f, v); Changed?.Invoke(); });
+                continue;
+            }
             bool isInt = prop.PropertyType == typeof(int);
             double value = Convert.ToDouble(prop.GetValue(f), CultureInfo.InvariantCulture);
             Number(param.Label, value, param.Min, param.Max, isInt ? 1 : param.Step, isInt, v =>
@@ -100,7 +107,7 @@ internal sealed class PropertyEditor : ScrollViewer
         {
             var values = Enum.GetValues(prop.PropertyType);
             var names = Enum.GetNames(prop.PropertyType);
-            var combo = new ComboBox { ItemsSource = names, SelectedIndex = Array.IndexOf(values, prop.GetValue(f)), HorizontalAlignment = HorizontalAlignment.Stretch };
+            var combo = new ComboBox { ItemsSource = names.Select(EnumText).ToList(), SelectedIndex = Array.IndexOf(values, prop.GetValue(f)), HorizontalAlignment = HorizontalAlignment.Stretch };
             combo.SelectionChanged += (_, _) => { prop.SetValue(f, values.GetValue(Math.Max(0, combo.SelectedIndex))); Changed?.Invoke(); };
             Row(EnumLabel(prop.Name), combo);
         }
@@ -128,6 +135,21 @@ internal sealed class PropertyEditor : ScrollViewer
             ProfileEditor("Perfil (x,y; x,y; …)", ex.Profile, ex.Bulges, ex.Constraints, (pts, bl, rules) => { ex.Profile = pts; ex.Bulges = bl; ex.Constraints = rules; }, revolve: false);
         if (f is RevolveFeature rev)
             ProfileEditor("Perfil (radio,altura; …)", rev.Profile, rev.Bulges, rev.Constraints, (pts, bl, rules) => { rev.Profile = pts; rev.Bulges = bl; rev.Constraints = rules; }, revolve: true);
+        if (f is ScanFeature scan)
+        {
+            var path = new TextBox { Text = scan.FilePath, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            path.LostFocus += (_, _) => { if (path.Text != scan.FilePath) { scan.FilePath = path.Text ?? ""; Changed?.Invoke(); } };
+            Row("Archivo del escaneo", path);
+            if (scan.CachedReport() is { Length: > 0 } report)
+                _stack.Children.Add(new TextBlock { Text = report, FontSize = 12, Opacity = 0.8, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            _stack.Children.Add(new TextBlock
+            {
+                Text = "Arreglos en orden: pasar a mm, quitar trozos sueltos, enderezar, cortar la base, simplificar, tapar agujeros, suavizar y poner a la medida real. " +
+                       "Para quitar la mesa o el suelo que salió en el escaneo, sube «Cortar la base». Gira la pieza con «Rotación» si quedó tumbada. " +
+                       "Para usarla en un tablero: Archivo › Guardar como aparato de tablero…",
+                Opacity = 0.6, FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            });
+        }
         if (f is StepImportFeature step)
         {
             var path = new TextBox { Text = step.FilePath, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
@@ -186,8 +208,25 @@ internal sealed class PropertyEditor : ScrollViewer
         _stack.Children.Add(error);
     }
 
+    /// <summary>Texto con tildes para los valores de las listas.</summary>
+    private static string EnumText(string name) => name switch
+    {
+        "Automatico" => "Automático",
+        "Centimetros" => "Centímetros",
+        "Milimetros" => "Milímetros",
+        "Pequenos" => "Solo los pequeños",
+        "Todos" => "Todos (pieza cerrada)",
+        "Ninguno" => "Ninguno",
+        "Y" => "Y (apps del móvil)",
+        "Z" => "Z (programas CAD)",
+        _ => name,
+    };
+
     private static string EnumLabel(string property) => property switch
     {
+        "Units" => "Unidades del archivo",
+        "Up" => "Eje hacia arriba en el archivo",
+        "Holes" => "Tapar agujeros",
         "Edges" => "Aristas",
         "Kind" => "Tipo de repetición",
         "Direction" => "Dirección (fila / columnas)",

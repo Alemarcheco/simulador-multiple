@@ -44,6 +44,19 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         // Paquetes .edz que trae el programa y los que importó el usuario.
         try { LibraryStore.EnsureLoaded(); }
         catch (Exception ex) { host.SetStatus($"No se pudieron cargar las librerías de fabricante: {ex.Message}"); }
+        // Piezas escaneadas que guarda Diseño 3D como aparato: se cargan al momento y aparecen en «Añadir aparato».
+        ModuleExchange.Subscribe(ModuleExchange.LibraryPackageSaved, path => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var r = LibraryStore.LoadFile(path);
+                FillLibraryMenu();
+                Refresh();
+                if (r.Items.Count > 0)
+                    _host.SetStatus($"Nueva pieza en la librería: {r.Items[0].Brand} {r.Items[0].Reference}. Está en «Añadir aparato › Librería {r.Items[0].Brand}».");
+            }
+            catch (Exception ex) { _host.SetStatus($"No se pudo cargar la pieza guardada: {ex.Message}"); }
+        }));
         _doc = PanelBuilder.Examples[0].Create();
 
         _plate.SelectionChanged += () => OnSelection(_plate);

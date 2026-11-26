@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Simulador.Cad3D.Geometry.Csg;
 
 namespace Simulador.Cad3D.Geometry.Model;
 
@@ -10,6 +11,8 @@ public sealed class Part
     /// <summary>Color de visualización y de 3MF, en formato #RRGGBB.</summary>
     public string Color { get; set; } = "#4A90D9";
     public bool Visible { get; set; } = true;
+    /// <summary>En una pieza escaneada con colores, verlos (true) o verla toda del color de la pieza (false).</summary>
+    public bool ShowScanColors { get; set; } = true;
     public List<Feature> Features { get; set; } = new();
 
     /// <summary>Copia independiente (para evaluar en segundo plano mientras se sigue editando).</summary>
@@ -42,7 +45,8 @@ public sealed class CadDocument
 }
 
 /// <summary>Resultado de evaluar una pieza.</summary>
-public sealed record PartResult(Part Part, Mesh? Mesh, IReadOnlyList<string> Errors);
+/// <param name="TriangleColors">Color de cada triángulo (ARGB) si la pieza es un escaneo con colores; si no, null.</param>
+public sealed record PartResult(Part Part, Mesh? Mesh, IReadOnlyList<string> Errors, IReadOnlyList<uint>? TriangleColors = null);
 
 /// <summary>Reconstruye las piezas aplicando el historial de operaciones con un motor geométrico.</summary>
 public sealed class DocumentEvaluator
@@ -56,20 +60,49 @@ public sealed class DocumentEvaluator
     /// <summary>Construye el sólido de la pieza (sin teselar), p. ej. para exportar a STEP.</summary>
     public ISolid? BuildSolid(Part part, List<string>? errors = null) => Build(part, errors ?? new List<string>());
 
+    private MeshKernel? _meshKernel;
+
+    /// <summary>true si la pieza tiene alguna pieza escaneada activa.</summary>
+    public static bool HasScan(Part part) => part.Features.Any(f => f.Enabled && f is ScanFeature);
+
+    /// <summary>
+    /// Pieza hecha solo de escaneos que suman: su malla sale directamente, sin pasar por el motor (rápido aunque el
+    /// escaneo tenga muchos triángulos).
+    /// </summary>
+    public static bool IsScanOnly(Part part) =>
+        HasScan(part) && part.Features.Where(f => f.Enabled).All(f => f is ScanFeature { Mode: CombineMode.Solido });
+
+    /// <summary>Malla con colores de una pieza hecha solo de escaneos; null si la pieza tiene otras operaciones.</summary>
+    public static Scan.ScanMesh? ScanOnlyMesh(Part part) =>
+        IsScanOnly(part) ? Scan.ScanMesh.Merge(part.Features.Where(f => f.Enabled).Cast<ScanFeature>().Select(s => s.BuildPlacedMesh())) : null;
+
     public PartResult Evaluate(Part part)
     {
         var errors = new List<string>();
-        var current = Build(part, errors);
+        if (IsScanOnly(part))
+        {
+            try
+            {
+                var scan = ScanOnlyMesh(part)!;
+                return new PartResult(part, scan.ToMesh(), errors, scan.TriangleColors());
+            }
+            catch (Exception ex) { errors.Add($"Pieza escaneada: {ex.Message}"); return new PartResult(part, null, errors); }
+        }
+        // Un escaneo combinado con otras operaciones (p. ej. un taladro) se calcula con el motor de mallas.
+        var kernel = HasScan(part) && _kernel is not MeshKernel ? (_meshKernel ??= new MeshKernel()) : _kernel;
+        var current = Build(part, errors, kernel);
         Mesh? mesh = null;
         if (current is not null)
         {
-            try { mesh = _kernel.ToMesh(current); }
+            try { mesh = kernel.ToMesh(current); }
             catch (Exception ex) { errors.Add($"Teselado: {ex.Message}"); }
         }
         return new PartResult(part, mesh, errors);
     }
 
-    private ISolid? Build(Part part, List<string> errors)
+    private ISolid? Build(Part part, List<string> errors) => Build(part, errors, _kernel);
+
+    private ISolid? Build(Part part, List<string> errors, IGeometryKernel k)
     {
         ISolid? current = null;
         var built = new List<Feature>(); // operaciones con forma propia ya aplicadas, para las repeticiones
@@ -84,16 +117,16 @@ public sealed class DocumentEvaluator
                     if (group.Count == 0) throw new InvalidOperationException("no hay ninguna operación antes que repetir");
                     foreach (var t in pattern.CopyTransforms())
                         foreach (var g in group)
-                            current = Combine(current, _kernel.Transform(g.Build(_kernel), t), g.Mode);
+                            current = Combine(k, current, k.Transform(g.Build(k), t), g.Mode);
                     continue;
                 }
                 if (f is ModifierFeature mod)
                 {
                     if (current is null) throw new InvalidOperationException("no hay nada antes que modificar");
-                    current = mod.Apply(_kernel, current);
+                    current = mod.Apply(k, current);
                     continue;
                 }
-                current = Combine(current, f.Build(_kernel), f.Mode);
+                current = Combine(k, current, f.Build(k), f.Mode);
                 built.Add(f);
             }
             catch (Exception ex)
@@ -104,13 +137,13 @@ public sealed class DocumentEvaluator
         return current;
     }
 
-    private ISolid? Combine(ISolid? current, ISolid s, CombineMode mode) => (current, mode) switch
+    private static ISolid? Combine(IGeometryKernel k, ISolid? current, ISolid s, CombineMode mode) => (current, mode) switch
     {
         (null, CombineMode.Solido) => s,
         (null, _) => null, // un hueco o intersección sin nada antes no aporta material
-        (_, CombineMode.Solido) => _kernel.Union(current, s),
-        (_, CombineMode.Hueco) => _kernel.Subtract(current, s),
-        (_, CombineMode.Interseccion) => _kernel.Intersect(current, s),
+        (_, CombineMode.Solido) => k.Union(current, s),
+        (_, CombineMode.Hueco) => k.Subtract(current, s),
+        (_, CombineMode.Interseccion) => k.Intersect(current, s),
         _ => current,
     };
 

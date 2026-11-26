@@ -131,6 +131,10 @@ Los modelos de fabricante pueden venir en **paquetes .edz**, el formato de las d
 - **Medidas**: cada paquete dice de qué ficha salen. Los que no tienen medida en una ficha oficial (por ejemplo Flex500, Vertex o los mandos 800H) aparecen como «medidas típicas»: compruébalas antes de taladrar.
 - **Dónde se guardan**: los importados se copian a `%AppData%\SimuladorMultiple\Librerias`. Para quitar uno, borra su .edz de esa carpeta y vuelve a abrir el programa.
 
+## Piezas escaneadas
+<!-- palabras: escaneo, escaneada, lidar, iphone, móvil, modelo propio, pieza propia, usdz, obj -->
+Un aparato que no está en ninguna librería se puede escanear con el móvil, arreglar en **Diseño 3D** (`Importar escaneo…`) y guardar con `Guardar como aparato…`. Queda en `%AppData%\SimuladorMultiple\Librerias` y aparece en `🧩 Añadir aparato › Librería <marca>` (por omisión «Mis piezas») con su medida y sus colores, en la placa o en la puerta.
+
 ## ¿Es el catálogo de algún fabricante?
 <!-- palabras: generico, medidas tipicas -->
 Los aparatos de la lista principal son genéricos, con medidas típicas para que el diseño sea realista. Para usar una marca, mira **Librerías de fabricante**, o escribe en cada aparato la referencia que uses: las medidas se pueden ajustar en Propiedades.

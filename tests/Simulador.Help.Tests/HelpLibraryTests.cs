@@ -47,6 +47,7 @@ public class HelpLibraryTests
     [Theory]
     [InlineData("¿Cómo simulo un circuito?", "circuitos/simular-el-circuito")]
     [InlineData("exportar stl", "cad3d/exportar-para-imprimir-stl-3mf-y-step")]
+    [InlineData("escaneo lidar", "cad3d/piezas-escaneadas-con-el-movil")]
     [InlineData("gerber", "circuitos/fabricar-la-placa")]
     [InlineData("el motor no arranca", "electrico/por-que-no-arranca-el-motor")]
     [InlineData("golpe de ariete", "hidraulica/golpe-de-ariete")]

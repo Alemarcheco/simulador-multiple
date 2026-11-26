@@ -11,6 +11,10 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
+    <!-- USDZ de prueba hecho con usd-core (Datos/generar-pieza-usdz.py), como los que crea el iPhone. -->
+    <None Include="Datos\*.usdz" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
   <ItemGroup>
