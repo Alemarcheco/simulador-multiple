@@ -38,7 +38,9 @@ public static class Reports
     {
         var rows = new List<(string Group, double Qty, string Unit, string Desc, string Tags, string Ref)>();
         var e = doc.Enclosure;
-        rows.Add(("Envolvente", 1, "ud", $"{Enclosure.KindName(e.Kind)}{(e.DoubleFront ? " de doble frente (puerta delantera y trasera)" : "")} {N(e.Width)}×{N(e.Height)}×{N(e.Depth)} mm, {e.Ip}", "", ""));
+        rows.Add(("Envolvente", 1, "ud", $"{Enclosure.KindName(e.Kind)}{(e.DoubleFront ? " de doble frente (puerta delantera y trasera)" : "")} {N(e.Width)}×{N(e.Height)}×{N(e.Depth)} mm, {e.Ip}{(e.Doors > 1 ? ", 2 hojas" : "")}{(e.Series is null ? "" : $" ({e.Series})")}", "", e.Reference is null ? "" : $"{e.Brand} {e.Reference}"));
+        if (e.Plinth)
+            rows.Add(("Envolvente", 1, "ud", $"Zócalo de 100 mm para {N(e.Width)}×{N(e.Depth)} mm", "", ""));
         rows.Add(("Envolvente", e.DoubleFront ? 2 : 1, "ud", $"Placa de montaje galvanizada {N(e.PlateWidth)}×{N(e.PlateHeight)} mm", "", ""));
         if (e.FanFlow > 0)
             rows.Add(("Envolvente", 1, "ud", $"Ventilador con filtro {N(e.FanFlow)} m³/h y rejilla de salida", "", ""));

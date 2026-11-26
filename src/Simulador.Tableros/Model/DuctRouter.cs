@@ -80,7 +80,7 @@ public static class DuctRouter
         var t = d.Terminal(end.Terminal);
         if (t is null) return (d.X + d.Width / 2, d.Y);
         var (x, y) = d.TerminalPoint(t);
-        if (d.Location == DeviceLocation.Door) return (-1, Math.Clamp(y - doc.Enclosure.PlateMargin, 0, doc.Enclosure.PlateHeight));
+        if (d.Location == DeviceLocation.Door) return (-1, Math.Clamp(y - doc.Enclosure.PlateTop, 0, doc.Enclosure.PlateHeight));
         return (x, y);
     }
 

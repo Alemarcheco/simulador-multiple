@@ -70,6 +70,8 @@ public static class PanelChecks
             var d = door[i];
             if (d.X < 20 || d.Y < 20 || d.X + d.Width > e.Width - 20 || d.Y + d.Height > e.Height - 20)
                 list.Add(new(CheckLevel.Error, $"{d.Tag} queda fuera de la puerta o demasiado cerca del borde.", d.Tag));
+            if (e.Doors > 1 && d.X < e.Width / 2 + 15 && d.X + d.Width > e.Width / 2 - 15)
+                list.Add(new(CheckLevel.Error, $"{d.Tag} cae sobre la junta de las dos hojas de la puerta.", d.Tag));
             for (var j = i + 1; j < door.Count; j++)
             {
                 var o = door[j];
@@ -77,8 +79,8 @@ public static class PanelChecks
                 if (d.Overlaps(o)) list.Add(new(CheckLevel.Error, $"{d.Tag} y {o.Tag} se tocan en la puerta.", d.Tag));
             }
             // Lo que lleva detrás no debe chocar con lo de la placa (fondo del mando + fondo del aparato de la placa).
-            var behind = plate.Where(p => p.Rear == d.Rear && p.X + e.PlateMargin < d.X + d.Width && d.X < p.X + e.PlateMargin + p.Width
-                                          && p.Y + e.PlateMargin < d.Y + d.Height && d.Y < p.Y + e.PlateMargin + p.Height)
+            var behind = plate.Where(p => p.Rear == d.Rear && p.X + e.PlateLeft < d.X + d.Width && d.X < p.X + e.PlateLeft + p.Width
+                                          && p.Y + e.PlateTop < d.Y + d.Height && d.Y < p.Y + e.PlateTop + p.Height)
                 .OrderByDescending(p => p.Depth).FirstOrDefault();
             if (behind is not null && behind.Depth + d.Depth > e.UsableDepth + 10)
                 list.Add(new(CheckLevel.Aviso, $"Detrás de {d.Tag} está {behind.Tag}: juntos miden {N(behind.Depth + d.Depth)} mm de fondo y hay {N(e.UsableDepth + 10)} mm.", d.Tag));

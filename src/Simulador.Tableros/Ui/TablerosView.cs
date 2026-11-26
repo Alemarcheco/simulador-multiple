@@ -54,6 +54,17 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         _door.Hint += t => _host.SetStatus(t);
         _props.Changed += Commit;
         _props.ArrangeRequested += () => { AutoLayout.Arrange(_doc, chooseEnclosure: false); Commit("Redistribuir"); };
+        _props.SmallestOfBrandRequested += () =>
+        {
+            var fits = AutoLayout.Arrange(_doc);
+            PanelBuilder.SuggestFan(_doc);
+            _plate.Fit();
+            _door.Fit();
+            var e = _doc.Enclosure;
+            Commit(e.Reference is not null
+                ? $"Armario elegido: {e.Brand} {e.Reference} ({e.Height:0} × {e.Width:0} × {e.Depth:0} mm){(fits ? "" : " — ni el más grande alcanza")}"
+                : "Ningún modelo de la marca alcanza: se ha elegido una medida genérica");
+        };
         _props.DoubleFrontChanged += () =>
         {
             AutoLayout.Arrange(_doc);
