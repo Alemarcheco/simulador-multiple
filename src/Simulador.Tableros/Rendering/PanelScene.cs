@@ -180,6 +180,16 @@ public sealed class PanelScene
             Box(Vector3.Min(a, b), Vector3.Max(a, b), c);
         }
 
+        // Modelo 3D de la librería de fabricante (paquete .edz), ajustado a la medida del aparato.
+        if (ManufacturerCatalog.Find(d.Reference) is { Mesh: { } mesh } item)
+        {
+            double sx = d.Width / Math.Max(1e-6, item.Width), sz = d.Height / Math.Max(1e-6, item.Height);
+            Vector3 M(Vector3 v) => P(d.X + v.X * sx, d.Y + d.Height - v.Z * sz, rail + v.Y / 1000);
+            foreach (var (a, b, c, color) in mesh.Triangles) Triangles.Add(new Triangle(M(a), M(b), M(c), color));
+            Labels.Add((P(d.X + d.Width / 2, d.Y + d.Height / 2, rail + mesh.Max.Y / 1000 + 0.015), d.Tag));
+            return;
+        }
+
         switch (d.Kind)
         {
             case "magnetotermico" or "diferencial" or "fusible" or "telerruptor" or "aparato":
@@ -238,6 +248,15 @@ public sealed class PanelScene
         var model = DeviceLibrary.Get(d.Kind);
         double cx = (d.X + d.Width / 2) / 1000, cz = H - (d.Y + d.Height / 2) / 1000;
         double r = d.Width / 2000;
+        if (ManufacturerCatalog.Find(d.Reference) is { Mesh: { } mesh } item)
+        {
+            // En la puerta: Y = 0 en la cara exterior (lo positivo sobresale, lo negativo queda dentro).
+            double sx = d.Width / Math.Max(1e-6, item.Width), sz = d.Height / Math.Max(1e-6, item.Height);
+            Vector3 M(Vector3 v) => door.At((d.X + v.X * sx) / 1000, 0.02 + v.Y / 1000, H - (d.Y + d.Height - v.Z * sz) / 1000);
+            foreach (var (a, b, c, color) in mesh.Triangles) Triangles.Add(new Triangle(M(a), M(b), M(c), color));
+            Labels.Add((door.At(cx, 0.03 + Math.Max(0, mesh.Max.Y) / 1000, cz - d.Height / 2000 - 0.012), d.Tag));
+            return;
+        }
         switch (d.Kind)
         {
             case "controlador":

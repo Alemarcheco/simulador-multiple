@@ -41,6 +41,9 @@ internal sealed class TablerosView : DockPanel, IMenuSource
     public TablerosView(IModuleHost host)
     {
         _host = host;
+        // Paquetes .edz que trae el programa y los que importó el usuario.
+        try { LibraryStore.EnsureLoaded(); }
+        catch (Exception ex) { host.SetStatus($"No se pudieron cargar las librerías de fabricante: {ex.Message}"); }
         _doc = PanelBuilder.Examples[0].Create();
 
         _plate.SelectionChanged += () => OnSelection(_plate);
@@ -111,18 +114,9 @@ internal sealed class TablerosView : DockPanel, IMenuSource
                 item.Click += (_, _) => AddDevice(m.Kind);
                 flyout.Items.Add(item);
             }
-        // Librerías por fabricante, en submenús por marca.
-        foreach (var brand in ManufacturerCatalog.Brands)
-        {
-            var sub = new MenuItem { Header = $"Librería {brand}" };
-            foreach (var it in ManufacturerCatalog.OfBrand(brand))
-            {
-                var item = new MenuItem { Header = $"{it.Reference} · {it.Description}" };
-                item.Click += (_, _) => AddCatalogDevice(it);
-                sub.Items.Add(item);
-            }
-            flyout.Items.Add(sub);
-        }
+        _libraryStart = flyout.Items.Count;
+        _addFlyout = flyout;
+        FillLibraryMenu();
         add.Flyout = flyout;
         ToolTip.SetTip(add, "Añade un aparato genérico en el primer hueco libre del carril (o de la puerta).");
         bar.Children.Add(add);
@@ -186,6 +180,10 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         { ToolTip = "Lee un plano eléctrico en PDF (de cualquier programa de CAD) y monta el tablero solo: aparatos, bornes, hilos, envolvente y canaletas. Si a una cara sale de más de 1200 mm de ancho, propone doble frente" };
         yield return new MenuCommand("Importar plano PDF en armario de doble frente…", () => _ = ImportPdfAsync(true))
         { ToolTip = "Igual, pero reparte los aparatos entre la placa delantera y la trasera de un armario de doble frente" };
+        yield return new MenuCommand("Importar librería de fabricante (.edz)…", () => _ = ImportLibraryAsync())
+        {
+            ToolTip = "Añade a la librería los aparatos de paquetes .edz (EPLAN Data Portal o los del simulador) con sus medidas y modelo 3D",
+        };
         yield return new MenuCommand("Abrir…", () => _ = OpenAsync()) { ToolTip = "Abrir un tablero .tablero", SeparatorBefore = true };
         yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
         yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
@@ -323,6 +321,56 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         _tabs.SelectedIndex = d.Location == DeviceLocation.Door ? 1 : 0;
         Commit($"Añadido {d.Tag}");
         (d.Location == DeviceLocation.Door ? _door : _plate).Select(d);
+    }
+
+    private MenuFlyout? _addFlyout;
+    private int _libraryStart;
+
+    /// <summary>Librerías por fabricante, en submenús por marca (se rehace al importar un .edz).</summary>
+    private void FillLibraryMenu()
+    {
+        if (_addFlyout is not { } flyout) return;
+        while (flyout.Items.Count > _libraryStart) flyout.Items.RemoveAt(flyout.Items.Count - 1);
+        foreach (var brand in ManufacturerCatalog.Brands)
+        {
+            var sub = new MenuItem { Header = $"Librería {brand}" };
+            foreach (var it in ManufacturerCatalog.OfBrand(brand).OrderBy(i => i.Reference, StringComparer.OrdinalIgnoreCase))
+            {
+                var item = new MenuItem { Header = $"{it.Reference} · {it.Description}{(it.Mesh is null ? "" : "  [3D]")}" };
+                item.Click += (_, _) => AddCatalogDevice(it);
+                sub.Items.Add(item);
+            }
+            flyout.Items.Add(sub);
+        }
+    }
+
+    private async Task ImportLibraryAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Librería de fabricante (.edz)", AllowMultiple = true,
+            FileTypeFilter = [new FilePickerFileType("Paquete de fabricante (.edz)") { Patterns = ["*.edz"] }, FilePickerFileTypes.All],
+        });
+        var paths = files.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+        if (paths.Count == 0) return;
+        _host.SetStatus($"Leyendo {paths.Count} paquete(s)…");
+        try
+        {
+            var r = await Task.Run(() => LibraryStore.Import(paths));
+            FillLibraryMenu();
+            Refresh();
+            var withMesh = r.Items.Count(i => i.Mesh is not null);
+            var msg = r.Items.Count == 0
+                ? "No se importó nada. " + string.Join(" ", r.Notes.Take(2))
+                : $"Importados {r.Items.Count} modelos ({withMesh} con 3D) de {string.Join(", ", r.Items.Select(i => i.Brand).Distinct())}. Están en «Añadir aparato › Librería …».";
+            if (r.Items.Count > 0 && r.Notes.Count > 0) msg += $" Avisos: {string.Join(" ", r.Notes.Take(2))}";
+            _host.SetStatus(msg);
+        }
+        catch (Exception ex)
+        {
+            _host.SetStatus($"No se pudo importar: {ex.Message}");
+        }
     }
 
     private void AddCatalogDevice(CatalogItem it)
