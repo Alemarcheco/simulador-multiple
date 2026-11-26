@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Módulo "Banco de pruebas": entorno combinado donde se unen PLC, eléctrico, mecánico e hidráulico con un reloj común. -->
   <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Simulador.Banco</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

@@ -11,6 +11,8 @@ using Simulador.Core.CoSim;
 using Simulador.Core.Modules;
 using Simulador.Core.Signals;
 
+using Simulador.Banco.Mesa.View3D;
+
 namespace Simulador.Banco.Mesa.Ui;
 
 /// <summary>
@@ -28,6 +30,8 @@ public sealed class MesaView : UserControl, IMenuSource
 
     private readonly IModuleHost _host;
     private readonly BenchCanvas _canvas = new();
+    private readonly Bench3DView _view3d = new();
+    private readonly TabControl _views = new();
     private readonly StackPanel _palette = new() { Spacing = 2, Margin = new Thickness(6) };
     private readonly TextBox _search = new() { Watermark = "Buscar pieza…", Margin = new Thickness(6, 6, 6, 0) };
     private readonly StackPanel _inspector = new() { Spacing = 6, Margin = new Thickness(10) };
@@ -51,6 +55,7 @@ public sealed class MesaView : UserControl, IMenuSource
     private BenchProject _project = new();
     private string? _path;
     private bool _dirty;
+    private bool _fitBlocks = true;
     private List<BenchIssue> _designIssues = [];
     private BuiltBench? _built;
     private SimRunner? _runner;
@@ -89,7 +94,7 @@ public sealed class MesaView : UserControl, IMenuSource
         var del = new Button { Content = "🗑 Quitar" };
         ToolTip.SetTip(fit, "Encaja todo el montaje en la pantalla (rueda del ratón: zoom; arrastrar el fondo: mover)");
         ToolTip.SetTip(del, "Quita la pieza o la conexión seleccionada (tecla Supr)");
-        fit.Click += (_, _) => _canvas.ZoomToFit();
+        fit.Click += (_, _) => FitView();
         del.Click += (_, _) => _canvas.DeleteSelection();
         Add(fit, 10); Add(del);
 
@@ -136,11 +141,35 @@ public sealed class MesaView : UserControl, IMenuSource
         root.Children.Add(bottom);
         root.Children.Add(leftBorder);
         root.Children.Add(rightBorder);
-        root.Children.Add(_canvas);
+        var tab3d = new TabItem { Header = Header("🧊 Vista 3D"), Content = _view3d };
+        var tab2d = new TabItem { Header = Header("🔗 Diagrama de bloques"), Content = _canvas };
+        ToolTip.SetTip(tab3d, "Los equipos sobre la mesa, en 3D. Gira con el ratón, mueve piezas y une bornes.");
+        ToolTip.SetTip(tab2d, "Lo que hay detrás: cada pieza como un bloque con sus bornes y cómo se conecta con las demás.");
+        _views.Items.Add(tab3d);
+        _views.Items.Add(tab2d);
+        root.Children.Add(_views);
         Content = root;
 
+        // ---- vista 3D (la misma mesa; la selección y la pieza por poner se comparten con el diagrama)
+        _view3d.SelectedPart = () => _canvas.Selected;
+        _view3d.GetPending = () => _canvas.Pending;
+        _view3d.ClearPending = () => _canvas.Pending = null;
+        _view3d.IssueOf = WorstIssue;
+        _view3d.PartSelected += (_, p) => { _canvas.Select(p); _view3d.InvalidateVisual(); };
+        _view3d.ProjectChanged += (_, _) => { MarkDirty(); BuildInspector(); Redraw(); };
+        _view3d.Message += (_, m) => _host.SetStatus(m);
+        _view3d.PlacementDone += (_, _) => BuildPalette();
+        _view3d.PartPressed += (_, e) => PartPressed(e.PartId, e.Down);
+        _view3d.DeleteRequested += (_, _) => _canvas.DeleteSelection();
+        _views.SelectionChanged += (_, _) =>
+        {
+            // El diagrama se encuadra la primera vez que se ve (oculto no tiene tamaño).
+            if (_views.SelectedIndex == 1 && _fitBlocks) { _fitBlocks = false; Dispatcher.UIThread.Post(_canvas.ZoomToFit, DispatcherPriority.Background); }
+            Redraw();
+        };
+
         // ---- mesa
-        _canvas.SelectionChanged += (_, _) => BuildInspector();
+        _canvas.SelectionChanged += (_, _) => { BuildInspector(); _view3d.InvalidateVisual(); };
         _canvas.ProjectChanged += (_, _) => { MarkDirty(); BuildInspector(); };
         _canvas.Message += (_, m) => _host.SetStatus(m);
         _canvas.PlacementDone += (_, _) => BuildPalette();
@@ -155,6 +184,19 @@ public sealed class MesaView : UserControl, IMenuSource
         Load(BenchExamples.MotorStartStop(), null);
     }
 
+    /// <summary>Redibuja las dos vistas de la mesa (bloques y 3D).</summary>
+    private void Redraw()
+    {
+        _canvas.InvalidateVisual();
+        _view3d.InvalidateVisual();
+    }
+
+    private void FitView()
+    {
+        if (_views.SelectedIndex == 0) _view3d.FitAll();
+        else _canvas.ZoomToFit();
+    }
+
     private static TextBlock Header(string s) => new() { Text = s, FontSize = 14 };
 
     // ================================================================ archivo
@@ -167,7 +209,7 @@ public sealed class MesaView : UserControl, IMenuSource
         yield return new MenuCommand("Guardar como…", () => _ = Save(true));
         yield return MenuCommand.Submenu("Ejemplos de la mesa", BenchExamples.All.Select(ex => new MenuCommand($"{ex.Name} ({ex.Level})", () => OpenExample(ex))));
         yield return new MenuCommand("Quitar la selección", () => _canvas.DeleteSelection()) { Menu = MenuNames.Edit, Shortcut = "Supr" };
-        yield return new MenuCommand("Ver todo el montaje", () => _canvas.ZoomToFit()) { Menu = MenuNames.View };
+        yield return new MenuCommand("Ver todo el montaje", FitView) { Menu = MenuNames.View };
         yield return new MenuCommand("Comprobar montaje", () => { CheckDesign(); _bottom.SelectedItem = _issuesTab; }) { Menu = MenuNames.Tools };
     }
 
@@ -190,9 +232,12 @@ public sealed class MesaView : UserControl, IMenuSource
         _path = path;
         _dirty = false;
         _canvas.Project = project;
+        _view3d.Project = project;
         UpdateTitle();
         BuildInspector();
         CheckDesign();
+        _fitBlocks = _views.SelectedIndex != 1;
+        _view3d.ResetFraming();
         Dispatcher.UIThread.Post(_canvas.ZoomToFit, DispatcherPriority.Background);
     }
 
@@ -281,7 +326,7 @@ public sealed class MesaView : UserControl, IMenuSource
                 {
                     if (_runner is not null) { _host.SetStatus("Detén la simulación (⏹) para añadir piezas."); return; }
                     _canvas.Pending = _canvas.Pending == t ? null : t;
-                    _canvas.InvalidateVisual();
+                    Redraw();
                     _canvas.Focus();
                     BuildPalette();
                     if (_canvas.Pending is not null) _host.SetStatus($"Haz clic en la mesa para poner: {t.Name}. Con Mayús pones varias.");
@@ -305,7 +350,7 @@ public sealed class MesaView : UserControl, IMenuSource
         catch (Exception ex) { _designIssues = [new(IssueLevel.Error, null, "No se pudo comprobar el montaje: " + ex.Message)]; }
         finally { if (b is not null) DisposeParts(b); }
         RefreshIssues();
-        _canvas.InvalidateVisual();
+        Redraw();
     }
 
     private IssueLevel? WorstIssue(string partId)
@@ -384,7 +429,7 @@ public sealed class MesaView : UserControl, IMenuSource
             _bottom.SelectedItem = _issuesTab;
             int n = b.Issues.Count(i => i.Level == IssueLevel.Error);
             _host.SetStatus(b.Parts.Count == 0 && n == 0 ? "La mesa está vacía." : $"No se puede simular todavía: hay {n} error{(n == 1 ? "" : "es")} en el montaje (mira «Avisos»).");
-            _canvas.InvalidateVisual();
+            Redraw();
             return false;
         }
         _built = b;
@@ -396,6 +441,9 @@ public sealed class MesaView : UserControl, IMenuSource
         _canvas.Running = true;
         _canvas.LookOf = LookOf;
         _canvas.WireActive = w => _wireActivity.TryGetValue(WireKey(w), out var f) && f();
+        _view3d.Running = true;
+        _view3d.LookOf = _canvas.LookOf;
+        _view3d.WireActive = _canvas.WireActive;
         PrepareWireActivity(b);
         BuildInstrumentViews(b);
         BuildInspector();
@@ -436,6 +484,9 @@ public sealed class MesaView : UserControl, IMenuSource
         _canvas.Running = false;
         _canvas.LookOf = null;
         _canvas.WireActive = null;
+        _view3d.Running = false;
+        _view3d.LookOf = null;
+        _view3d.WireActive = null;
         _instrumentViews.Clear();
         _instruments.Children.Clear();
         _clock.Text = "";
@@ -443,7 +494,7 @@ public sealed class MesaView : UserControl, IMenuSource
         CheckDesign();
         BuildPalette();
         UpdateButtons();
-        _canvas.InvalidateVisual();
+        Redraw();
     }
 
     private static void DisposeParts(BuiltBench b)
@@ -553,6 +604,7 @@ public sealed class MesaView : UserControl, IMenuSource
         var frame = _runner.Latest;
         _monitor?.Update(frame);
         _canvas.Animate(_runner.IsPaused ? 0 : wall);
+        _view3d.Animate(_runner.IsPaused ? 0 : wall);
         foreach (var (v, _) in _instrumentViews) v.InvalidateVisual();
         _clock.Text = $"t = {frame.Time:hh\\:mm\\:ss\\.f}";
         if (_liveText is not null && _canvas.Selected is { } sel) _liveText.Text = LiveText(sel.Id, frame);
@@ -634,7 +686,7 @@ public sealed class MesaView : UserControl, IMenuSource
         {
             var why = _project.Rename(part, nameBox.Text ?? "");
             nameErr.Text = why ?? "";
-            if (why is null && nameBox.Text?.Trim() != null) { MarkDirty(); _canvas.InvalidateVisual(); }
+            if (why is null && nameBox.Text?.Trim() != null) { MarkDirty(); Redraw(); }
         }
         nameBox.LostFocus += (_, _) => Rename();
         nameBox.KeyDown += (_, e) => { if (e.Key == Key.Enter) Rename(); };
@@ -649,7 +701,7 @@ public sealed class MesaView : UserControl, IMenuSource
             {
                 case ParamKind.Choice:
                     var combo = new ComboBox { ItemsSource = d.Options, SelectedItem = part.Text(d.Key, d.Default), HorizontalAlignment = HorizontalAlignment.Stretch };
-                    combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s && part[d.Key] != s) { part[d.Key] = s; MarkDirty(); _canvas.InvalidateVisual(); } };
+                    combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is string s && part[d.Key] != s) { part[d.Key] = s; MarkDirty(); Redraw(); } };
                     editor = combo;
                     break;
                 case ParamKind.Program:
@@ -671,7 +723,7 @@ public sealed class MesaView : UserControl, IMenuSource
                         string t = (box.Text ?? "").Trim().Replace(',', '.');
                         bool ok = double.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _);
                         box.BorderBrush = ok ? null : Brushes.Firebrick;
-                        if (ok && part[d.Key] != t) { part[d.Key] = t; MarkDirty(); _canvas.InvalidateVisual(); }
+                        if (ok && part[d.Key] != t) { part[d.Key] = t; MarkDirty(); Redraw(); }
                     };
                     editor = d.Unit.Length > 0
                         ? new DockPanel { Children = { new TextBlock { Text = d.Unit, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), [DockPanel.DockProperty] = Dock.Right }, box } }
