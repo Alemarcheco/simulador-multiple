@@ -172,6 +172,18 @@ public class PlanImportTests
     }
 
     [Theory]
+    [InlineData("CBI(3)", "CB1(3)")]
+    [InlineData("Fl(L)", "F1(L)")]
+    [InlineData("CBI", "CB1")]
+    [InlineData("KI-R4", "K1-R4")]
+    [InlineData("CB1O", "CB10")]
+    [InlineData("FIT-3200", "FIT-3200")]
+    [InlineData("SOL1", "SOL1")]
+    [InlineData("PLC", "PLC")]
+    public void CorrigeLasCifrasQueElOcrLeeComoLetras(string ocr, string expected) =>
+        Assert.Equal(expected, PlanImporter.FixOcrDigits(ocr));
+
+    [Theory]
     [InlineData("TB-120N-1", "1", "TB-120N", "1")]
     [InlineData("TB-120L-5", "5", "TB-120L", "5")]
     [InlineData("CB1", "3", "CB1", "3")]

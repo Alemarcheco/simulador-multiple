@@ -107,6 +107,16 @@ public static partial class PlanImporter
         var withText = plan.Pages.Count(p => p.Words.Count > 0);
         var labelCount = 0;
 
+        // En las páginas leídas por OCR, «CBI(3)» y «Fl(L)» son CB1(3) y F1(L).
+        foreach (var page in plan.Pages.Where(p => plan.OcrPages.Contains(p.Number)))
+        {
+            for (var i = 0; i < page.Words.Count; i++)
+            {
+                var fixedText = FixOcrDigits(page.Words[i].Text);
+                if (fixedText != page.Words[i].Text) page.Words[i] = page.Words[i] with { Text = fixedText };
+            }
+        }
+
         foreach (var page in plan.Pages)
         {
             var text = page.Text;
@@ -430,6 +440,27 @@ public static partial class PlanImporter
         var m = StripTerminalRx().Match(tag);
         if (m.Success) return new WireEnd($"{m.Groups[1].Value}-{m.Groups[2].Value}", m.Groups[3].Value);
         return new WireEnd(tag, terminal);
+    }
+
+    /// <summary>
+    /// El OCR lee a menudo el 1 como I, l o | y el 0 como O justo después del prefijo («CBI», «Fl(L)», «KI-R4»).
+    /// Si tras un prefijo conocido viene una de esas letras y luego fin, «(», «-» o cifras, se cambian por cifras.
+    /// </summary>
+    internal static string FixOcrDigits(string word)
+    {
+        var lead = word.StartsWith('-') ? 1 : 0;
+        foreach (var p in StrongPrefixes.Where(p => word.Length > lead + p.Length && string.CompareOrdinal(word, lead, p, 0, p.Length) == 0)
+                     .OrderByDescending(p => p.Length))
+        {
+            var i = lead + p.Length;
+            var j = i;
+            while (j < word.Length && (char.IsDigit(word[j]) || word[j] is 'I' or 'l' or '|' or 'O')) j++;
+            if (j == i || !word[i..j].Any(c => c is 'I' or 'l' or '|' or 'O')) continue;
+            if (j < word.Length && word[j] is not ('(' or '-' or ':' or ')' or ',')) continue;
+            var digits = word[i..j].Replace('I', '1').Replace('l', '1').Replace('|', '1').Replace('O', '0');
+            return word[..i] + digits + word[j..];
+        }
+        return word;
     }
 
     private static string PrefixOf(string tag) => new(tag.TakeWhile(char.IsLetter).ToArray());
