@@ -29,6 +29,8 @@ internal sealed class PanelCanvas : Control
 
     public object? Selected { get; private set; }
     public bool ShowWires { get; set; } = true;
+    /// <summary>Cara que se dibuja y edita: false = delantera, true = trasera (armario de doble frente).</summary>
+    public bool Rear { get; set; }
     public event Action? SelectionChanged;
     /// <summary>El usuario ha movido algo (hay que rehacer el cableado).</summary>
     public event Action<string>? Modified;
@@ -74,7 +76,7 @@ internal sealed class PanelCanvas : Control
         if (_userZoom || Bounds.Width < 10) return;
         var e = _doc.Enclosure;
         // En la placa se deja sitio a la derecha para los aparatos aún sin colocar.
-        var extraRight = _mode == Mode.Plate && _doc.OnPlate.Any(d => d.X > e.PlateWidth) ? _doc.OnPlate.Max(d => d.X + d.Width) - e.PlateWidth + 20 : 0;
+        var extraRight = _mode == Mode.Plate && _doc.PlateOf(Rear).Any(d => d.X > e.PlateWidth) ? _doc.PlateOf(Rear).Max(d => d.X + d.Width) - e.PlateWidth + 20 : 0;
         double w = e.Width + extraRight + 60, h = e.Height + 60;
         _scale = Math.Min(Bounds.Width / w, Bounds.Height / h);
         _ox = (Bounds.Width - (e.Width + extraRight) * _scale) / 2;
@@ -112,7 +114,7 @@ internal sealed class PanelCanvas : Control
         var e = _doc.Enclosure;
         ctx.DrawRectangle(PlateFill, Thin, R(0, 0, e.PlateWidth, e.PlateHeight));
 
-        foreach (var r in _doc.Rails)
+        foreach (var r in _doc.RailsOf(Rear))
         {
             var rect = R(r.X, r.Y, r.Length, DinRail.RailHeight);
             ctx.DrawRectangle(RailFill, Selected == r ? SelectPen : Thin, rect);
@@ -121,7 +123,7 @@ internal sealed class PanelCanvas : Control
                 for (var x = r.X + 10; x < r.X + r.Length - 15; x += 25)
                     ctx.FillRectangle(Brushes.DimGray, R(x, r.Y + 15, 12, 5));
         }
-        foreach (var k in _doc.Ducts)
+        foreach (var k in _doc.DuctsOf(Rear))
         {
             var rect = R(k.X, k.Y, k.W, k.H);
             ctx.DrawRectangle(DuctFill, Selected == k ? SelectPen : Thin, rect);
@@ -143,18 +145,19 @@ internal sealed class PanelCanvas : Control
             }
         }
 
-        foreach (var d in _doc.OnPlate) DrawDevice(ctx, d);
+        foreach (var d in _doc.PlateOf(Rear)) DrawDevice(ctx, d);
 
         if (ShowWires)
             foreach (var r in _routes)
             {
-                if (r.Points.Count < 2) continue;
+                var pts = r.PointsOn(Rear);
+                if (pts.Count < 2) continue;
                 var c = PanelScene.WireColor(r.Wire.Color);
                 var pen = new Pen(new SolidColorBrush(Color.FromArgb(200, (byte)(c >> 16), (byte)(c >> 8), (byte)c)), Math.Clamp(r.Wire.Section * 0.6 * _scale, 1, 3));
                 var sel = Selected is PanelDevice sd && (r.Wire.From.Tag == sd.Tag || r.Wire.To.Tag == sd.Tag);
                 if (sel) pen = new Pen(pen.Brush, pen.Thickness + 1.5);
-                for (var i = 0; i + 1 < r.Points.Count; i++)
-                    ctx.DrawLine(pen, ToPx(r.Points[i].X, r.Points[i].Y), ToPx(r.Points[i + 1].X, r.Points[i + 1].Y));
+                for (var i = 0; i + 1 < pts.Count; i++)
+                    ctx.DrawLine(pen, ToPx(pts[i].X, pts[i].Y), ToPx(pts[i + 1].X, pts[i + 1].Y));
             }
     }
 
@@ -162,13 +165,13 @@ internal sealed class PanelCanvas : Control
     {
         var e = _doc.Enclosure;
         // Silueta de lo que hay detrás en la placa, para no chocar con los mandos.
-        foreach (var d in _doc.OnPlate)
+        foreach (var d in _doc.PlateOf(Rear))
             ctx.FillRectangle(Ghost, R(d.X + e.PlateMargin, d.Y + e.PlateMargin, d.Width, d.Height));
         // Maneta.
         ctx.FillRectangle(Brushes.DimGray, R(e.Width - 45, e.Height / 2 - 60, 18, 120), 4);
         // Bisagras a la izquierda.
         for (var y = 0.15; y < 1; y += 0.7) ctx.FillRectangle(Brushes.Gray, R(-6, e.Height * y, 8, 50));
-        foreach (var d in _doc.OnDoor) DrawDevice(ctx, d);
+        foreach (var d in _doc.DoorOf(Rear)) DrawDevice(ctx, d);
     }
 
     private void DrawDevice(DrawingContext ctx, PanelDevice d)
@@ -183,7 +186,17 @@ internal sealed class PanelCanvas : Control
             // Mandos redondos: anillo y botón.
             var c = rect.Center;
             var r = Math.Min(rect.Width, rect.Height) / 2;
-            if (d.Kind == "instrumento")
+            if (d.Kind == "controlador")
+            {
+                // Equipo de panel (Woodward 505, ProTech…): marco, pantalla arriba y teclado abajo.
+                ctx.DrawRectangle(body, Thin, rect, 4, 4);
+                var screen = new Rect(rect.X + rect.Width * 0.1, rect.Y + rect.Height * 0.1, rect.Width * 0.8, rect.Height * 0.38);
+                ctx.DrawRectangle(Brush(0xFF9DB7A6), Thin, screen, 2, 2);
+                for (var i = 0; i < 3; i++)
+                for (var j = 0; j < 4; j++)
+                    ctx.DrawRectangle(front, null, new Rect(rect.X + rect.Width * (0.14 + j * 0.19), rect.Y + rect.Height * (0.56 + i * 0.12), rect.Width * 0.14, rect.Height * 0.08), 1, 1);
+            }
+            else if (d.Kind == "instrumento")
             {
                 ctx.DrawRectangle(body, Thin, rect, 3, 3);
                 ctx.DrawRectangle(front, null, rect.Deflate(r * 0.15));
@@ -274,13 +287,13 @@ internal sealed class PanelCanvas : Control
 
     private object? HitTest(double x, double y)
     {
-        var devices = _mode == Mode.Plate ? _doc.OnPlate : _doc.OnDoor;
+        var devices = _mode == Mode.Plate ? _doc.PlateOf(Rear) : _doc.DoorOf(Rear);
         foreach (var d in devices.Reverse())
             if (x >= d.X && x <= d.X + d.Width && y >= d.Y && y <= d.Y + d.Height) return d;
         if (_mode == Mode.Door) return null;
-        foreach (var k in _doc.Ducts)
+        foreach (var k in _doc.DuctsOf(Rear))
             if (x >= k.X && x <= k.X + k.W && y >= k.Y && y <= k.Y + k.H) return k;
-        foreach (var r in _doc.Rails)
+        foreach (var r in _doc.RailsOf(Rear))
             if (x >= r.X && x <= r.X + r.Length && y >= r.Y && y <= r.Y + DinRail.RailHeight) return r;
         return null;
     }
@@ -366,11 +379,11 @@ internal sealed class PanelCanvas : Control
         if (d.OnRail)
         {
             var center = y + d.Height / 2;
-            var rail = _doc.Rails.Where(r => x + d.Width > r.X && x < r.X + r.Length)
+            var rail = _doc.RailsOf(Rear).Where(r => x + d.Width > r.X && x < r.X + r.Length)
                 .OrderBy(r => Math.Abs(r.CenterY - center)).FirstOrDefault();
             if (rail is not null && Math.Abs(rail.CenterY - center) < 30) y = rail.CenterY - d.Height / 2;
         }
-        foreach (var o in _doc.OnPlate)
+        foreach (var o in _doc.PlateOf(Rear))
         {
             if (o == d || Math.Abs(o.Y + o.Height / 2 - (y + d.Height / 2)) > 20) continue;
             if (Math.Abs(x - (o.X + o.Width)) < 4) x = o.X + o.Width;

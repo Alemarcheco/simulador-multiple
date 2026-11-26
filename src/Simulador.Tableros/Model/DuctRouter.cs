@@ -1,7 +1,17 @@
 namespace Simulador.Tableros.Model;
 
 /// <summary>Recorrido de un conductor por las canaletas, en coordenadas de la placa (mm).</summary>
-public sealed record WireRoute(PanelWire Wire, IReadOnlyList<(double X, double Y)> Points, bool FromDoor, bool ToDoor, IReadOnlyList<Duct> Ducts);
+/// <remarks>
+/// En un armario de doble frente, <see cref="Points"/> es el tramo por la placa delantera y <see cref="RearPoints"/>
+/// el de la trasera; un hilo que pasa de una cara a otra tiene los dos y cruza por la esquina superior izquierda.
+/// </remarks>
+public sealed record WireRoute(PanelWire Wire, IReadOnlyList<(double X, double Y)> Points, bool FromDoor, bool ToDoor, IReadOnlyList<Duct> Ducts)
+{
+    public IReadOnlyList<(double X, double Y)> RearPoints { get; init; } = [];
+
+    /// <summary>Tramo que se ve en una cara.</summary>
+    public IReadOnlyList<(double X, double Y)> PointsOn(bool rear) => rear ? RearPoints : Points;
+}
 
 /// <summary>
 /// Genera los conductores a partir de los potenciales del esquema y los lleva por las canaletas por el camino más
@@ -101,24 +111,55 @@ public static class DuctRouter
     public static List<WireRoute> Route(PanelDocument doc)
     {
         var routes = new List<WireRoute>();
-        var ducts = doc.Ducts;
         foreach (var w in doc.Wires)
         {
             var a = Position(doc, w.From);
             var b = Position(doc, w.To);
             if (a is null || b is null) { w.Length = 0; continue; }
-            var fromDoor = doc.FindTag(w.From.Tag)?.Location == DeviceLocation.Door;
-            var toDoor = doc.FindTag(w.To.Tag)?.Location == DeviceLocation.Door;
-            var (pts, used) = ducts.Count == 0 ? (Manhattan(a.Value, b.Value), new List<Duct>()) : Path(doc, a.Value, b.Value);
+            var da = doc.FindTag(w.From.Tag)!;
+            var db = doc.FindTag(w.To.Tag)!;
+            var fromDoor = da.Location == DeviceLocation.Door;
+            var toDoor = db.Location == DeviceLocation.Door;
             var len = 0.0;
-            for (var i = 0; i + 1 < pts.Count; i++) len += Math.Abs(pts[i].X - pts[i + 1].X) + Math.Abs(pts[i].Y - pts[i + 1].Y);
+            WireRoute route;
+            if (da.Rear == db.Rear)
+            {
+                var (pts, used) = Leg(doc, a.Value, b.Value, da.Rear);
+                len += Length(pts);
+                route = da.Rear ? new WireRoute(w, [], fromDoor, toDoor, used) { RearPoints = pts } : new WireRoute(w, pts, fromDoor, toDoor, used);
+            }
+            else
+            {
+                // De una cara a la otra: por la esquina superior izquierda, rodeando el canto de las placas.
+                var (p1, u1) = Leg(doc, a.Value, CrossPoint, da.Rear);
+                var (p2, u2) = Leg(doc, CrossPoint, b.Value, db.Rear);
+                len += Length(p1) + Length(p2) + CrossLength(doc);
+                var (front, rear) = da.Rear ? (p2, p1) : (p1, p2);
+                route = new WireRoute(w, front, fromDoor, toDoor, [.. u1, .. u2.Except(u1)]) { RearPoints = rear };
+            }
             if (fromDoor) len += DoorLeg(doc, w.From);
             if (toDoor) len += DoorLeg(doc, w.To);
             w.Length = Math.Round(len + 2 * EndAllowance);
-            routes.Add(new WireRoute(w, pts, fromDoor, toDoor, used));
+            routes.Add(route);
         }
         return routes;
     }
+
+    /// <summary>Punto de la placa por el que los hilos pasan de una cara a la otra.</summary>
+    public static readonly (double X, double Y) CrossPoint = (0, 0);
+
+    /// <summary>Lo que mide el paso de una placa a la otra: el fondo entre las dos caras más el canto.</summary>
+    public static double CrossLength(PanelDocument doc) => doc.Enclosure.Depth / 2 + 100;
+
+    private static double Length(List<(double X, double Y)> pts)
+    {
+        var len = 0.0;
+        for (var i = 0; i + 1 < pts.Count; i++) len += Math.Abs(pts[i].X - pts[i + 1].X) + Math.Abs(pts[i].Y - pts[i + 1].Y);
+        return len;
+    }
+
+    private static (List<(double X, double Y)> Points, List<Duct> Ducts) Leg(PanelDocument doc, (double X, double Y) a, (double X, double Y) b, bool rear) =>
+        doc.DuctsOf(rear).Any() ? Path(doc, a, b, rear) : (Manhattan(a, b), []);
 
     /// <summary>Tramo en la puerta: del aparato a la bisagra, más el bucle para poder abrirla.</summary>
     private static double DoorLeg(PanelDocument doc, WireEnd end)
@@ -130,18 +171,19 @@ public static class DuctRouter
     private static List<(double X, double Y)> Manhattan((double X, double Y) a, (double X, double Y) b) =>
         [a, (a.X, b.Y), b];
 
-    private static (List<(double X, double Y)> Points, List<Duct> Ducts) Path(PanelDocument doc, (double X, double Y) a, (double X, double Y) b)
+    private static (List<(double X, double Y)> Points, List<Duct> Ducts) Path(PanelDocument doc, (double X, double Y) a, (double X, double Y) b, bool rear)
     {
         var g = new Graph();
+        var ducts = doc.DuctsOf(rear).ToList();
         // Nudos sobre el eje de cada canaleta: extremos, cruces con las demás y entradas de los dos bornes.
-        var onDuct = doc.Ducts.ToDictionary(k => k, _ => new List<int>());
-        foreach (var k in doc.Ducts)
+        var onDuct = ducts.ToDictionary(k => k, _ => new List<int>());
+        foreach (var k in ducts)
         {
             onDuct[k].Add(g.Add(Start(k)));
             onDuct[k].Add(g.Add(End(k)));
         }
-        foreach (var k in doc.Ducts)
-            foreach (var o in doc.Ducts)
+        foreach (var k in ducts)
+            foreach (var o in ducts)
             {
                 if (k == o || k.Vertical == o.Vertical) continue;
                 var (h, v) = k.Vertical ? (o, k) : (k, o);
@@ -159,8 +201,8 @@ public static class DuctRouter
                 }
             }
 
-        var ia = Entry(doc, g, onDuct, a);
-        var ib = Entry(doc, g, onDuct, b);
+        var ia = Entry(doc, g, onDuct, a, rear);
+        var ib = Entry(doc, g, onDuct, b, rear);
 
         foreach (var (k, list) in onDuct)
         {
@@ -211,14 +253,14 @@ public static class DuctRouter
     /// Entrada de un borne a la canaleta: los de arriba de un aparato suben a la canaleta horizontal de encima, los
     /// de abajo bajan a la de debajo; si no hay, a la más cercana. Los de la puerta entran por la canaleta izquierda.
     /// </summary>
-    private static int Entry(PanelDocument doc, Graph g, Dictionary<Duct, List<int>> onDuct, (double X, double Y) p)
+    private static int Entry(PanelDocument doc, Graph g, Dictionary<Duct, List<int>> onDuct, (double X, double Y) p, bool rear)
     {
         Duct? best = null;
         (double X, double Y) proj = default;
         var bestCost = double.PositiveInfinity;
-        var isTopOfDevice = doc.OnPlate.Any(d => Math.Abs(d.Y - p.Y) < 0.5 && p.X >= d.X - 0.5 && p.X <= d.X + d.Width + 0.5);
-        var isBottom = doc.OnPlate.Any(d => Math.Abs(d.Y + d.Height - p.Y) < 0.5 && p.X >= d.X - 0.5 && p.X <= d.X + d.Width + 0.5);
-        foreach (var k in doc.Ducts)
+        var isTopOfDevice = doc.PlateOf(rear).Any(d => Math.Abs(d.Y - p.Y) < 0.5 && p.X >= d.X - 0.5 && p.X <= d.X + d.Width + 0.5);
+        var isBottom = doc.PlateOf(rear).Any(d => Math.Abs(d.Y + d.Height - p.Y) < 0.5 && p.X >= d.X - 0.5 && p.X <= d.X + d.Width + 0.5);
+        foreach (var k in onDuct.Keys)
         {
             var q = k.Vertical
                 ? (k.CenterX, Math.Clamp(p.Y, k.Y, k.Y + k.Length))
@@ -279,7 +321,7 @@ public static class DuctRouter
             var area = Math.PI * d * d / 4;
             foreach (var k in r.Ducts) fill[k] += area;
             // Los hilos de la puerta pasan todos por la canaleta vertical izquierda.
-            if ((r.FromDoor || r.ToDoor) && doc.Ducts.Where(k => k.Vertical).OrderBy(k => k.X).FirstOrDefault() is { } left && !r.Ducts.Contains(left))
+            if ((r.FromDoor || r.ToDoor) && doc.DuctsOf(false).Where(k => k.Vertical).OrderBy(k => k.X).FirstOrDefault() is { } left && !r.Ducts.Contains(left))
                 fill[left] += area;
         }
         foreach (var k in doc.Ducts) fill[k] /= Math.Max(1, k.Width * k.Depth);

@@ -54,9 +54,9 @@ public static class PanelChecks
                 list.Add(new(CheckLevel.Error, $"{d.Tag} está fuera de la placa de montaje.", d.Tag));
             if (d.Depth > e.UsableDepth)
                 list.Add(new(CheckLevel.Error, $"{d.Tag} mide {N(d.Depth)} mm de fondo y la envolvente solo deja {N(e.UsableDepth)} mm: la puerta no cerrará.", d.Tag));
-            if (d.OnRail && !doc.Rails.Any(r => Math.Abs(r.CenterY - (d.Y + d.Height / 2)) < 3 && d.X >= r.X - 0.5 && d.X + d.Width <= r.X + r.Length + 0.5))
+            if (d.OnRail && !doc.RailsOf(d.Rear).Any(r => Math.Abs(r.CenterY - (d.Y + d.Height / 2)) < 3 && d.X >= r.X - 0.5 && d.X + d.Width <= r.X + r.Length + 0.5))
                 list.Add(new(CheckLevel.Aviso, $"{d.Tag} se monta en carril DIN y no está centrado sobre ninguno.", d.Tag));
-            foreach (var k in doc.Ducts.Where(k => AutoLayout.Intersects(k, d)))
+            foreach (var k in doc.DuctsOf(d.Rear).Where(k => AutoLayout.Intersects(k, d)))
                 list.Add(new(CheckLevel.Error, $"{d.Tag} tapa una canaleta.", d.Tag));
         }
         for (var i = 0; i < plate.Count; i++)
@@ -77,7 +77,7 @@ public static class PanelChecks
                 if (d.Overlaps(o)) list.Add(new(CheckLevel.Error, $"{d.Tag} y {o.Tag} se tocan en la puerta.", d.Tag));
             }
             // Lo que lleva detrás no debe chocar con lo de la placa (fondo del mando + fondo del aparato de la placa).
-            var behind = plate.Where(p => p.X + e.PlateMargin < d.X + d.Width && d.X < p.X + e.PlateMargin + p.Width
+            var behind = plate.Where(p => p.Rear == d.Rear && p.X + e.PlateMargin < d.X + d.Width && d.X < p.X + e.PlateMargin + p.Width
                                           && p.Y + e.PlateMargin < d.Y + d.Height && d.Y < p.Y + e.PlateMargin + p.Height)
                 .OrderByDescending(p => p.Depth).FirstOrDefault();
             if (behind is not null && behind.Depth + d.Depth > e.UsableDepth + 10)
@@ -87,9 +87,9 @@ public static class PanelChecks
         // Carriles: ocupación y reserva.
         foreach (var r in doc.Rails)
         {
-            var used = plate.Where(d => d.OnRail && Math.Abs(r.CenterY - (d.Y + d.Height / 2)) < 3 && d.X < r.X + r.Length && d.X + d.Width > r.X).Sum(d => d.Width);
+            var used = plate.Where(d => d.OnRail && d.Rear == r.Rear && Math.Abs(r.CenterY - (d.Y + d.Height / 2)) < 3 && d.X < r.X + r.Length && d.X + d.Width > r.X).Sum(d => d.Width);
             var pct = used / Math.Max(1, r.Length);
-            if (pct > 1) list.Add(new(CheckLevel.Error, $"El carril a {N(r.Y)} mm tiene más aparatos ({N(used)} mm) de los que caben ({N(r.Length)} mm)."));
+            if (pct > 1) list.Add(new(CheckLevel.Error, $"El carril a {N(r.Y)} mm{(r.Rear ? " de la placa trasera" : "")} tiene más aparatos ({N(used)} mm) de los que caben ({N(r.Length)} mm)."));
         }
         var railTotal = doc.Rails.Sum(r => r.Length);
         var railUsed = plate.Where(d => d.OnRail).Sum(d => d.Width);

@@ -32,6 +32,12 @@ public sealed class PanelDocument
 
     public IEnumerable<PanelDevice> OnPlate => Devices.Where(d => d.Location == DeviceLocation.Plate);
     public IEnumerable<PanelDevice> OnDoor => Devices.Where(d => d.Location == DeviceLocation.Door);
+
+    // Armario de doble frente: cada cosa está en la cara delantera (Rear = false) o en la trasera.
+    public IEnumerable<PanelDevice> PlateOf(bool rear) => OnPlate.Where(d => d.Rear == rear);
+    public IEnumerable<PanelDevice> DoorOf(bool rear) => OnDoor.Where(d => d.Rear == rear);
+    public IEnumerable<DinRail> RailsOf(bool rear) => Rails.Where(r => r.Rear == rear);
+    public IEnumerable<Duct> DuctsOf(bool rear) => Ducts.Where(k => k.Rear == rear);
     public IEnumerable<PanelDevice> InField => Devices.Where(d => d.Location == DeviceLocation.Field);
 
     private static readonly JsonSerializerOptions Json = new()
@@ -71,11 +77,16 @@ public sealed class Enclosure
     public double FanFlow { get; set; }
     /// <summary>Lados libres: un armario mural tiene la espalda contra la pared.</summary>
     public bool AgainstWall { get; set; } = true;
+    /// <summary>
+    /// Doble frente: dos placas espalda con espalda (delantera y trasera), cada una con su puerta. El fondo se reparte
+    /// entre las dos caras.
+    /// </summary>
+    public bool DoubleFront { get; set; }
 
     [JsonIgnore] public double PlateWidth => Math.Max(50, Width - 2 * PlateMargin);
     [JsonIgnore] public double PlateHeight => Math.Max(50, Height - 2 * PlateMargin);
     /// <summary>Hueco libre delante de la placa (fondo útil para los aparatos).</summary>
-    [JsonIgnore] public double UsableDepth => Math.Max(20, Depth - 35);
+    [JsonIgnore] public double UsableDepth => DoubleFront ? Math.Max(20, Depth / 2 - 35) : Math.Max(20, Depth - 35);
 
     public static string KindName(EnclosureKind k) => k switch
     {
@@ -94,6 +105,8 @@ public sealed class DinRail
     public double X { get; set; }
     public double Y { get; set; }
     public double Length { get; set; } = 500;
+    /// <summary>En la placa trasera (armario de doble frente).</summary>
+    public bool Rear { get; set; }
 
     [JsonIgnore] public double CenterY => Y + RailHeight / 2;
 }
@@ -108,6 +121,8 @@ public sealed class Duct
     public bool Vertical { get; set; }
     public double Width { get; set; } = 40;
     public double Depth { get; set; } = 60;
+    /// <summary>En la placa trasera (armario de doble frente).</summary>
+    public bool Rear { get; set; }
 
     [JsonIgnore] public double W => Vertical ? Width : Length;
     [JsonIgnore] public double H => Vertical ? Length : Width;
@@ -159,6 +174,8 @@ public sealed class PanelDevice
     public List<string> Accessories { get; set; } = [];
     /// <summary>Corriente asignada (A), cuando se conoce (para la sección de los conductores).</summary>
     public double RatedA { get; set; }
+    /// <summary>En la cara trasera (placa o puerta trasera) de un armario de doble frente.</summary>
+    public bool Rear { get; set; }
 
     public DeviceTerminal? Terminal(string label) =>
         Terminals.FirstOrDefault(t => t.Label == label) ?? Terminals.FirstOrDefault(t => string.Equals(t.Label, label, StringComparison.OrdinalIgnoreCase));
@@ -168,7 +185,7 @@ public sealed class PanelDevice
         (X + Width * Math.Clamp(t.Slot, 0, 1), t.Side == TerminalSide.Top ? Y : Y + Height);
 
     public bool Overlaps(PanelDevice o) =>
-        X < o.X + o.Width - 0.01 && o.X < X + Width - 0.01 && Y < o.Y + o.Height - 0.01 && o.Y < Y + Height - 0.01;
+        Rear == o.Rear && X < o.X + o.Width - 0.01 && o.X < X + Width - 0.01 && Y < o.Y + o.Height - 0.01 && o.Y < Y + Height - 0.01;
 }
 
 public enum WireKind { Potencia, Neutro, Mando, MandoDc, Tierra }

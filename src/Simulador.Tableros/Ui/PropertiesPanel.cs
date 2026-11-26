@@ -16,6 +16,8 @@ internal sealed class PropertiesPanel : ScrollViewer
     public event Action<string>? Changed;
     /// <summary>Hay que volver a distribuir (cambio de tamaño de la envolvente).</summary>
     public event Action? ArrangeRequested;
+    /// <summary>Se ha marcado o quitado el doble frente: hay que elegir armario y repartir de nuevo.</summary>
+    public event Action? DoubleFrontChanged;
 
     public PropertiesPanel()
     {
@@ -104,6 +106,21 @@ internal sealed class PropertiesPanel : ScrollViewer
         Text("Designación", d.Tag, v => d.Tag = v.Trim());
         Text("Descripción", d.Description, v => d.Description = v);
         Text("Referencia del fabricante", d.Reference, v => d.Reference = v, "Marca y código de catálogo");
+        // Librería de fabricante: los modelos del mismo tipo (todos si el aparato es genérico).
+        var items = ManufacturerCatalog.All.Where(i => d.Kind == "aparato" || i.Kind == d.Kind).ToList();
+        if (items.Count > 0 && d.Location != DeviceLocation.Field)
+        {
+            var current = ManufacturerCatalog.Find(d.Reference);
+            Combo("Modelo de la librería de fabricante", items.Select(i => i.Display).Prepend("— Genérico (medidas típicas) —").ToArray(),
+                current is null ? 0 : items.IndexOf(current) + 1,
+                i => { if (i > 0) ManufacturerCatalog.Apply(d, items[i - 1]); });
+            if (current is not null)
+                _stack.Children.Add(new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7,
+                    Text = current.Verified ? $"Medidas de la ficha del fabricante ({current.Source})." : "Medidas típicas: la ficha del fabricante no las da; compruébalas en su catálogo.",
+                });
+        }
         Combo("Ubicación", ["Placa de montaje", "Puerta", "Fuera del tablero (campo)"], (int)d.Location, i => d.Location = (DeviceLocation)i);
         if (d.Location == DeviceLocation.Field)
         {
@@ -160,13 +177,23 @@ internal sealed class PropertiesPanel : ScrollViewer
         Text("Nombre del tablero", doc.Name, v => doc.Name = v);
         Combo("Tipo", [Enclosure.KindName(EnclosureKind.MuralMetalico), Enclosure.KindName(EnclosureKind.ArmarioDePie), Enclosure.KindName(EnclosureKind.CajaPoliester)],
             (int)e.Kind, i => e.Kind = (EnclosureKind)i);
-        Combo("Medida normalizada", AutoLayout.StandardSizes.Select(s => $"{s.W:0} × {s.H:0} × {s.D:0} mm").Prepend("A medida").ToArray(),
-            Array.FindIndex(AutoLayout.StandardSizes, s => s.W == e.Width && s.H == e.Height && s.D == e.Depth) + 1,
+        var sizes = e.DoubleFront ? AutoLayout.DoubleFrontSizes : AutoLayout.StandardSizes;
+        Combo("Medida normalizada", sizes.Select(s => $"{s.W:0} × {s.H:0} × {s.D:0} mm").Prepend("A medida").ToArray(),
+            Array.FindIndex(sizes, s => s.W == e.Width && s.H == e.Height && s.D == e.Depth) + 1,
             i =>
             {
                 if (i == 0) return;
-                (e.Width, e.Height, e.Depth) = AutoLayout.StandardSizes[i - 1];
+                (e.Width, e.Height, e.Depth) = sizes[i - 1];
             });
+        var df = new CheckBox { Content = "Doble frente (placa y puerta delante y detrás)", IsChecked = e.DoubleFront, Margin = new Thickness(0, 4, 0, 0) };
+        ToolTip.SetTip(df, "Armario de pie con dos placas espalda con espalda, cada una con su puerta. Al marcarlo se elige armario y se reparten los aparatos entre las dos caras.");
+        df.IsCheckedChanged += (_, _) =>
+        {
+            if (_loading) return;
+            e.DoubleFront = df.IsChecked == true;
+            DoubleFrontChanged?.Invoke();
+        };
+        _stack.Children.Add(df);
         Number("Ancho (mm)", e.Width, 150, 3000, v => e.Width = v, 50);
         Number("Alto (mm)", e.Height, 150, 2400, v => e.Height = v, 50);
         Number("Fondo (mm)", e.Depth, 80, 800, v => e.Depth = v, 50);

@@ -43,8 +43,8 @@ public sealed class PanelScene
         // Mundo: X = ancho, Y = fondo (0 = frente), Z = alto. "Frente" local: v hacia −Y.
         var front = new Basis(Vector3.Zero, Vector3.UnitX, -Vector3.UnitY, Vector3.UnitZ);
 
-        // Envolvente: espalda siempre, laterales, techo y suelo si se pide.
-        Box(new(0, (float)(D - t), 0), new((float)W, (float)D, (float)H), EnclosureColor);
+        // Envolvente: espalda (salvo con doble frente, que lleva puerta detrás), laterales, techo y suelo si se pide.
+        if (!e.DoubleFront) Box(new(0, (float)(D - t), 0), new((float)W, (float)D, (float)H), EnclosureColor);
         if (o.ShowEnclosure)
         {
             Box(new(0, 0, 0), new((float)t, (float)D, (float)H), EnclosureColor);
@@ -53,21 +53,47 @@ public sealed class PanelScene
             Box(new(0, 0, 0), new((float)W, (float)D, (float)t), EnclosureColor);
         }
 
-        // Placa de montaje.
-        double plateY = D - 0.02;
+        Side(doc, routes, o, rear: false);
+        if (e.DoubleFront) Side(doc, routes, o, rear: true);
+
+        // Caja envolvente para encuadrar.
+        var min = new Vector3(0, 0, 0);
+        var max = new Vector3((float)W, (float)D, (float)H);
+        if (o.ShowDoor && o.DoorAngleDeg > 5)
+        {
+            var ang = o.DoorAngleDeg * Math.PI / 180;
+            min = Vector3.Min(min, new Vector3((float)(W * Math.Cos(ang)), (float)(-W * Math.Sin(ang)), 0));
+            if (e.DoubleFront) max = Vector3.Max(max, new Vector3((float)W, (float)(D + W * Math.Sin(ang)), (float)H));
+        }
+        Min = min;
+        Max = max;
+    }
+
+    /// <summary>
+    /// Una cara: placa con carriles, canaletas, aparatos e hilos, y su puerta. La delantera mira hacia −Y; la trasera
+    /// (doble frente) está espalda con espalda en el centro del fondo, mira hacia +Y y se ve en espejo desde delante.
+    /// </summary>
+    private void Side(PanelDocument doc, IReadOnlyList<WireRoute>? routes, PanelSceneOptions o, bool rear)
+    {
+        var e = doc.Enclosure;
+        double W = e.Width / 1000, H = e.Height / 1000, D = e.Depth / 1000, m = e.PlateMargin / 1000;
         double pw = e.PlateWidth / 1000, ph = e.PlateHeight / 1000;
-        Box(new((float)m, (float)plateY, (float)(H - m - ph)), new((float)(m + pw), (float)(plateY + 0.002), (float)(H - m)), PlateColor);
+        double plateY = e.DoubleFront ? (rear ? D / 2 + 0.002 : D / 2 - 0.002) : D - 0.02;
+        if (rear) Box(new((float)m, (float)(plateY - 0.002), (float)(H - m - ph)), new((float)(m + pw), (float)plateY, (float)(H - m)), PlateColor);
+        else Box(new((float)m, (float)plateY, (float)(H - m - ph)), new((float)(m + pw), (float)(plateY + 0.002), (float)(H - m)), PlateColor);
 
-        Vector3 P(double xmm, double ymm, double depthFromPlate) =>
-            new((float)(m + xmm / 1000), (float)(plateY - depthFromPlate), (float)(H - m - ymm / 1000));
+        Vector3 P(double xmm, double ymm, double depthFromPlate) => rear
+            ? new((float)(W - m - xmm / 1000), (float)(plateY + depthFromPlate), (float)(H - m - ymm / 1000))
+            : new((float)(m + xmm / 1000), (float)(plateY - depthFromPlate), (float)(H - m - ymm / 1000));
 
-        foreach (var r in doc.Rails)
+        foreach (var r in doc.RailsOf(rear))
         {
             var a = P(r.X, r.Y + DinRail.RailHeight, 0.0075);
             var b = P(r.X + r.Length, r.Y, 0);
             Box(Vector3.Min(a, b), Vector3.Max(a, b), RailColor);
         }
-        foreach (var k in doc.Ducts)
+        var ducts = doc.DuctsOf(rear).ToList();
+        foreach (var k in ducts)
         {
             var dd = k.Depth / 1000;
             var a = P(k.X + 1, k.Y + k.H - 1, dd);
@@ -79,59 +105,51 @@ public sealed class PanelScene
             Box(Vector3.Min(c1, c2), Vector3.Max(c1, c2), DuctCover);
         }
 
-        foreach (var d in doc.OnPlate) PlateDevice(d, P);
+        foreach (var d in doc.PlateOf(rear)) PlateDevice(d, P);
 
         // Hilos: de cada borne baja/sube a la canaleta, que recorren a media profundidad.
         if (o.ShowWires && routes is not null)
+        {
+            var ductDepth = ducts.Count > 0 ? ducts.Average(k => k.Depth) / 1000 * 0.5 : 0.03;
             foreach (var r in routes)
             {
-                if (r.Points.Count < 2) continue;
+                var points = r.PointsOn(rear);
+                if (points.Count < 2) continue;
                 var color = WireColor(r.Wire.Color);
-                var ductDepth = doc.Ducts.Count > 0 ? doc.Ducts.Average(k => k.Depth) / 1000 * 0.5 : 0.03;
-                var pts = r.Points.Select((p, i) => P(p.X, p.Y, i == 0 || i == r.Points.Count - 1 ? TerminalDepth(doc, p) : ductDepth)).ToList();
+                var pts = points.Select((p, i) => P(p.X, p.Y, i == 0 || i == points.Count - 1 ? TerminalDepth(doc, p, rear) : ductDepth)).ToList();
                 for (var i = 0; i + 1 < pts.Count; i++) Lines.Add((pts[i], pts[i + 1], color, 1.6f));
             }
-
-        // Puerta con bisagra a la izquierda.
-        if (o.ShowDoor)
-        {
-            var ang = Math.Clamp(o.DoorAngleDeg, 0, 180) * Math.PI / 180;
-            var u = new Vector3((float)Math.Cos(ang), (float)-Math.Sin(ang), 0);
-            var v = new Vector3((float)-Math.Sin(ang), (float)-Math.Cos(ang), 0);
-            var door = new Basis(Vector3.Zero, u, v, Vector3.UnitZ);
-            BoxIn(door, 0, W, 0, 0.02, 0, H, EnclosureColor);
-            // Junta de goma alrededor y bolsillo para planos.
-            BoxIn(door, 0.02, W - 0.02, -0.004, 0, 0.02, 0.03, 0xFF2B2F33);
-            BoxIn(door, 0.02, W - 0.02, -0.004, 0, H - 0.03, H - 0.02, 0xFF2B2F33);
-            BoxIn(door, 0.02, 0.03, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
-            BoxIn(door, W - 0.03, W - 0.02, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
-            BoxIn(door, W * 0.25, W * 0.75, -0.012, 0, 0.08, 0.08 + Math.Min(0.3, H * 0.3), 0xFF5C6670);
-            foreach (var d in doc.OnDoor) DoorDevice(door, d, H);
-            // Maneta.
-            BoxIn(door, W - 0.06, W - 0.035, 0.02, 0.045, H / 2 - 0.06, H / 2 + 0.06, 0xFF2B2F33);
-            if (o.ShowWires && routes is not null && routes.Any(r => r.FromDoor || r.ToDoor))
-            {
-                // Manguera de la puerta: de la canaleta izquierda a la bisagra.
-                var z = H / 2;
-                Lines.Add((new Vector3((float)(m + 0.02), (float)(plateY - 0.03), (float)z), new Vector3(0.01f, 0.01f, (float)z), 0xFF505860, 3f));
-            }
         }
 
-        // Caja envolvente para encuadrar.
-        var min = new Vector3(0, 0, 0);
-        var max = new Vector3((float)W, (float)D, (float)H);
-        if (o.ShowDoor && o.DoorAngleDeg > 5)
+        // Puerta: la delantera con bisagra a la izquierda; la trasera, a la izquierda vista desde detrás.
+        if (!o.ShowDoor) return;
+        var ang = Math.Clamp(o.DoorAngleDeg, 0, 180) * Math.PI / 180;
+        var door = rear
+            ? new Basis(new Vector3((float)W, (float)D, 0), new Vector3((float)-Math.Cos(ang), (float)Math.Sin(ang), 0),
+                new Vector3((float)Math.Sin(ang), (float)Math.Cos(ang), 0), Vector3.UnitZ)
+            : new Basis(Vector3.Zero, new Vector3((float)Math.Cos(ang), (float)-Math.Sin(ang), 0),
+                new Vector3((float)-Math.Sin(ang), (float)-Math.Cos(ang), 0), Vector3.UnitZ);
+        BoxIn(door, 0, W, 0, 0.02, 0, H, EnclosureColor);
+        // Junta de goma alrededor y bolsillo para planos.
+        BoxIn(door, 0.02, W - 0.02, -0.004, 0, 0.02, 0.03, 0xFF2B2F33);
+        BoxIn(door, 0.02, W - 0.02, -0.004, 0, H - 0.03, H - 0.02, 0xFF2B2F33);
+        BoxIn(door, 0.02, 0.03, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
+        BoxIn(door, W - 0.03, W - 0.02, -0.004, 0, 0.02, H - 0.02, 0xFF2B2F33);
+        BoxIn(door, W * 0.25, W * 0.75, -0.012, 0, 0.08, 0.08 + Math.Min(0.3, H * 0.3), 0xFF5C6670);
+        foreach (var d in doc.DoorOf(rear)) DoorDevice(door, d, H);
+        // Maneta.
+        BoxIn(door, W - 0.06, W - 0.035, 0.02, 0.045, H / 2 - 0.06, H / 2 + 0.06, 0xFF2B2F33);
+        if (!rear && o.ShowWires && routes is not null && routes.Any(r => r.FromDoor || r.ToDoor))
         {
-            var ang = o.DoorAngleDeg * Math.PI / 180;
-            min = Vector3.Min(min, new Vector3((float)(W * Math.Cos(ang)), (float)(-W * Math.Sin(ang)), 0));
+            // Manguera de la puerta: de la canaleta izquierda a la bisagra.
+            var z = H / 2;
+            Lines.Add((new Vector3((float)(m + 0.02), (float)(plateY - 0.03), (float)z), new Vector3(0.01f, 0.01f, (float)z), 0xFF505860, 3f));
         }
-        Min = min;
-        Max = max;
     }
 
-    private static double TerminalDepth(PanelDocument doc, (double X, double Y) p)
+    private static double TerminalDepth(PanelDocument doc, (double X, double Y) p, bool rear)
     {
-        foreach (var d in doc.OnPlate)
+        foreach (var d in doc.PlateOf(rear))
             if (p.X >= d.X - 0.5 && p.X <= d.X + d.Width + 0.5 && (Math.Abs(p.Y - d.Y) < 0.5 || Math.Abs(p.Y - d.Y - d.Height) < 0.5))
                 return Math.Min(d.Depth * 0.55, 60) / 1000;
         return 0.03;
@@ -222,6 +240,17 @@ public sealed class PanelScene
         double r = d.Width / 2000;
         switch (d.Kind)
         {
+            case "controlador":
+            {
+                // Equipo de panel: marco que sobresale, pantalla y teclado.
+                double hw = d.Width / 2000, hh = d.Height / 2000;
+                BoxIn(door, cx - hw, cx + hw, 0.02, 0.035, cz - hh, cz + hh, model.Body);
+                BoxIn(door, cx - hw * 0.8, cx + hw * 0.8, 0.035, 0.036, cz + hh * 0.02, cz + hh * 0.8, 0xFF9DB7A6);
+                BoxIn(door, cx - hw * 0.7, cx + hw * 0.7, 0.035, 0.038, cz - hh * 0.8, cz - hh * 0.2, model.Front);
+                // Por dentro, el cuerpo hacia la placa.
+                BoxIn(door, cx - hw * 0.9, cx + hw * 0.9, -d.Depth / 1000, 0, cz - hh * 0.9, cz + hh * 0.9, 0xFF3A4652);
+                break;
+            }
             case "instrumento":
                 BoxIn(door, cx - r, cx + r, 0.02, 0.03, cz - r, cz + r, model.Body);
                 BoxIn(door, cx - r * 0.85, cx + r * 0.85, 0.03, 0.031, cz - r * 0.85, cz + r * 0.85, model.Front);

@@ -53,6 +53,7 @@ public static class DeviceLibrary
         new("selector", "Selector Ø22 mm", DeviceLocation.Door, 30, 30, 45, 0, false, Black, Black, "S"),
         new("piloto", "Piloto de señalización LED Ø22 mm", DeviceLocation.Door, 30, 30, 40, 0.5, false, Black, 0xFF2E9E4D, "H"),
         new("instrumento", "Instrumento de panel 72×72 mm", DeviceLocation.Door, 72, 72, 55, 1, false, Black, 0xFFF5F5F0, "P"),
+        new("controlador", "Controlador de panel (turbina, generador, pantalla)", DeviceLocation.Door, 200, 150, 100, 15, false, Black, 0xFF3A4652, "A"),
         // Campo (fuera del tablero)
         new("motor", "Motor", DeviceLocation.Field, 0, 0, 0, 0, false, Blue, Blue, "M"),
         new("receptor", "Receptor", DeviceLocation.Field, 0, 0, 0, 0, false, Grey, Grey, "E"),

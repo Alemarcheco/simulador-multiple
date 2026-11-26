@@ -218,12 +218,13 @@ public class ZBufferRasterizer
     }
 
     /// <summary>true si el punto (en píxeles de la imagen final) se ve: no lo tapa ninguna superficie opaca.</summary>
-    public bool IsVisible(float x, float y, float depth)
+    /// <param name="tolerance">Margen fijo de profundidad; sin él, 2 % de la distancia más 5 cm.</param>
+    public bool IsVisible(float x, float y, float depth, float? tolerance = null)
     {
         int ix = (int)(x * _ss), iy = (int)(y * _ss);
         if (x < 0 || y < 0 || ix >= _w || iy >= _h) return false;
         float d = Depth[iy * _w + ix];
-        return depth <= d + MathF.Abs(d) * 0.02f + 0.05f;
+        return depth <= d + (tolerance ?? MathF.Abs(d) * 0.02f + 0.05f);
     }
 
     // ------------------------------------------------------------------ Triángulos

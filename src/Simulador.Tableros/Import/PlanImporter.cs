@@ -91,14 +91,22 @@ public static partial class PlanImporter
     public static PlanImportResult Import(string path) => Import(PlanText.ReadPdf(path));
 
     /// <summary>Lee el PDF (con OCR para las páginas de letras dibujadas, si hay reconocedor) y monta el tablero.</summary>
-    public static PlanImportResult Import(string path, IPlanOcr? ocr, IProgress<string>? progress = null, CancellationToken ct = default)
+    /// <param name="doubleFront">true = armario de doble frente; false = una sola cara; null = lo decide solo.</param>
+    public static PlanImportResult Import(string path, IPlanOcr? ocr, IProgress<string>? progress = null, CancellationToken ct = default, bool? doubleFront = null)
     {
         var plan = PlanText.ReadPdf(path, ocr, progress, ct);
         progress?.Report("Montando el tablero…");
-        return Import(plan);
+        return Import(plan, doubleFront);
     }
 
-    public static PlanImportResult Import(PlanText plan)
+    /// <summary>Ancho hasta el que se prefiere un armario de una sola cara antes de pasar a doble frente (mm).</summary>
+    public const double SingleFrontMaxWidth = 1200;
+
+    /// <param name="doubleFront">
+    /// true = armario de doble frente (placa delantera y trasera, cada una con su puerta); false = una sola cara;
+    /// null = lo decide solo: doble frente si el plano lo dice o si a una sola cara no cabe en 1200 mm de ancho.
+    /// </param>
+    public static PlanImportResult Import(PlanText plan, bool? doubleFront = null)
     {
         var found = new Dictionary<string, Found>(StringComparer.OrdinalIgnoreCase);
         var links = new List<Link>();
@@ -223,13 +231,33 @@ public static partial class PlanImporter
         foreach (var f in accepted.Values.OrderBy(f => f.Tag, TagComparer.Instance))
             doc.Devices.Add(MakeDevice(f));
 
+        // Librerías de fabricante: por referencia o por el texto que hay junto a la designación.
+        var catalog = CatalogMatcher.Apply(plan, doc);
+
         // Potenciales: une los extremos que comparten borne (un renglón de la lista = un potencial).
         var nets = BuildNets(links, doc);
         AddFieldCables(doc, nets);
         if (nets.Any(n => n.Kind == WireKind.Tierra) && doc.FindTag("PE") is null)
             doc.Devices.Add(DeviceLibrary.Create("barra_pe", "PE"));
 
+        var askedDouble = doubleFront ?? plan.Pages.Any(p => p.Text.Contains("doble frente") || p.Text.Contains("double front") || p.Text.Contains("double-front"));
+        doc.Enclosure.DoubleFront = askedDouble;
         var fits = AutoLayout.Arrange(doc);
+        var autoDouble = false;
+        if (doubleFront is null && !askedDouble && (!fits || doc.Enclosure.Width > SingleFrontMaxWidth))
+        {
+            // A una cara sale muy ancho: se prueba con doble frente y se queda si ocupa menos.
+            var single = (doc.Enclosure.Width, doc.Enclosure.Height, doc.Enclosure.Depth, doc.Enclosure.Kind, doc.Enclosure.AgainstWall);
+            doc.Enclosure.DoubleFront = true;
+            var fitsDouble = AutoLayout.Arrange(doc);
+            if ((fitsDouble && !fits) || (fitsDouble == fits && doc.Enclosure.Width < single.Width)) { fits = fitsDouble; autoDouble = true; }
+            else
+            {
+                doc.Enclosure.DoubleFront = false;
+                (doc.Enclosure.Width, doc.Enclosure.Height, doc.Enclosure.Depth, doc.Enclosure.Kind, doc.Enclosure.AgainstWall) = single;
+                AutoLayout.Arrange(doc, chooseEnclosure: false);
+            }
+        }
         doc.Wires = DuctRouter.BuildWires(doc, nets);
         PanelBuilder.SuggestFan(doc);
 
@@ -247,8 +275,18 @@ public static partial class PlanImporter
         if (labelCount > 0) result.Notes.Add($"{labelCount} conexiones leídas de las etiquetas de los hilos («CB1(3) / CB120(4)»).");
         if (links.Count > 0) result.Notes.Add($"{links.Count} conexiones en total ({PagesText(listPages)}); salen {doc.Wires.Count} hilos.");
         else result.Notes.Add("No se encontraron listas de cables ni de bornes con texto: los aparatos quedan colocados pero sin hilos. Si el programa de CAD puede sacar la lista de conexiones, inclúyela en el PDF.");
+        if (catalog.Count > 0)
+            result.Notes.Add($"{catalog.Count} aparatos asociados a la librería de fabricante: " +
+                             string.Join("; ", catalog.GroupBy(m => m.Item).Select(g => $"{g.Key.FullReference} ({string.Join(", ", g.Select(m => m.Tag))})")) +
+                             ". Comprueba el modelo exacto (por ejemplo la potencia de la fuente) en Propiedades." +
+                             (catalog.Any(m => !m.Item.Verified) ? " Las que no traen medidas en la ficha del fabricante llevan medidas típicas." : ""));
         var guessed = doc.Devices.Where(d => d.Kind == "aparato").Select(d => d.Tag).ToList();
         if (guessed.Count > 0) result.Notes.Add($"Sin tipo reconocido (quedan como aparato genérico, revísalos): {string.Join(", ", guessed)}.");
+        if (doc.Enclosure.DoubleFront)
+            result.Notes.Add((autoDouble ? $"A una sola cara no cabía en {N(SingleFrontMaxWidth)} mm de ancho: se propone un armario de doble frente. " :
+                              askedDouble && doubleFront is null ? "El plano habla de doble frente: se propone un armario de doble frente. " : "Armario de doble frente. ") +
+                             $"Placa delantera: {doc.PlateOf(false).Count()} aparatos; placa trasera: {doc.PlateOf(true).Count()}. " +
+                             "Los hilos que cambian de cara pasan por el paso entre placas.");
         if (!fits) result.Notes.Add("Ni el armario más grande alcanza para todo: revisa la distribución o usa dos envolventes.");
         result.Notes.Add($"Propuesta: envolvente {N(doc.Enclosure.Width)}×{N(doc.Enclosure.Height)}×{N(doc.Enclosure.Depth)} mm, {doc.Rails.Count} carriles DIN, {doc.Ducts.Count} canaletas" +
                          (doc.Enclosure.FanFlow > 0 ? $", ventilador de {N(doc.Enclosure.FanFlow)} m³/h." : ", sin ventilador."));

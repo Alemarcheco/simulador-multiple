@@ -38,8 +38,8 @@ public static class Reports
     {
         var rows = new List<(string Group, double Qty, string Unit, string Desc, string Tags, string Ref)>();
         var e = doc.Enclosure;
-        rows.Add(("Envolvente", 1, "ud", $"{Enclosure.KindName(e.Kind)} {N(e.Width)}×{N(e.Height)}×{N(e.Depth)} mm, {e.Ip}", "", ""));
-        rows.Add(("Envolvente", 1, "ud", $"Placa de montaje galvanizada {N(e.PlateWidth)}×{N(e.PlateHeight)} mm", "", ""));
+        rows.Add(("Envolvente", 1, "ud", $"{Enclosure.KindName(e.Kind)}{(e.DoubleFront ? " de doble frente (puerta delantera y trasera)" : "")} {N(e.Width)}×{N(e.Height)}×{N(e.Depth)} mm, {e.Ip}", "", ""));
+        rows.Add(("Envolvente", e.DoubleFront ? 2 : 1, "ud", $"Placa de montaje galvanizada {N(e.PlateWidth)}×{N(e.PlateHeight)} mm", "", ""));
         if (e.FanFlow > 0)
             rows.Add(("Envolvente", 1, "ud", $"Ventilador con filtro {N(e.FanFlow)} m³/h y rejilla de salida", "", ""));
 
@@ -136,7 +136,10 @@ public static class Reports
     {
         var meters = doc.Wires.Sum(w => w.Length) / 1000;
         var th = PanelChecks.Thermal(doc);
-        return $"{doc.OnPlate.Count()} aparatos en placa · {doc.OnDoor.Count()} en puerta · {doc.Wires.Count} hilos ({N(meters, "0.0")} m) · " +
+        var where = doc.Enclosure.DoubleFront
+            ? $"doble frente: {doc.PlateOf(false).Count()} aparatos delante y {doc.PlateOf(true).Count()} detrás · {doc.OnDoor.Count()} en puertas"
+            : $"{doc.OnPlate.Count()} aparatos en placa · {doc.OnDoor.Count()} en puerta";
+        return $"{where} · {doc.Wires.Count} hilos ({N(meters, "0.0")} m) · " +
                $"{doc.Devices.Where(d => d.Kind == "regleta").Sum(d => d.Terminals.Count / 2)} bornes · {N(th.PowerW, "0")} W · ≈{N(th.InsideC, "0")} °C dentro";
     }
 }
