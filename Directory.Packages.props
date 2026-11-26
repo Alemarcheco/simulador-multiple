@@ -11,6 +11,8 @@
     <PackageVersion Include="Avalonia.Diagnostics" Version="$(AvaloniaVersion)" />
     <!-- La misma versión que trae Avalonia.Skia: el módulo 3D la usa para leer el contorno de las letras. -->
     <PackageVersion Include="PdfPig" Version="0.1.13" />
+    <!-- Lee los paquetes .edz (7z de EPLAN Data Portal o zip). -->
+    <PackageVersion Include="SharpCompress" Version="0.50.12" />
     <PackageVersion Include="SkiaSharp" Version="2.88.9" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />

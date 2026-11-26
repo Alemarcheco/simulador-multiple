@@ -16,6 +16,8 @@ public sealed record CatalogItem(
     DeviceLocation Location, bool OnRail, bool Verified, string Source, string[]? Keys = null)
 {
     public string Display => $"{Brand} {Reference} · {Description}";
+    /// <summary>Modelo 3D (mm) que trae el paquete .edz; null = se dibuja con el aspecto genérico del tipo.</summary>
+    public DeviceMesh? Mesh { get; init; }
     public string FullReference => $"{Brand} {Reference}";
 }
 
@@ -26,9 +28,32 @@ public static class ManufacturerCatalog
     private const string Abb = "new.abb.com, ficha de producto";
     private const string Se = "se.com, ficha de producto";
 
-    public static IReadOnlyList<string> Brands { get; } = ["ABB", "Allen-Bradley", "Schneider Electric", "Woodward"];
+    /// <summary>Marcas con algún modelo (las de serie primero y luego las importadas, por orden alfabético).</summary>
+    public static IReadOnlyList<string> Brands =>
+        BuiltInBrands.Concat(All.Select(i => i.Brand).Where(b => !BuiltInBrands.Contains(b)).Distinct().OrderBy(b => b, StringComparer.CurrentCultureIgnoreCase))
+            .Where(b => All.Any(i => i.Brand == b)).ToList();
 
-    public static IReadOnlyList<CatalogItem> All { get; } =
+    private static readonly string[] BuiltInBrands = ["ABB", "Allen-Bradley", "Schneider Electric", "Woodward"];
+
+    private static readonly List<CatalogItem> Imported = [];
+    private static readonly object Gate = new();
+    private static IReadOnlyList<CatalogItem>? _all;
+
+    /// <summary>
+    /// Todos los modelos: los de serie y los importados de paquetes .edz. Si un paquete trae una referencia que ya
+    /// estaba, manda la del paquete (suele traer modelo 3D y medidas de la ficha).
+    /// </summary>
+    public static IReadOnlyList<CatalogItem> All
+    {
+        get
+        {
+            lock (Gate)
+                return _all ??= Imported.Concat(BuiltIn.Where(b => !Imported.Any(i => Same(i, b)))).ToList();
+        }
+    }
+
+    /// <summary>Modelos que vienen con el programa (sin paquetes importados).</summary>
+    public static IReadOnlyList<CatalogItem> BuiltIn { get; } =
     [
         // ---------------- Allen-Bradley (Rockwell Automation)
         new("Allen-Bradley", "1606-XLS120E", "fuente", "Fuente XLS 24 V DC 5 A, 120 W", 40, 124, 117, 9.4, DeviceLocation.Plate, true, true, Rockwell),
@@ -67,13 +92,37 @@ public static class ManufacturerCatalog
 
     public static IEnumerable<CatalogItem> OfBrand(string brand) => All.Where(i => i.Brand == brand);
 
+    /// <summary>Añade (o sustituye, si ya estaba la referencia) modelos importados.</summary>
+    public static void Register(IEnumerable<CatalogItem> items)
+    {
+        lock (Gate)
+        {
+            foreach (var it in items)
+            {
+                Imported.RemoveAll(i => Same(i, it));
+                Imported.Add(it);
+            }
+            _all = null;
+        }
+    }
+
+    /// <summary>Quita todo lo importado (para pruebas).</summary>
+    internal static void ClearImported()
+    {
+        lock (Gate) { Imported.Clear(); _all = null; }
+    }
+
+    private static bool Same(CatalogItem a, CatalogItem b) =>
+        string.Equals(a.Brand, b.Brand, StringComparison.OrdinalIgnoreCase) && Normalize(a.Reference) == Normalize(b.Reference);
+
     /// <summary>Busca por referencia (sin distinguir mayúsculas ni espacios), con o sin marca delante.</summary>
     public static CatalogItem? Find(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var t = Normalize(text);
-        return All.FirstOrDefault(i => t == Normalize(i.Reference) || t == Normalize(i.FullReference))
-               ?? All.Where(i => Normalize(i.Reference).Length >= 5).FirstOrDefault(i => t.Contains(Normalize(i.Reference)));
+        var all = All;
+        return all.FirstOrDefault(i => t == Normalize(i.Reference) || t == Normalize(i.FullReference))
+               ?? all.Where(i => Normalize(i.Reference).Length >= 5).FirstOrDefault(i => t.Contains(Normalize(i.Reference)));
     }
 
     /// <summary>Pone al aparato la referencia, la descripción y las medidas del catálogo (conserva bornes y posición).</summary>

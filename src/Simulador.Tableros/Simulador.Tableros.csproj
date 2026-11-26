@@ -8,10 +8,15 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="PdfPig" />
+    <PackageReference Include="SharpCompress" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
     <ProjectReference Include="..\Simulador.Electrico.Engine\Simulador.Electrico.Engine.csproj" />
+  </ItemGroup>
+  <!-- Librerías de fabricante en paquetes .edz (modelos 3D con medidas de las fichas): van junto al ejecutable. -->
+  <ItemGroup>
+    <None Include="Librerias\*.edz" CopyToOutputDirectory="PreserveNewest" Link="Librerias\%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Simulador.Tableros.Tests" />

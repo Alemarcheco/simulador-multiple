@@ -121,6 +121,16 @@ Además de los aparatos genéricos hay librerías de **ABB**, **Allen-Bradley**,
 - **Al importar un plano**: si la lista de materiales trae la referencia, se usa. Si el plano no la trae, el programa busca el texto que hay junto a cada designación: «1606-XLS» al lado de F2 la convierte en una fuente Allen-Bradley, y «PROTECH» junto a TPS-A, TPS-B y TPS-C los convierte en los tres módulos de un Woodward ProTech-TPS en la puerta. Si el plano nombra un controlador sin designación propia (por ejemplo «CONTROLADOR PRIMARIO 505D»), lo añade en la puerta. El informe de Comprobaciones dice qué aparatos asoció.
 - **Woodward**: control 505 de turbinas de vapor (356×279×102 mm, montaje en panel, o en caja NEMA 4 de 508×508×193 mm) y protección de sobrevelocidad ProTech-TPS (330×445×159 mm, en una puerta de 610 mm).
 
+## Paquetes .edz y modelos 3D
+<!-- palabras: edz, eplan, data portal, 3d, modelo, obj, step, stp, importar libreria, paquete, inventario, pepperl, omron, advantech, controllogix, 1756, 1444, dynamix -->
+Los modelos de fabricante pueden venir en **paquetes .edz**, el formato de las descargas de EPLAN Data Portal. **Archivo › Importar librería de fabricante (.edz)…** los añade a la librería (puedes elegir varios a la vez). Quedan guardados y aparecen en `🧩 Añadir aparato › Librería <marca>`; los que traen modelo 3D llevan la marca **[3D]**.
+
+- **Qué lee**: la referencia, la marca, la descripción, el ancho, el alto, el fondo y la potencia disipada (propiedades `P_ARTICLE_…` de EPLAN), y el modelo 3D si viene en .obj o .stl. Las macros gráficas de EPLAN (.ema) solo se pueden abrir con EPLAN.
+- **Vista 3D**: un aparato con modelo 3D se dibuja con su forma (bornes, frente, pantalla, botones…) y con su medida real, en la placa o en la puerta.
+- **Ya incluidos**: el programa trae 47 paquetes hechos a partir del inventario de materiales: ControlLogix 1756 (chasis A10, fuentes PA75/PA75R, L73, CN2R y módulos de E/S), Dynamix 1444, relés 700-HL, mandos 800H, interruptores ABB S200, barreras Pepperl+Fuchs, Omron K8AK-LS1, Weidmüller WAS5, Woodward (505D, easYgen-3200, RTCnet, LinkNet HT, Flex500, Vertex), Advantech (monitor FPM-3191G y PC UNO-2484G), Bently Nevada 3300 XL, Panduit, nVent Hoffman, Precision Digital y USR IOT.
+- **Medidas**: cada paquete dice de qué ficha salen. Los que no tienen medida en una ficha oficial (por ejemplo Flex500, Vertex o los mandos 800H) aparecen como «medidas típicas»: compruébalas antes de taladrar.
+- **Dónde se guardan**: los importados se copian a `%AppData%\SimuladorMultiple\Librerias`. Para quitar uno, borra su .edz de esa carpeta y vuelve a abrir el programa.
+
 ## ¿Es el catálogo de algún fabricante?
 <!-- palabras: generico, medidas tipicas -->
 Los aparatos de la lista principal son genéricos, con medidas típicas para que el diseño sea realista. Para usar una marca, mira **Librerías de fabricante**, o escribe en cada aparato la referencia que uses: las medidas se pueden ajustar en Propiedades.
