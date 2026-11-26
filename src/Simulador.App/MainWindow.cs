@@ -79,6 +79,9 @@ public sealed class MainWindow : Window, IModuleHost
         }
         Content = root;
 
+        // Al arrancar mira en segundo plano si hay una versión nueva (si la hay, aparece un botón verde arriba).
+        Opened += (_, _) => _ = Actualizador.BuscarEnSegundoPlanoAsync();
+
         SetStatus(loadErrors.Count == 0
             ? $"{modules.Count} simulador(es) cargado(s)."
             : $"Avisos al cargar módulos: {string.Join(" | ", loadErrors)}");
@@ -129,7 +132,7 @@ public sealed class MainWindow : Window, IModuleHost
                 if (item is TabItem t && ReferenceEquals(t.Tag, module)) { tabs.SelectedItem = t; return; }
         }
 
-        tabs.Items.Add(new TabItem { Header = TabHeader("🏠", "Inicio"), Content = new HomeView(modules, Open) });
+        tabs.Items.Add(new TabItem { Header = TabHeader("🏠", "Inicio"), Content = new HomeView(modules, Open, () => VentanaActualizacion.Mostrar(this)) });
         foreach (var module in modules)
         {
             tabs.Items.Add(new TabItem

@@ -61,6 +61,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulador.Tableros", "src\S
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulador.Tableros.Tests", "tests\Simulador.Tableros.Tests\Simulador.Tableros.Tests.csproj", "{206F008B-0591-4341-BD61-C7600202A438}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulador.App.Tests", "tests\Simulador.App.Tests\Simulador.App.Tests.csproj", "{D15A5DE9-85C0-4243-B50A-42FEE79C0147}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -178,6 +180,10 @@ Global
 		{206F008B-0591-4341-BD61-C7600202A438}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{206F008B-0591-4341-BD61-C7600202A438}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{206F008B-0591-4341-BD61-C7600202A438}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D15A5DE9-85C0-4243-B50A-42FEE79C0147}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D15A5DE9-85C0-4243-B50A-42FEE79C0147}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D15A5DE9-85C0-4243-B50A-42FEE79C0147}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D15A5DE9-85C0-4243-B50A-42FEE79C0147}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{E94275A9-7C9C-4034-8940-09C677163850} = {7E1BE741-BF48-4ACB-BFDA-111E0283AA78}
@@ -207,5 +213,6 @@ Global
 		{CD965CAB-C19F-4F30-998C-D60FFF4D43DD} = {41DD0724-5436-4F9B-9B7D-9A03806E6EB2}
 		{9EA31D2C-5E90-4DB5-A1B5-DECDBDF72150} = {7E1BE741-BF48-4ACB-BFDA-111E0283AA78}
 		{206F008B-0591-4341-BD61-C7600202A438} = {41DD0724-5436-4F9B-9B7D-9A03806E6EB2}
+		{D15A5DE9-85C0-4243-B50A-42FEE79C0147} = {41DD0724-5436-4F9B-9B7D-9A03806E6EB2}
 	EndGlobalSection
 EndGlobal

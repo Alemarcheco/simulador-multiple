@@ -56,8 +56,9 @@ jobs:
         env:
           CAD3D_REQUIRE_OCCT: "1"
         run: dotnet test -c Release --no-build
+      # La versión del programa es la misma que la del Release (v0.1.N): así "Buscar actualizaciones" sabe si hay una más nueva.
       - name: Publicar ejecutable para Windows (x64)
-        run: dotnet publish src/Simulador.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/SimuladorMultiple
+        run: dotnet publish src/Simulador.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o publish/SimuladorMultiple -p:Version=0.1.${{ github.run_number }}
       - name: Añadir ngspice y el runtime de Visual C++ al ejecutable
         shell: pwsh
         run: |
