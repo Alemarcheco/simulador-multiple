@@ -7,7 +7,8 @@ using Simulador.Cad3D.Geometry;
 namespace Simulador.Cad3D.Rendering;
 
 /// <summary>Una malla a dibujar con su color.</summary>
-public sealed record RenderItem(Mesh Mesh, Color Color, bool Overlay = false);
+/// <param name="TriangleColors">Color de cada triángulo (ARGB), p. ej. el de la textura de un escaneo; null = todo <paramref name="Color"/>.</param>
+public sealed record RenderItem(Mesh Mesh, Color Color, bool Overlay = false, IReadOnlyList<uint>? TriangleColors = null);
 
 /// <summary>
 /// Visor 3D por software (sin dependencias nativas): cámara orbital, sombreado plano y orden por profundidad.
@@ -61,8 +62,11 @@ public sealed class Viewport3D : Control
         foreach (var item in _items)
         {
             var list = item.Overlay ? overlay : opaque;
+            var colors = item.TriangleColors is { } tc && tc.Count == item.Mesh.TriangleCount ? tc : null;
+            int ti = -1;
             foreach (var (a, b, c) in item.Mesh.Triangles())
             {
+                ti++;
                 var n = (b - a).Cross(c - a);
                 if (n.Length < 1e-12) continue;
                 n = n.Normalized();
@@ -71,7 +75,7 @@ public sealed class Viewport3D : Control
                 var pa = Project(a); var pb = Project(b); var pc = Project(c);
                 if (pa is null || pb is null || pc is null) continue;
                 double shade = 0.35 + 0.65 * Math.Abs(n.Dot(light));
-                var col = item.Color;
+                var col = colors is null ? item.Color : Color.FromUInt32(colors[ti]);
                 var shaded = Color.FromArgb(col.A, (byte)(col.R * shade), (byte)(col.G * shade), (byte)(col.B * shade));
                 list.Add(((pa.Value.Depth + pb.Value.Depth + pc.Value.Depth) / 3, pa.Value.P, pb.Value.P, pc.Value.P, shaded));
             }

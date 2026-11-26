@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Simulador.Cad3D.Geometry;
 using Simulador.Cad3D.Geometry.Export;
 using Simulador.Cad3D.Geometry.Model;
+using Simulador.Cad3D.Geometry.Scan;
 using Simulador.Cad3D.Geometry.Templates;
 using Simulador.Cad3D.Rendering;
 using Simulador.Core.Modules;
@@ -27,6 +28,7 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
     private readonly TextBlock _info = new() { Opacity = 0.8, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 4) };
     private readonly DispatcherTimer _rebuildTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly Dictionary<Part, Mesh?> _meshes = new();
+    private readonly Dictionary<Part, IReadOnlyList<uint>?> _colors = new();
     private CadDocument _doc = new();
     private string? _path;
     private int _version;
@@ -92,6 +94,8 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
             {
                 B("Caja con tapa…", NewEnclosureAsync, "Encapsulado para electrónica: caja, tapa con reborde, postes y ventilación"),
                 B("Caja para placa…", BoxForBoardAsync, "Abre una placa (.placa) del módulo de circuitos y crea una caja a su medida"),
+                B("Importar escaneo…", ImportScanAsync, "Pieza escaneada con el móvil (LiDAR o fotos): OBJ, STL, PLY, GLB o USDZ"),
+                B("Guardar como aparato…", SaveAsDeviceAsync, "Guarda la pieza seleccionada en la librería de Tableros eléctricos para usarla en el panel"),
                 new Border { Width = 1, Height = 22, Background = Brushes.Gray, Opacity = 0.4, Margin = new Thickness(4, 0, 10, 6) },
                 S("Encuadrar", _viewport.FitAll),
                 S("Iso", () => _viewport.SetView(-55, 30)),
@@ -193,6 +197,8 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
         yield return new MenuCommand("Exportar 3MF…", Safe(Export3mfAsync)) { ToolTip = "Una pieza por objeto, con nombre y color" };
         yield return new MenuCommand("Exportar STEP…", Safe(ExportStepAsync)) { ToolTip = "Geometría exacta para otros programas CAD (necesita OpenCASCADE)" };
         yield return new MenuCommand("Importar STEP…", Safe(ImportStepAsync)) { ToolTip = "Añade un modelo STEP a la pieza seleccionada (p. ej. modelos 3D de KiCad)" };
+        yield return new MenuCommand("Importar escaneo 3D…", Safe(ImportScanAsync)) { ToolTip = "Pieza escaneada con el móvil (LiDAR o fotos): OBJ, STL, PLY, GLB o USDZ, en metros o en mm" };
+        yield return new MenuCommand("Guardar como aparato de tablero…", Safe(SaveAsDeviceAsync)) { ToolTip = "Guarda la pieza seleccionada en la librería de Tableros eléctricos" };
         yield return new MenuCommand("Encuadrar", _viewport.FitAll) { Menu = MenuNames.View };
         yield return new MenuCommand("Vista isométrica", () => _viewport.SetView(-55, 30)) { Menu = MenuNames.View, SeparatorBefore = true };
         yield return new MenuCommand("Vista de frente", () => _viewport.SetView(-90, 0)) { Menu = MenuNames.View };
@@ -337,15 +343,19 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
         _info.Text = "Calculando…";
         var errors = new List<string>();
         var results = new Dictionary<Part, Mesh?>();
+        var colors = new Dictionary<Part, IReadOnlyList<uint>?>();
         foreach (var part in _doc.Parts.ToList())
         {
             var r = await _evaluator.EvaluateAsync(part.DeepClone());
             if (version != _version) return; // hubo otro cambio mientras calculaba
             results[part] = r.Mesh;
+            colors[part] = r.TriangleColors;
             errors.AddRange(r.Errors.Select(e => $"{part.Name}: {e}"));
         }
         _meshes.Clear();
         foreach (var (k, v) in results) _meshes[k] = v;
+        _colors.Clear();
+        foreach (var (k, v) in colors) _colors[k] = v;
         UpdateViewport();
         if (_pendingFit) { _viewport.FitAll(); _pendingFit = false; }
 
@@ -353,7 +363,8 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
         int tris = visible.Sum(p => _meshes[p]!.TriangleCount);
         double vol = visible.Sum(p => _meshes[p]!.Volume()) / 1000.0;
         bool watertight = visible.All(p => _meshes[p]!.CountOpenEdges() == 0);
-        _info.Text = $"Motor: {_kernel.Name} · Visor: {_viewport.RendererName} · {visible.Count} pieza(s) · {tris:N0} triángulos · volumen {vol:0.##} cm³ · " +
+        var scanReports = CurrentPart?.Features.OfType<ScanFeature>().Select(f => f.CachedReport()).OfType<string>().ToList() ?? new List<string>();
+        _info.Text = (scanReports.Count > 0 ? "Escaneo: " + string.Join(" | ", scanReports) + "\n" : "") + $"Motor: {_kernel.Name} · Visor: {_viewport.RendererName} · {visible.Count} pieza(s) · {tris:N0} triángulos · volumen {vol:0.##} cm³ · " +
                      (watertight ? "malla cerrada, lista para imprimir" : "atención: la malla tiene aberturas") +
                      (errors.Count > 0 ? " · Errores: " + string.Join(" | ", errors) : "");
     }
@@ -365,7 +376,7 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
         {
             if (!part.Visible || _meshes.GetValueOrDefault(part) is not { } mesh) continue;
             var color = Color.TryParse(part.Color, out var c) ? c : Colors.SteelBlue;
-            items.Add(new RenderItem(mesh, color));
+            items.Add(new RenderItem(mesh, color, TriangleColors: part.ShowScanColors ? _colors.GetValueOrDefault(part) : null));
         }
         // La operación seleccionada se resalta en transparente (así se ven también los huecos).
         if (CurrentFeature is PatternFeature pattern && CurrentPart is { } part0)
@@ -385,7 +396,7 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
             }
             catch { /* medidas no válidas mientras se escribe */ }
         }
-        else if (CurrentFeature is { } f and not ModifierFeature and not PatternFeature)
+        else if (CurrentFeature is { } f and not ModifierFeature and not PatternFeature and not ScanFeature)
         {
             try
             {
@@ -509,6 +520,63 @@ internal sealed class Cad3DView : DockPanel, IMenuSource
         });
         if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
         AddFeature(new StepImportFeature { Name = Path.GetFileNameWithoutExtension(path), FilePath = path });
+    }
+
+    private async Task ImportScanAsync()
+    {
+        if (Storage is not { } sp) return;
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Importar pieza escaneada",
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Escaneo 3D (OBJ, STL, PLY, GLB, USDZ)") { Patterns = ScanReader.Extensions.Select(e => "*" + e).ToList() },
+                FilePickerFileTypes.All,
+            ],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
+        var feature = new ScanFeature { Name = "Escaneo " + Path.GetFileNameWithoutExtension(path), FilePath = path };
+        _host.SetStatus($"Leyendo y arreglando {Path.GetFileName(path)}…");
+        // Se lee aquí en segundo plano (queda en caché) para avisar enseguida si el archivo no vale.
+        var mesh = await Task.Run(feature.Process);
+        var part = new Part
+        {
+            Name = Path.GetFileNameWithoutExtension(path),
+            Color = mesh.AverageColor() is { } c ? $"#{c & 0xFFFFFF:X6}" : "#B9C0C7",
+            Features = { feature },
+        };
+        _doc.Parts.Add(part);
+        RefreshLists();
+        _parts.SelectedIndex = _doc.Parts.Count - 1;
+        _features.SelectedIndex = 0;
+        OnFeatureSelected();
+        await RebuildAsync(fit: true);
+        _host.SetStatus($"Escaneo importado: {feature.CachedReport()}. Arréglalo en el panel de la derecha.");
+    }
+
+    private async Task SaveAsDeviceAsync()
+    {
+        if (CurrentPart is not { } part) throw new InvalidOperationException("Selecciona la pieza que quieres guardar como aparato.");
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        // Con colores si es un escaneo; si no, la malla calculada con el color de la pieza.
+        var scan = await Task.Run(() => DocumentEvaluator.ScanOnlyMesh(part.DeepClone()));
+        if (scan is null)
+        {
+            if (_meshes.GetValueOrDefault(part) is not { } mesh) throw new InvalidOperationException("La pieza no tiene geometría todavía.");
+            scan = new ScanMesh();
+            scan.Vertices.AddRange(mesh.Vertices);
+            scan.Indices.AddRange(mesh.Indices);
+        }
+        var s = scan.Size;
+        var req = await new SaveDeviceDialog(part.Name, FormattableString.Invariant($"{s.X:0.#} × {s.Y:0.#} × {s.Z:0.#} mm")).ShowDialog<SaveDeviceRequest?>(owner);
+        if (req is null) return;
+        var color = Color.TryParse(part.Color, out var pc) ? 0xFF000000 | ((uint)pc.R << 16) | ((uint)pc.G << 8) | pc.B : 0xFFB9C0C7;
+        var o = req.Options with { DefaultColor = color };
+        var path = Path.Combine(EdzWriter.UserLibraryFolder, EdzWriter.FileName(string.IsNullOrWhiteSpace(o.Brand) ? "Mis piezas" : o.Brand, o.Reference));
+        var r = await Task.Run(() => EdzWriter.Write(path, scan, o));
+        ModuleExchange.Notify(ModuleExchange.LibraryPackageSaved, path);
+        _host.SetStatus(FormattableString.Invariant(
+            $"Guardado como aparato ({r.Width:0.#} × {r.Height:0.#} mm, fondo {r.Depth:0.#} mm, {r.Triangles:N0} triángulos). En Tableros eléctricos: Añadir aparato › Librería {(string.IsNullOrWhiteSpace(o.Brand) ? "Mis piezas" : o.Brand.Trim())}. Archivo: {path}"));
     }
 
     private async Task Export3mfAsync()
