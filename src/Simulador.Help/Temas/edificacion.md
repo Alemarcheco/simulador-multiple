@@ -2,7 +2,7 @@
 <!-- orden: 15 -->
 # Edificación
 
-Diseña el edificio (plantas, muros, puertas, ventanas, losas, escaleras y habitaciones) y coloca sobre él las instalaciones: tomas, interruptores, luces, tableros, puntos de agua, desagües, tanques y las rutas de tubos y tuberías. No hace cálculo estructural.
+Diseña el edificio (plantas, muros, puertas, ventanas, losas, escaleras y habitaciones) con columnas y vigas, y coloca sobre él las instalaciones: luces, contactos, apagadores, cajas, tableros, puntos de agua, desagües y tanques, con su tubería. La instalación eléctrica se puede simular. No hace cálculo estructural.
 
 > Para empezar: **Archivo › Plantillas** › «Casa de una planta» y mira la **Vista 3D**.
 
@@ -25,10 +25,48 @@ Cada nivel tiene su cota y su altura. Cambia de nivel arriba con **Nivel:**. `+ 
 
 ## Colocar instalaciones y rutas
 <!-- palabras: tomacorriente, enchufe, interruptor, luminaria, luz, tablero, punto de agua, desague, tanque, ruta, tuberia, tubo, instalacion -->
-- `＋ Colocar elemento`: elige el tipo (toma, interruptor, luminaria, tablero, punto de agua, desagüe, tanque…) y haz clic en la planta.
-- `⤳ Trazar ruta (tubo/tubería)`: une elementos por el techo; el programa da la longitud y el desnivel reales.
+- `＋ Colocar elemento`: elige el grupo y el tipo (luminaria, contacto, apagador, caja, tablero, equipo, punto de agua, desagüe, tanque…) y haz clic en la planta. Cada tipo se pone solo a su altura: los contactos y apagadores en la cara del muro o de la columna más cercana, las lámparas en el techo o colgadas bajo la viga.
+- `⤳ Trazar tubería`: une elementos uno tras otro (cada clic sigue desde el último; clic derecho para terminar). El programa da la longitud y el desnivel reales.
 
 Las **comprobaciones** avisan de huecos que no caben, elementos dentro de un hueco o tapados por una puerta, escaleras incómodas y habitaciones demasiado pequeñas.
+
+## Instalación eléctrica: luces, contactos y apagadores
+<!-- contexto: Instalación eléctrica -->
+<!-- palabras: lampara, foco, luminaria, led, spot, arbotante, reflector, campana, contacto, tomacorriente, gfci, 220, trifasico, apagador, escalera, tres vias, cuatro vias, atenuador, sensor, chalupa, caja, registro, condulet, caja de paso, tablero, centro de carga, medidor -->
+En la paleta **Instalaciones** hay, por grupos:
+- **Luminarias**: plafón, colgante, empotrado LED, panel LED, lineal LED, spot, arbotante (de muro), reflector, campana industrial, luz de emergencia y ventilador de techo.
+- **Contactos** (NOM): dúplex 127 V, GFCI para baño y cocina, 220 V, trifásico industrial, de piso y de tierra aislada.
+- **Apagadores**: sencillo, de escalera (3 vías), de 4 vías, doble, atenuador y sensor de movimiento.
+- **Cajas y registros**: chalupa, caja cuadrada, octagonal, caja de paso, registro de piso y condulet.
+- **Tablero y acometida**: centro de carga, base de medidor e interruptor de seguridad.
+- **Equipos fijos**: minisplit, calentador, bomba de agua y motor trifásico.
+
+Para decir qué apagador enciende cada lámpara usa `🔗 Enlazar apagador con luminarias`: clic en el apagador y luego en sus lámparas. También desde las propiedades de la lámpara, en «Se enciende con». Dos apagadores de escalera enlazados a la misma lámpara la mandan desde dos sitios.
+
+`⚡ Diseñar instalación automáticamente` lo hace todo de una vez: enlaza cada lámpara con el apagador de su habitación, crea los circuitos (alumbrado 15 A con cable 14, contactos 20 A con cable 12, GFCI en zonas húmedas, un circuito por equipo), los reparte entre fases, traza la tubería y elige calibres y diámetros. Después puedes cambiar cualquier cosa.
+
+## Tubería eléctrica, columnas y vigas
+<!-- palabras: tuberia electrica, conduit, poliducto, pvc, emt, pared delgada, pared gruesa, charola, diametro, relleno, columna, viga, nave, industria, estructura -->
+Antes de trazar, elige **Por dónde va** (techo/losa, piso, muro o por la estructura bajo las vigas), el **Tipo de tubo** (PVC ligero o pesado, poliducto, conduit pared delgada EMT o pared gruesa, flexible metálico, charola) y el **Diámetro**. En la tabla de canalizaciones verás los conductores de cada tubo y su relleno (máximo 40 %).
+
+En **Estructura** están `▪ Columna` (clic donde va) y `═ Viga` (de una columna a otra), de concreto, acero o madera. Sirven para naves e industrias: los contactos y apagadores se pueden poner en las columnas, las campanas cuelgan bajo las vigas y la tubería «por la estructura» corre por debajo de ellas. La plantilla «Nave industrial con instalación eléctrica» es un ejemplo completo.
+
+## Cuadro de cargas y comprobaciones
+<!-- contexto: Instalación eléctrica -->
+<!-- palabras: cuadro de cargas, circuito, interruptor, termomagnetico, calibre, awg, caida de tension, desbalance, fase, nom, csv -->
+La pestaña **⚡ Instalación eléctrica** muestra cada centro de carga con sus circuitos: tensión (127 V, 220 V o trifásico), fase, interruptor, cable, GFCI, carga, corriente y caída de tensión. Todo se puede cambiar ahí mismo. Debajo están las canalizaciones y los avisos según la NOM-001-SEDE-2012 (orientativos): 180 VA por contacto, interruptor que no supere lo que aguanta el cable, caída ≤ 3 %, GFCI en baño y cocina, relleno de tubos y desbalance entre fases.
+
+`Cuadro de cargas (CSV)` lo abre en Excel y `Esquema (.selx)` lo pasa al módulo **Instalaciones eléctricas**. Un proyecto real lo firma un perito o una unidad de verificación.
+
+## Simular la instalación
+<!-- palabras: simular, encender, prender luz, apagar, probar, gfci test, disparo, breaker, consumo -->
+Pulsa `▶ Simular instalación eléctrica`. Con la simulación en marcha:
+- Clic en un **apagador** enciende o apaga sus lámparas (en el doble, `Mayús` + clic usa la segunda tecla). Las lámparas encendidas iluminan la planta y la Vista 3D.
+- Clic en un **contacto** enchufa un aparato (televisión, computadora, licuadora, plancha…) y otro clic lo cambia.
+- `Mayús` + clic en un **GFCI** pulsa su botón TEST; otro clic lo rearma.
+- Clic en un **equipo** lo arranca o lo para.
+
+A la derecha ves el consumo y la corriente de cada circuito; si te pasas, el interruptor se dispara como el de verdad (con `Abrir` y `Rearmar`).
 
 ## Asistente: lo que falta y el presupuesto
 <!-- contexto: Asistente, Reglas del asistente -->

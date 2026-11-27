@@ -787,6 +787,18 @@ public sealed class Simulator
 
     private static double TransmitterVolts(Elem e) => 10 * Math.Clamp(e.TxPercent, 0, 100) / 100;
 
+    /// <summary>
+    /// Cambia un parámetro de un elemento durante la simulación (por ejemplo la resistencia de una carga que se enchufa
+    /// o se desenchufa). El circuito se vuelve a resolver en el siguiente paso.
+    /// </summary>
+    public void SetParameter(Guid id, string key, double value)
+    {
+        if (!_byId.TryGetValue(id, out var e)) return;
+        if (e.Placed.Params.TryGetValue(key, out var old) && old == value) return;
+        e.Placed.Params[key] = value;
+        _dirty = true;
+    }
+
     /// <summary>Cambia el valor de un transmisor de 0-10 V durante la simulación (% del rango).</summary>
     public void SetTransmitter(Guid id, double percent)
     {

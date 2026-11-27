@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Simulador.Civil.Model.Electrical;
 using Simulador.Core.Building;
 
 namespace Simulador.Civil.Model;
@@ -25,6 +26,8 @@ public sealed class BuildingDocument : IBuildingModel
     private readonly List<PlacedFixture> _fixtures = [];
     private readonly List<Route> _routes = [];
     private readonly List<Underlay> _underlays = [];
+    private readonly List<Column> _columns = [];
+    private readonly List<Beam> _beams = [];
     private List<Space> _spaces = [];
     private readonly Stack<string> _undo = new();
     private readonly Stack<string> _redo = new();
@@ -46,6 +49,12 @@ public sealed class BuildingDocument : IBuildingModel
     public IReadOnlyList<Space> Spaces => _spaces;
     public IReadOnlyList<PlacedFixture> Fixtures => _fixtures;
     public IReadOnlyList<Route> Routes => _routes;
+    /// <summary>Columnas (pilares) de cada nivel.</summary>
+    public IReadOnlyList<Column> Columns => _columns;
+    /// <summary>Vigas bajo el techo de cada nivel.</summary>
+    public IReadOnlyList<Beam> Beams => _beams;
+    /// <summary>Circuitos, apagadores y canalizaciones de la instalación eléctrica. Se modifica dentro de <see cref="Edit"/>.</summary>
+    public ElectricalInstallation Electrical { get; private set; } = new();
     /// <summary>Planos de referencia (DXF o escaneados) bajo cada nivel. No entran en deshacer/rehacer.</summary>
     public IReadOnlyList<Underlay> Underlays => _underlays;
 
@@ -128,7 +137,7 @@ public sealed class BuildingDocument : IBuildingModel
         {
             var used = _d._walls.Select(w => w.Id).Concat(_d._openings.Select(o => o.Id)).Concat(_d._slabs.Select(s => s.Id))
                 .Concat(_d._stairs.Select(s => s.Id)).Concat(_d._fixtures.Select(f => f.Id)).Concat(_d._routes.Select(r => r.Id))
-                .Concat(_d._levels.Select(l => l.Id)).ToHashSet();
+                .Concat(_d._levels.Select(l => l.Id)).Concat(_d._columns.Select(c => c.Id)).Concat(_d._beams.Select(b => b.Id)).ToHashSet();
             for (int i = 1; ; i++)
                 if (!used.Contains(prefix + i)) return prefix + i;
         }
@@ -145,6 +154,42 @@ public sealed class BuildingDocument : IBuildingModel
         {
             _d._levels.Clear(); _d._walls.Clear(); _d._openings.Clear(); _d._slabs.Clear();
             _d._stairs.Clear(); _d._tags.Clear(); _d._fixtures.Clear(); _d._routes.Clear();
+            _d._columns.Clear(); _d._beams.Clear(); _d.Electrical = new ElectricalInstallation();
+        }
+
+        /// <summary>Instalación eléctrica para modificarla con deshacer.</summary>
+        public ElectricalInstallation Electrical => _d.Electrical;
+
+        public Column AddColumn(string levelId, Point2 center, double width = 0.30, double depth = 0.30, double rotation = 0, string material = "concreto")
+        {
+            var c = new Column(NewId("K"), levelId, center, width, depth, rotation, material);
+            _d._columns.Add(c);
+            return c;
+        }
+
+        public Beam AddBeam(string levelId, Point2 a, Point2 b, double width = 0.25, double depth = 0.45, string material = "concreto")
+        {
+            var v = new Beam(NewId("T"), levelId, a, b, width, depth, material);
+            _d._beams.Add(v);
+            return v;
+        }
+
+        public void ReplaceRoute(Route old, Route @new) => _d._routes[_d._routes.IndexOf(old)] = @new;
+        public void Replace(Column old, Column @new) => _d._columns[_d._columns.IndexOf(old)] = @new;
+        public void Replace(Beam old, Beam @new) => _d._beams[_d._beams.IndexOf(old)] = @new;
+
+        /// <summary>Sustituye un elemento colocado (mismo id) y rehace sus rutas para que lo sigan.</summary>
+        public void Replace(PlacedFixture old, PlacedFixture @new)
+        {
+            _d._fixtures[_d._fixtures.IndexOf(old)] = @new;
+            for (int i = 0; i < _d._routes.Count; i++)
+            {
+                var r = _d._routes[i];
+                if (r.FromFixtureId != @new.Id && r.ToFixtureId != @new.Id) continue;
+                var from = _d._fixtures.First(f => f.Id == r.FromFixtureId);
+                var to = _d._fixtures.First(f => f.Id == r.ToFixtureId);
+                _d._routes[i] = r with { Segments = RouteBuilder.Build(_d, from, to, RouteBuilder.GuessStyle(r)) };
+            }
         }
 
         public Level AddLevel(string name, double elevation, double height, string? id = null)
@@ -251,12 +296,16 @@ public sealed class BuildingDocument : IBuildingModel
                 _d._openings.RemoveAll(o => o.HostWallId == id);
                 _d._fixtures.RemoveAll(f => f.HostId == id);
             }
+            if (_d._columns.RemoveAll(c => c.Id == id) > 0) _d._fixtures.RemoveAll(f => f.HostId == id);
+            if (_d._beams.RemoveAll(b => b.Id == id) > 0) _d._fixtures.RemoveAll(f => f.HostId == id);
             _d._openings.RemoveAll(o => o.Id == id);
             _d._slabs.RemoveAll(s => s.Id == id);
             _d._stairs.RemoveAll(s => s.Id == id);
             _d._fixtures.RemoveAll(f => f.Id == id);
             var fixtureIds = _d._fixtures.Select(f => f.Id).ToHashSet();
             _d._routes.RemoveAll(r => r.Id == id || !fixtureIds.Contains(r.FromFixtureId) || !fixtureIds.Contains(r.ToFixtureId));
+            _d.Electrical.Circuits.RemoveAll(c => c.Id == id);
+            _d.Electrical.Prune(fixtureIds, _d._routes.Select(r => r.Id).ToHashSet());
         }
 
         /// <summary>
@@ -284,6 +333,10 @@ public sealed class BuildingDocument : IBuildingModel
                 _d._stairs.Add(s with { Id = NewId("E"), LevelId = lvl.Id });
             foreach (var t in _d._tags.Where(t => t.LevelId == levelId).ToList())
                 _d._tags.Add(t with { LevelId = lvl.Id });
+            foreach (var c in _d._columns.Where(c => c.LevelId == levelId).ToList())
+                _d._columns.Add(c with { Id = NewId("K"), LevelId = lvl.Id });
+            foreach (var b in _d._beams.Where(b => b.LevelId == levelId).ToList())
+                _d._beams.Add(b with { Id = NewId("T"), LevelId = lvl.Id });
             return lvl;
         }
     }
@@ -353,17 +406,18 @@ public sealed class BuildingDocument : IBuildingModel
         int Version, string Name, BuildingType Type,
         List<Level> Levels, List<Wall> Walls, List<Opening> Openings, List<Slab> Slabs, List<Stair> Stairs,
         List<SpaceTag> SpaceTags, List<PlacedFixture> Fixtures, List<Route> Routes, AdvisorSettings? Advisor = null,
-        List<Underlay>? Underlays = null, SiteLocation? Site = null);
+        List<Underlay>? Underlays = null, SiteLocation? Site = null,
+        List<Column>? Columns = null, List<Beam>? Beams = null, ElectricalInstallation? Electrical = null);
 
     public const int FileVersion = 1;
     public const string FileExtension = ".edif.json";
 
     public string ToJson() => JsonSerializer.Serialize(
-        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, _underlays, Site), JsonOpts);
+        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, _underlays, Site, _columns, _beams, Electrical), JsonOpts);
 
     /// <summary>Estado para deshacer: sin los calcos, que pueden ser grandes y no se deshacen.</summary>
     private string Snapshot() => JsonSerializer.Serialize(
-        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, null, Site), JsonOpts);
+        new FileDto(FileVersion, Name, Type, _levels, _walls, _openings, _slabs, _stairs, _tags, _fixtures, _routes, Advisor, null, Site, _columns, _beams, Electrical), JsonOpts);
 
     public static BuildingDocument FromJson(string json)
     {
@@ -382,6 +436,8 @@ public sealed class BuildingDocument : IBuildingModel
         Replace(_levels, dto.Levels); Replace(_walls, dto.Walls); Replace(_openings, dto.Openings);
         Replace(_slabs, dto.Slabs); Replace(_stairs, dto.Stairs); Replace(_tags, dto.SpaceTags);
         Replace(_fixtures, dto.Fixtures); Replace(_routes, dto.Routes);
+        Replace(_columns, dto.Columns); Replace(_beams, dto.Beams);
+        Electrical = dto.Electrical ?? new ElectricalInstallation();
         Advisor = dto.Advisor ?? new AdvisorSettings();
         Site = dto.Site ?? SiteLocation.Default;
         if (!keepUnderlays) Replace(_underlays, dto.Underlays);

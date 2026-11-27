@@ -59,7 +59,7 @@ public sealed class Building3DView : Control
     /// <summary>Malla con el terreno alrededor cuando hay soleamiento (el terreno recibe las sombras).</summary>
     private BuildingMesh BuildMesh(string? upTo, bool roof)
     {
-        var m = BuildingMesh.Build(_doc, upTo, roof);
+        var m = BuildingMesh.Build(_doc, upTo, roof, Glow);
         if (_sunStudy)
         {
             var (min, max) = m.Bounds;
@@ -217,6 +217,12 @@ public sealed class Building3DView : Control
     }
 
     /// <summary>La malla se reconstruye solo cuando cambia el edificio o el filtro; al girar se reutiliza.</summary>
+    /// <summary>Brillo de cada luminaria mientras se simula la instalación (null = sin simular).</summary>
+    public Func<string, double>? Glow { get; set; }
+
+    /// <summary>Rehace la malla (p. ej. cuando cambian las luces encendidas).</summary>
+    public void Refresh() => Invalidate();
+
     private void Invalidate()
     {
         _mesh = null;

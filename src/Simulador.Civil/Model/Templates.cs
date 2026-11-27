@@ -12,6 +12,7 @@ public static partial class BuildingTemplates
         ("Hotel (3 plantas tipo)", Hotel),
         ("Nave industrial con oficina", NaveIndustrial),
         ("Casa con instalación eléctrica e hidráulica", CasaConInstalaciones),
+        ("Nave industrial con instalación eléctrica", NaveConInstalacionElectrica),
         ("Edificio de apartamentos (4 plantas)", EdificioApartamentos),
         ("Oficina con sala de reuniones", Oficina),
     ];

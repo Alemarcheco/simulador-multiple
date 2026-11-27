@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Simulador.Core\Simulador.Core.csproj" />
+    <ProjectReference Include="..\Simulador.Electrico.Engine\Simulador.Electrico.Engine.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Simulador.Civil.Tests" />
