@@ -204,9 +204,9 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         { ToolTip = "Lee un plano eléctrico en PDF (de cualquier programa de CAD) y monta el tablero solo: aparatos, bornes, hilos, envolvente y canaletas. Si a una cara sale de más de 1200 mm de ancho, propone doble frente" };
         yield return new MenuCommand("Importar plano PDF en armario de doble frente…", () => _ = ImportPdfAsync(true))
         { ToolTip = "Igual, pero reparte los aparatos entre la placa delantera y la trasera de un armario de doble frente" };
-        yield return new MenuCommand("Importar librería de fabricante (.edz)…", () => _ = ImportLibraryAsync())
+        yield return new MenuCommand("Importar librería de fabricante (.edz, .stp, .step)…", () => _ = ImportLibraryAsync())
         {
-            ToolTip = "Añade a la librería los aparatos de paquetes .edz (EPLAN Data Portal o los del simulador) con sus medidas y modelo 3D",
+            ToolTip = "Añade a la librería los aparatos de paquetes .edz (EPLAN Data Portal o los del simulador) y los modelos 3D STEP tal como se descargan de las webs de los fabricantes (.stp, .step o dentro de un .zip)",
         };
         yield return new MenuCommand("Abrir…", () => _ = OpenAsync()) { ToolTip = "Abrir un tablero .tablero", SeparatorBefore = true };
         yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
@@ -373,15 +373,44 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Librería de fabricante (.edz)", AllowMultiple = true,
-            FileTypeFilter = [new FilePickerFileType("Paquete de fabricante (.edz)") { Patterns = ["*.edz"] }, FilePickerFileTypes.All],
+            Title = "Librería o modelo 3D de fabricante", AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Librería o modelo 3D (.edz, .stp, .step, .zip)") { Patterns = ["*.edz", "*.stp", "*.step", "*.zip"] },
+                new FilePickerFileType("Paquete de fabricante (.edz)") { Patterns = ["*.edz"] },
+                new FilePickerFileType("Modelo STEP de la web del fabricante (.stp, .step, .zip)") { Patterns = ["*.stp", "*.step", "*.zip"] },
+                FilePickerFileTypes.All,
+            ],
         });
         var paths = files.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
         if (paths.Count == 0) return;
-        _host.SetStatus($"Leyendo {paths.Count} paquete(s)…");
+        _host.SetStatus($"Leyendo {paths.Count} archivo(s)…");
         try
         {
-            var r = await Task.Run(() => LibraryStore.Import(paths));
+            var (packages, steps, notes) = await Task.Run(() => LibraryStore.Split(paths));
+            var r = await Task.Run(() => LibraryStore.ImportPackages(packages));
+            r.Notes.InsertRange(0, notes);
+
+            // Los STEP se revisan uno a uno (marca, referencia, tipo y frente) antes de guardarlos.
+            var chosen = new List<StepImporter.Candidate>();
+            var askAll = true;
+            for (var i = 0; i < steps.Count; i++)
+            {
+                if (steps[i].Raw.Triangles.Count == 0) { r.Notes.Add($"{steps[i].FileName}: no se encontró geometría que dibujar."); continue; }
+                if (!askAll || TopLevel.GetTopLevel(this) is not Window owner) { chosen.Add(steps[i]); continue; }
+                var answer = await new StepImportDialog(steps[i], i, steps.Count).ShowDialog<StepDialogResult?>(owner) ?? StepDialogResult.Cancel;
+                if (answer == StepDialogResult.Cancel) break;
+                if (answer == StepDialogResult.Skip) continue;
+                chosen.Add(steps[i]);
+                if (answer == StepDialogResult.SaveAll) askAll = false;
+            }
+            if (chosen.Count > 0)
+            {
+                _host.SetStatus($"Guardando {chosen.Count} modelo(s) en la librería…");
+                var s = await Task.Run(() => LibraryStore.SaveSteps(chosen));
+                r.Items.AddRange(s.Items);
+                r.Notes.AddRange(s.Notes);
+            }
             FillLibraryMenu();
             Refresh();
             var withMesh = r.Items.Count(i => i.Mesh is not null);

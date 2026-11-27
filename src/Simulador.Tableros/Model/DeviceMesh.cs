@@ -36,6 +36,37 @@ public sealed class DeviceMesh
     private const uint DefaultColor = 0xFFB9C0C7;
 
     /// <summary>
+    /// Copia con menos triángulos (agrupando vértices en una rejilla), para que los modelos muy detallados de los
+    /// fabricantes no hagan lenta la vista 3D. Si ya tiene pocos, devuelve el mismo.
+    /// </summary>
+    public DeviceMesh Simplified(int maxTriangles)
+    {
+        if (Triangles.Count <= maxTriangles || Triangles.Count == 0) return this;
+        var size = Size.Length();
+        if (size <= 0) return this;
+        for (var cells = 800.0; cells >= 20; cells *= 0.8)
+        {
+            var cell = size / (float)cells;
+            var rep = new Dictionary<(int, int, int), Vector3>();
+            (int, int, int) Key(Vector3 p) => ((int)MathF.Floor((p.X - Min.X) / cell), (int)MathF.Floor((p.Y - Min.Y) / cell), (int)MathF.Floor((p.Z - Min.Z) / cell));
+            Vector3 Rep(Vector3 p) { var k = Key(p); if (!rep.TryGetValue(k, out var r)) rep[k] = r = p; return r; }
+            var seen = new HashSet<((int, int, int), (int, int, int), (int, int, int))>();
+            var outMesh = new DeviceMesh();
+            foreach (var (a, b, c, col) in Triangles)
+            {
+                var ka = Key(a); var kb = Key(b); var kc = Key(c);
+                if (ka == kb || kb == kc || ka == kc) continue;
+                // Mismo triángulo con otro orden: una sola vez.
+                var sorted = new[] { ka, kb, kc }.OrderBy(k => k).ToArray();
+                if (!seen.Add((sorted[0], sorted[1], sorted[2]))) continue;
+                outMesh.Add(Rep(a), Rep(b), Rep(c), col);
+            }
+            if (outMesh.Triangles.Count <= maxTriangles) return outMesh.Seal();
+        }
+        return this;
+    }
+
+    /// <summary>
     /// Lee un Wavefront .obj (v, f y usemtl). Los colores salen del .mtl (Kd) si se da, o del nombre del material
     /// cuando es «c_RRGGBB». Las caras de más de tres vértices se abren en abanico.
     /// </summary>
