@@ -132,7 +132,10 @@ public static class EdzImporter
         var keys = ((string?)sim?.Attribute("keys") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Append(partNr).Where(x => x.Length > 0 && !string.Equals(x, reference, StringComparison.OrdinalIgnoreCase)).Distinct().ToArray();
 
-        var mesh = FindMesh((string?)sim?.Attribute("model3d"), reference, files, notes);
+        var mesh = FindMesh((string?)sim?.Attribute("model3d"), reference, files, notes)
+                   ?? FindStep(sim, reference, files, notes, location == DeviceLocation.Door);
+        if (mesh is not null && !hasSize)
+            (w, h, d) = StepImporter.Size(mesh, location == DeviceLocation.Door);
         return new CatalogItem(brand, reference, kind, description.Length > 0 ? description : model.Name, w, h, d, heat, location, onRail,
             verified, source, keys) { Mesh = mesh };
     }
@@ -164,6 +167,29 @@ public static class EdzImporter
             catch (Exception ex) { notes.Add($"{c}: no se pudo leer el modelo 3D ({ex.Message})."); }
         }
         return null;
+    }
+
+    /// <summary>Paquetes que solo traen el STEP del fabricante: se lee y se gira (con front/up si el paquete los da).</summary>
+    private static DeviceMesh? FindStep(XElement? sim, string reference, Dictionary<string, byte[]> files, List<string> notes, bool door)
+    {
+        var steps = files.Keys.Where(StepImporter.IsStep).ToList();
+        if (steps.Count == 0) return null;
+        var hint = (string?)sim?.Attribute("step") is { Length: > 0 } h ? Normalize(h) : null;
+        var refKey = new string(reference.Where(char.IsLetterOrDigit).ToArray());
+        var pick = hint is not null && files.ContainsKey(hint) ? hint
+            : steps.FirstOrDefault(k => new string(Path.GetFileNameWithoutExtension(k).Where(char.IsLetterOrDigit).ToArray())
+                .Contains(refKey, StringComparison.OrdinalIgnoreCase)) ?? (steps.Count == 1 ? steps[0] : null);
+        if (pick is null) return null;
+        try
+        {
+            var c = StepImporter.Prepare(files[pick], Path.GetFileName(pick));
+            if ((string?)sim?.Attribute("front") is { } f && StepImporter.Axes.Contains(f)) c.Front = f;
+            else c.Front = StepImporter.AutoOrientation(c.Raw, door).Front;
+            if ((string?)sim?.Attribute("up") is { } u && StepImporter.Axes.Contains(u)) c.Up = u;
+            var mesh = StepImporter.Orient(c.Raw, c.Front, c.Up, door);
+            return mesh.Triangles.Count > 0 ? mesh : null;
+        }
+        catch (Exception ex) { notes.Add($"{pick}: no se pudo leer el STEP ({ex.Message})."); return null; }
     }
 
     private static string Get(Dictionary<string, string> p, string key)
