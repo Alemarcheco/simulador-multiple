@@ -9,13 +9,14 @@ using Avalonia.Platform.Storage;
 using Simulador.Civil.Export;
 using Simulador.Civil.Import;
 using Simulador.Civil.Model;
+using Simulador.Civil.Model.Electrical;
 using Simulador.Core.Building;
 using Simulador.Core.Modules;
 
 namespace Simulador.Civil.Views;
 
 /// <summary>Vista raíz de la pestaña Edificación.</summary>
-public sealed class EdificacionView : DockPanel, IMenuSource
+public sealed partial class EdificacionView : DockPanel, IMenuSource
 {
     private readonly IModuleHost _host;
     private readonly BuildingDocument _doc;
@@ -43,7 +44,8 @@ public sealed class EdificacionView : DockPanel, IMenuSource
         _plan.SelectionChanged += (_, _) => RefreshProps();
         _plan.AskSpaceName = AskSpaceNameAsync;
         _plan.AskRealDistance = AskRealDistanceAsync;
-        _doc.Changed += (_, _) => RefreshAll();
+        _plan.SimClick += (_, a) => OnSimClick(a.FixtureId, a.Keys);
+        _doc.Changed += (_, _) => { if (_sim is not null) RestartSimulation(); RefreshAll(); };
 
         var toolbar = BuildToolbar();
         SetDock(toolbar, Dock.Top);
@@ -59,7 +61,7 @@ public sealed class EdificacionView : DockPanel, IMenuSource
 
         var view3dPanel = new DockPanel();
         var v3bar = new WrapPanel { Margin = new Thickness(6) }; // pasa a otra fila si no cabe
-        var roof = new CheckBox { Content = "Mostrar cubierta", IsChecked = true };
+        var roof = _roofBox = new CheckBox { Content = "Mostrar cubierta", IsChecked = true };
         roof.IsCheckedChanged += (_, _) => { _view3d.ShowRoof = roof.IsChecked == true; _view3d.InvalidateVisual(); };
         var upTo = new CheckBox { Content = "Solo hasta el nivel actual" };
         upTo.IsCheckedChanged += (_, _) => { _view3d.UpToLevelId = upTo.IsChecked == true ? _plan.LevelId : null; _view3d.InvalidateVisual(); };
@@ -103,6 +105,9 @@ public sealed class EdificacionView : DockPanel, IMenuSource
         var center = new TabControl();
         center.Items.Add(new TabItem { Header = "Planta 2D", Content = _plan });
         center.Items.Add(new TabItem { Header = "Vista 3D", Content = view3dPanel });
+        _electricalView = new ElectricalView(doc, () => _sim, id => { center.SelectedIndex = 0; GoTo(id); }, _host.SetStatus,
+            () => _ = ExportCsvAsync(), () => _ = ExportSchematicAsync());
+        center.Items.Add(new TabItem { Header = "⚡ Instalación eléctrica", Content = _electricalView });
         center.Items.Add(new TabItem
         {
             Header = "Asistente",
@@ -146,6 +151,8 @@ public sealed class EdificacionView : DockPanel, IMenuSource
             _doc.Edit(e => added = e.DuplicateLevel(_plan.LevelId));
             SelectLevel(added!.Id);
         }));
+        bar.Children.Add(Sep());
+        bar.Children.Add(BuildSimToggle());
         return bar;
     }
 
@@ -159,6 +166,8 @@ public sealed class EdificacionView : DockPanel, IMenuSource
         yield return new MenuCommand("Guardar", () => _ = SaveAsync(false)) { Shortcut = "Ctrl+S" };
         yield return new MenuCommand("Guardar como…", () => _ = SaveAsync(true));
         yield return new MenuCommand("Exportar (PDF, DXF, IFC)…", () => _ = ExportPlanAsync()) { SeparatorBefore = true };
+        yield return new MenuCommand("Exportar cuadro de cargas (CSV)…", () => _ = ExportCsvAsync());
+        yield return new MenuCommand("Exportar esquema eléctrico para Instalaciones eléctricas (.selx)…", () => _ = ExportSchematicAsync());
         yield return new MenuCommand("Deshacer", _doc.Undo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Z" };
         yield return new MenuCommand("Rehacer", _doc.Redo) { Menu = MenuNames.Edit, Shortcut = "Ctrl+Y" };
         yield return new MenuCommand("Encuadrar el plano", _plan.ZoomToFit) { Menu = MenuNames.View };
@@ -199,22 +208,8 @@ public sealed class EdificacionView : DockPanel, IMenuSource
             SetTool(PlanTool.Stair);
         }));
 
-        p.Children.Add(Header("Instalaciones"));
-        var kind = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-        foreach (var t in FixtureCatalog.All) kind.Items.Add(new ComboBoxItem { Content = $"{t.Icon} {t.Name}", Tag = t });
-        kind.SelectedIndex = 0;
-        kind.SelectionChanged += (_, _) =>
-        {
-            if (kind.SelectedItem is ComboBoxItem { Tag: FixtureType t }) { _plan.FixtureType = t; SetTool(PlanTool.Fixture); }
-        };
-        p.Children.Add(kind);
-        p.Children.Add(ToolButton("＋ Colocar elemento", PlanTool.Fixture));
-        p.Children.Add(ToolButton("⤳ Trazar ruta (tubo/tubería)", PlanTool.Route));
-        p.Children.Add(new TextBlock
-        {
-            Text = "Los elementos quedan enlazados con el esquema del módulo eléctrico o hidráulico por su designación (X1, PA1…).",
-            TextWrapping = TextWrapping.Wrap, Opacity = 0.65, FontSize = 11,
-        });
+        BuildStructurePalette(p);
+        BuildInstallationPalette(p);
 
         p.Children.Add(Header("Calco (plano de referencia)"));
         p.Children.Add(Btn("📐 Importar DXF…", () => _ = ImportDxfAsync()));
@@ -286,6 +281,7 @@ public sealed class EdificacionView : DockPanel, IMenuSource
     private Control BuildSidePanel()
     {
         var p = new StackPanel { Margin = new Thickness(8), Spacing = 4 };
+        p.Children.Add(_simPanel);
         p.Children.Add(Header("Selección"));
         p.Children.Add(_props);
         p.Children.Add(Header("Habitaciones"));
@@ -305,6 +301,7 @@ public sealed class EdificacionView : DockPanel, IMenuSource
         RefreshRooms();
         RefreshChecks();
         RefreshSummary();
+        _electricalView?.Refresh();
         _plan.InvalidateVisual();
         _view3d.InvalidateVisual();
     }
@@ -478,7 +475,7 @@ public sealed class EdificacionView : DockPanel, IMenuSource
     private void RefreshChecks()
     {
         _checks.Children.Clear();
-        var results = BuildingChecks.Run(_doc);
+        var results = BuildingChecks.Run(_doc).Concat(LoadSchedule.Compute(_doc).Checks.Where(c => c.Severity != CheckSeverity.Info)).ToList();
         if (results.Count == 0)
         {
             _checks.Children.Add(new TextBlock { Text = "✔ Sin avisos.", Foreground = Brushes.SeaGreen });
@@ -525,7 +522,8 @@ public sealed class EdificacionView : DockPanel, IMenuSource
             $"Muros: {wallLen:0.0} m lineales, {wallArea:0.0} m² de paño (sin huecos)\n" +
             $"Puertas: {doors} · Ventanas: {windows} · Escaleras: {_doc.Stairs.Count}\n" +
             $"Elementos de instalación: {_doc.Fixtures.Count}\n" +
-            $"Canalización eléctrica: {elec:0.0} m · Tubería: {hydro:0.0} m";
+            $"Canalización eléctrica: {elec:0.0} m · Tubería: {hydro:0.0} m\n" +
+            $"Columnas: {_doc.Columns.Count} · Vigas: {_doc.Beams.Count} · Circuitos eléctricos: {_doc.Electrical.Circuits.Count}";
     }
 
     // ------------------------------------------------------------ propiedades de la selección
@@ -586,20 +584,19 @@ public sealed class EdificacionView : DockPanel, IMenuSource
         }
         else if (_doc.Fixtures.FirstOrDefault(f => f.Id == id) is { } fx)
         {
-            var t = FixtureCatalog.ByKind(fx.Kind);
-            var lvl = _doc.GetLevel(fx.LevelId);
-            Title($"{t?.Name ?? fx.Kind} {fx.ComponentId}");
-            _props.Children.Add(Info($"Módulo: {fx.ModuleId}\nAltura sobre el piso: {fx.Position.Z - lvl.Elevation:0.00} m\n{(fx.HostId is null ? "En el recinto" : "En el muro " + fx.HostId)}\nEspacio: {_doc.SpaceAt(fx.LevelId, fx.Position.Xy)?.Name ?? "—"}"));
-            foreach (var r in _doc.Routes.Where(r => r.FromFixtureId == id || r.ToFixtureId == id))
-                _props.Children.Add(Info($"Ruta {r.Id}: {r.Length:0.00} m"));
+            AddFixtureProps(fx);
         }
         else if (_doc.Routes.FirstOrDefault(r => r.Id == id) is { } route)
         {
-            Title($"Ruta {route.Id} ({route.Kind.Replace('_', ' ')})");
-            var from = _doc.Fixtures.FirstOrDefault(f => f.Id == route.FromFixtureId);
-            var to = _doc.Fixtures.FirstOrDefault(f => f.Id == route.ToFixtureId);
-            _props.Children.Add(Info($"{from?.ComponentId} → {to?.ComponentId}\nLongitud real: {route.Length:0.00} m\nDesnivel: {route.DeltaZ:+0.00;-0.00} m\nTramos: {route.Segments.Count}"));
-            _props.Children.Add(Info("Estos valores se pasan al cable o tubería del banco de pruebas (caída de tensión, pérdidas de carga)."));
+            AddRouteProps(route);
+        }
+        else if (_doc.Columns.FirstOrDefault(c => c.Id == id) is { } col)
+        {
+            AddColumnProps(col);
+        }
+        else if (_doc.Beams.FirstOrDefault(b => b.Id == id) is { } beam)
+        {
+            AddBeamProps(beam);
         }
         else if (_doc.Spaces.FirstOrDefault(s => s.Id == id) is { } sp)
         {

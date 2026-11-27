@@ -9,13 +9,13 @@ using Simulador.Core.Building;
 
 namespace Simulador.Civil.Views;
 
-public enum PlanTool { Select, Wall, Room, Door, Window, Stair, Fixture, Route, Rename, CalibrateUnderlay, MoveUnderlay, RotateUnderlay }
+public enum PlanTool { Select, Wall, Room, Door, Window, Stair, Fixture, Route, Rename, CalibrateUnderlay, MoveUnderlay, RotateUnderlay, Column, Beam, Link }
 
 /// <summary>
 /// Planta 2D editable de un nivel. Ratón: izquierdo dibuja/selecciona, derecho termina o cancela,
 /// rueda acerca/aleja, botón central (o espacio + arrastrar) desplaza la vista.
 /// </summary>
-public sealed class PlanCanvas : Control
+public sealed partial class PlanCanvas : Control
 {
     private readonly BuildingDocument _doc;
     private double _scale = 40;           // píxeles por metro
@@ -77,6 +77,7 @@ public sealed class PlanCanvas : Control
         _drawStart = null;
         _secondPoint = null;
         _routeFrom = null;
+        _linkSwitch = null;
         InvalidateVisual();
     }
 
@@ -179,12 +180,19 @@ public sealed class PlanCanvas : Control
 
         foreach (var st in _doc.Stairs.Where(s => s.LevelId == LevelId)) DrawStair(ctx, st);
         foreach (var w in _doc.Walls.Where(w => w.LevelId == LevelId)) DrawWall(ctx, w);
+        DrawStructure(ctx);
+        if (Simulation is not null) DrawLightPools(ctx);
         foreach (var r in _doc.Routes) DrawRoute(ctx, r);
+        DrawSwitchLinks(ctx);
         foreach (var f in _doc.Fixtures.Where(f => f.LevelId == LevelId)) DrawFixture(ctx, f);
 
         foreach (var s in _doc.Spaces.Where(s => s.LevelId == LevelId))
         {
-            var c = ToScreen(Geo.Centroid(s.Outline));
+            var cw = Geo.Centroid(s.Outline);
+            var c = ToScreen(cw);
+            // Si hay una luminaria en el centro, el nombre se sube para que no la tape.
+            if (_doc.Fixtures.Any(f => f.LevelId == LevelId && f.ModuleId == "electrico" && f.Position.Xy.DistanceTo(cw) < 0.6))
+                c = new Point(c.X, c.Y - Math.Clamp(0.12 * _scale, 6, 14) - 30);
             DrawLabel(ctx, $"{s.Name}\n{s.Area.ToString("0.0", CultureInfo.CurrentCulture)} m²", c, 12, Brushes.Black, center: true);
         }
 
@@ -387,29 +395,9 @@ public sealed class PlanCanvas : Control
         return r;
     }
 
-    private void DrawFixture(DrawingContext ctx, PlacedFixture f)
-    {
-        var p = ToScreen(f.Position.Xy);
-        var t = FixtureCatalog.ByKind(f.Kind);
-        bool sel = f.Id == SelectedId || f.Id == _routeFrom;
-        double r = Math.Clamp(0.12 * _scale, 6, 14);
-        IBrush fill = f.ModuleId == "hidraulica" ? Brushes.DodgerBlue : Brushes.OrangeRed;
-        if (f.Kind == "tanque")
-        {
-            r = Math.Max(r, f.Width / 2 * _scale);
-            ctx.DrawEllipse(new SolidColorBrush(Color.FromArgb(80, 30, 144, 255)), sel ? SelPen : new Pen(fill, 2), p, r, r);
-        }
-        else
-        {
-            ctx.DrawEllipse(Brushes.White, sel ? SelPen : new Pen(fill, 2), p, r, r);
-        }
-        DrawLabel(ctx, t?.Icon ?? "•", p, r * 1.1, fill, center: true);
-        DrawLabel(ctx, f.ComponentId, new Point(p.X + r + 2, p.Y - r - 2), 10, fill, center: false);
-    }
-
     private void DrawRoute(DrawingContext ctx, Route r)
     {
-        var pen = r.ModuleId == "hidraulica" ? RoutePenH : RoutePenE;
+        var pen = r.ModuleId == "hidraulica" ? RoutePenH : ConduitPen(r);
         if (r.Id == SelectedId) pen = SelPen;
         var level = _doc.Levels.First(l => l.Id == LevelId);
         foreach (var s in r.Segments)
@@ -477,6 +465,7 @@ public sealed class PlanCanvas : Control
             var f = _doc.Fixtures.FirstOrDefault(x => x.Id == _routeFrom);
             if (f is not null) ctx.DrawLine(DimPen, ToScreen(f.Position.Xy), cs);
         }
+        else DrawElectricalPreview(ctx, c, cs);
     }
 
     private void DrawLabel(DrawingContext ctx, string text, Point at, double size, IBrush brush, bool center)
@@ -547,6 +536,11 @@ public sealed class PlanCanvas : Control
         if (!pt.Properties.IsLeftButtonPressed) return;
 
         var raw = ToWorld(pos);
+        if (Simulation is not null)
+        {
+            if (HitFixture(raw) is { } simHit) SimClick?.Invoke(this, (simHit, e.KeyModifiers));
+            return;
+        }
         var p = Snap(raw, _drawStart);
         switch (Tool)
         {
@@ -594,6 +588,18 @@ public sealed class PlanCanvas : Control
 
             case PlanTool.Fixture:
                 PlaceFixture(raw);
+                break;
+
+            case PlanTool.Column:
+                PlaceColumn(p);
+                break;
+
+            case PlanTool.Beam:
+                BeamClick(SnapToColumn(raw) ?? p);
+                break;
+
+            case PlanTool.Link:
+                LinkClick(raw, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 break;
 
             case PlanTool.Route:
@@ -651,8 +657,11 @@ public sealed class PlanCanvas : Control
         PlanTool.Door => "Clic sobre un muro para poner la puerta (el lado del clic decide hacia dónde abre).",
         PlanTool.Window => "Clic sobre un muro para poner la ventana.",
         PlanTool.Stair => "Clic en el arranque y otro clic hacia donde sube; los peldaños y el descanso (en L o U) se calculan solos.",
-        PlanTool.Fixture => $"Clic para colocar: {FixtureType.Name}.",
-        PlanTool.Route => _routeFrom is null ? "Clic en el elemento de origen." : "Clic en el elemento de destino (la ruta va por el techo).",
+        PlanTool.Fixture => $"Clic para colocar: {FixtureType.Name}. {MountHelp(FixtureType)}",
+        PlanTool.Route => _routeFrom is null ? "Clic en el elemento de origen (tablero, caja, contacto…)." : $"Clic en el elemento de destino. Tubería: {RouteBuilder.StyleName(RouteStyle).ToLowerInvariant()}.",
+        PlanTool.Column => "Clic para poner una columna (se pega a las esquinas de los muros).",
+        PlanTool.Beam => _drawStart is null ? "Clic en el inicio de la viga (se pega al centro de las columnas)." : "Clic en el final de la viga.",
+        PlanTool.Link => _linkSwitch is null ? "Clic en un apagador." : "Clic en las luminarias que manda (otra vez para quitarla; Mayús = segunda tecla del doble). Clic derecho para terminar.",
         PlanTool.Rename => "Clic dentro de una habitación para ponerle nombre y uso.",
         PlanTool.CalibrateUnderlay => _drawStart is null ? "Escalar calco: clic en un extremo de una medida conocida (una cota, una puerta…)." : "Clic en el otro extremo; luego escribe cuánto mide en realidad.",
         PlanTool.MoveUnderlay => _drawStart is null ? "Mover calco: clic en un punto del calco." : "Clic donde debe quedar ese punto (por ejemplo, la esquina de un muro).",
@@ -710,33 +719,13 @@ public sealed class PlanCanvas : Control
     private void PlaceFixture(Point2 raw)
     {
         var t = FixtureType;
-        var lvl = _doc.GetLevel(LevelId);
-        if (FixtureCatalog.IsWallMounted(t))
+        var (ghost, error) = FixturePlacer.Locate(_doc, t, LevelId, raw, grid: GridStep);
+        if (ghost is null) { Status?.Invoke(this, error ?? "No se puede colocar aquí."); return; }
+        _doc.Edit(ed =>
         {
-            var near = _doc.NearestWall(LevelId, raw, 0.6);
-            if (near is not { } n) { Status?.Invoke(this, "Los elementos de pared se colocan haciendo clic junto a un muro."); return; }
-            double along = Math.Clamp(Math.Round(n.Along / 0.05) * 0.05, 0, n.Wall.Length);
-            var pos = _doc.GetWallPoint(n.Wall.Id, n.Face, along, t.DefaultHeight);
-            var normal = n.Wall.Direction.Perp() * (n.Face == WallFace.A ? 1 : -1);
-            _doc.Edit(ed =>
-            {
-                var comp = ed.NewComponentId(t.ComponentPrefix);
-                var f = ed.AddFixture(new PlacedFixture(ed.NewId("F"), t.ModuleId, t.Kind, comp, null, LevelId, n.Wall.Id, pos, Math.Atan2(normal.Y, normal.X)));
-                SelectedId = f.Id;
-            });
-        }
-        else
-        {
-            var p = Snap(raw);
-            double z = t.Kind == "luminaria" ? lvl.Elevation + lvl.Height - 0.05 : lvl.Elevation;
-            double size = t.Kind == "tanque" ? 1.2 : 0.3;
-            _doc.Edit(ed =>
-            {
-                var comp = ed.NewComponentId(t.ComponentPrefix);
-                var f = ed.AddFixture(new PlacedFixture(ed.NewId("F"), t.ModuleId, t.Kind, comp, null, LevelId, null, new Point3(p, z), 0, size, size));
-                SelectedId = f.Id;
-            });
-        }
+            var f = ed.AddFixture(ghost with { Id = ed.NewId("F"), ComponentId = ed.NewComponentId(t.ComponentPrefix) });
+            SelectedId = f.Id;
+        });
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -752,20 +741,24 @@ public sealed class PlanCanvas : Control
         var from = _doc.Fixtures.First(f => f.Id == _routeFrom);
         _routeFrom = null;
         if (from.Id == hit.Id) return;
-        string kind = from.ModuleId == "hidraulica" ? "tuberia" : "tubo_electrico";
+        bool elec = from.ModuleId == "electrico";
+        string kind = elec ? Model.Electrical.ElectricalTables.RouteKind(ConduitType) : "tuberia";
         _doc.Edit(ed =>
         {
-            var r = ed.AddRoute(new Route(ed.NewId("R"), from.ModuleId, kind, from.Id, hit.Id, RouteBuilder.ViaCeiling(_doc, from, hit)));
+            var r = ed.AddRoute(new Route(ed.NewId("R"), from.ModuleId, kind, from.Id, hit.Id, RouteBuilder.Build(_doc, from, hit, RouteStyle)));
+            if (elec) ed.Electrical.Set(new Model.Electrical.ConduitSpec(r.Id, ConduitType, ConduitDiameter));
             SelectedId = r.Id;
         });
+        _routeFrom = hit.Id; // encadenar: el siguiente tramo sale de aquí
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private string? HitTest(Point2 p)
     {
         double tol = 6 / _scale;
-        var fx = _doc.Fixtures.Where(f => f.LevelId == LevelId).FirstOrDefault(f => f.Position.Xy.DistanceTo(p) < Math.Max(tol * 2, f.Width / 2));
-        if (fx is not null) return fx.Id;
+        if (HitFixture(p) is { } fx) return fx;
+        var col = _doc.Columns.FirstOrDefault(c => c.LevelId == LevelId && FixturePlacer.DistanceToColumn(c, p) < tol);
+        if (col is not null) return col.Id;
         foreach (var w in _doc.Walls.Where(w => w.LevelId == LevelId))
         {
             if (Geo.DistanceToSegment(w.Start, w.End, p) > w.Thickness / 2 + tol) continue;
@@ -779,6 +772,8 @@ public sealed class PlanCanvas : Control
                 if (s.Start.Z >= level.Elevation - 1e-6 && s.Start.Z <= level.Elevation + level.Height + 1e-6
                     && Geo.DistanceToSegment(s.Start.Xy, s.End.Xy, p) < tol)
                     return r.Id;
+        var beam = _doc.Beams.FirstOrDefault(b => b.LevelId == LevelId && Geo.DistanceToSegment(b.Start, b.End, p) < b.Width / 2 + tol);
+        if (beam is not null) return beam.Id;
         var st = _doc.Stairs.FirstOrDefault(s => s.LevelId == LevelId && s.Parts.Any(part => Geo.Contains(part, p)));
         if (st is not null) return st.Id;
         return _doc.SpaceAt(LevelId, p)?.Id;

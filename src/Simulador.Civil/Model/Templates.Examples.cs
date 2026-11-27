@@ -19,7 +19,9 @@ public static partial class BuildingTemplates
             {
                 var w = doc.NearestWall(L, near, 0.3)!.Value.Wall;
                 var pos = doc.GetWallPoint(w.Id, face, along, height ?? t.DefaultHeight);
-                return e.AddFixture(new PlacedFixture(e.NewId("F"), t.ModuleId, t.Kind, e.NewComponentId(t.ComponentPrefix), null, L, w.Id, pos));
+                var normal = w.Direction.Perp() * (face == WallFace.A ? 1 : -1);
+                return e.AddFixture(new PlacedFixture(e.NewId("F"), t.ModuleId, t.Kind, e.NewComponentId(t.ComponentPrefix), null, L, w.Id, pos,
+                    Math.Atan2(normal.Y, normal.X), Math.Max(0.1, t.Size)));
             }
             PlacedFixture Free(FixtureType t, Point2 at, double z, double size = 0.3) =>
                 e.AddFixture(new PlacedFixture(e.NewId("F"), t.ModuleId, t.Kind, e.NewComponentId(t.ComponentPrefix), null, L, null, new Point3(at, z), 0, size, size));
@@ -27,28 +29,44 @@ public static partial class BuildingTemplates
                 e.AddRoute(new Route(e.NewId("R"), a.ModuleId, kind, a.Id, b.Id, RouteBuilder.ViaCeiling(doc, a, b)));
 
             var fc = FixtureCatalog.Tomacorriente;
-            // Tablero en el pasillo, junto a la entrada a las habitaciones.
-            var q1 = OnWall(FixtureCatalog.Tablero, new(6.2, 0.5), 0.6, WallFace.A);
+            // Centro de carga en el pasillo, junto a la entrada a las habitaciones, y base de medidor en la fachada.
+            OnWall(FixtureCatalog.Tablero, new(6.2, 0.5), 0.6, WallFace.A);
+            OnWall(FixtureCatalog.Medidor, new(9.0, 0), 9.4, WallFace.B);
 
-            // Tomacorrientes (0,30 m), uno o dos por habitación y en la cocina a altura de encimera.
-            var outlets = new List<PlacedFixture>
-            {
-                OnWall(fc, new(4, 0), 4.0, WallFace.A),             // sala, muro sur
-                OnWall(fc, new(0, 0.5), 7.5, WallFace.A),           // sala, muro oeste
-                OnWall(fc, new(1.5, 5), 1.5, WallFace.A, 1.10),     // cocina, encimera
-                OnWall(fc, new(0.5, 8), 9.5, WallFace.A, 1.10),     // cocina, muro norte
-                OnWall(fc, new(10, 0.6), 0.6, WallFace.A),          // dormitorio 1
-                OnWall(fc, new(6.2, 1.0), 1.0, WallFace.B),         // dormitorio 1, junto a la cama
-                OnWall(fc, new(10, 7), 7.0, WallFace.A),            // dormitorio 2
-                OnWall(fc, new(10, 4.5), 4.5, WallFace.A, 1.10),    // baño (lavabo)
-            };
-            foreach (var o in outlets) Wire(q1, o, "tubo_electrico");
+            // Contactos (0,30 m), uno o dos por habitación y en la cocina a altura de encimera.
+            OnWall(fc, new(4, 0), 4.0, WallFace.A);             // sala, muro sur
+            OnWall(fc, new(0, 0.5), 7.5, WallFace.A);           // sala, muro oeste
+            OnWall(fc, new(1.5, 5), 1.5, WallFace.A, 1.10);     // cocina, encimera
+            OnWall(fc, new(0.5, 8), 9.5, WallFace.A, 1.10);     // cocina, muro norte
+            OnWall(fc, new(10, 0.6), 0.6, WallFace.A);          // dormitorio 1
+            OnWall(fc, new(6.2, 1.0), 1.0, WallFace.B);         // dormitorio 1, junto a la cama
+            OnWall(fc, new(10, 7), 7.0, WallFace.A);            // dormitorio 2
+            OnWall(fc, new(10, 4.5), 4.5, WallFace.A, 1.10);    // baño (lavabo)
+            // Minisplit en el dormitorio 1 con su contacto de 220 V.
+            OnWall(FixtureCatalog.AireAcondicionado, new(8, 4), 2.5, WallFace.B);
+            OnWall(FixtureCatalog.Contacto220, new(8, 4), 3.4, WallFace.B, 2.0);
 
-            // Interruptores junto a las puertas (1,10 m) y una luminaria en el centro de cada habitación.
-            Wire(q1, OnWall(FixtureCatalog.Interruptor, new(3.3, 0), 3.3, WallFace.A), "tubo_electrico");
-            Wire(q1, OnWall(FixtureCatalog.Interruptor, new(6.2, 3.7), 3.7, WallFace.B), "tubo_electrico");
-            foreach (var s in doc.Spaces.Where(s => s.LevelId == L))
-                Wire(q1, Free(FixtureCatalog.Luminaria, Geo.Centroid(s.Outline), 2.95), "tubo_electrico");
+            // Una luminaria en el centro de cada habitación y un arbotante en la entrada.
+            var lamps = doc.Spaces.Where(s => s.LevelId == L).ToDictionary(s => s.Name, s => Free(FixtureCatalog.Luminaria, Geo.Centroid(s.Outline), 2.95));
+            var porch = OnWall(FixtureCatalog.Arbotante, new(1.85, 0), 1.85, WallFace.B);
+
+            // Apagadores (1,20 m) junto a las puertas: doble en la entrada (sala y arbotante), de escalera en el pasillo.
+            var entry = OnWall(FixtureCatalog.Doble, new(3.3, 0), 3.3, WallFace.A);
+            var hall1 = OnWall(FixtureCatalog.Escalera, new(5, 3.2), 3.2, WallFace.B);
+            var hall2 = OnWall(FixtureCatalog.Escalera, new(5, 7.2), 7.2, WallFace.B);
+            OnWall(FixtureCatalog.Interruptor, new(6.2, 3.7), 3.7, WallFace.B);      // dormitorio 1
+            OnWall(FixtureCatalog.Interruptor, new(2.5, 5), 4.5, WallFace.A);        // cocina
+            OnWall(FixtureCatalog.Interruptor, new(6.2, 5.6), 5.6, WallFace.B);      // baño
+            OnWall(FixtureCatalog.Interruptor, new(6.2, 7.6), 7.6, WallFace.B);      // dormitorio 2
+            var el = e.Electrical;
+            el.Set(new Electrical.FixtureElectrical(lamps["Sala-comedor"].Id, ControlledBy: [entry.Id]));
+            el.Set(new Electrical.FixtureElectrical(porch.Id, ControlledBy: [entry.Id + "#2"]));
+            el.Set(new Electrical.FixtureElectrical(lamps["Pasillo"].Id, ControlledBy: [hall1.Id, hall2.Id]));
+            Electrical.ElectricalDesigner.AutoSwitches(doc, e);
+            Electrical.ElectricalDesigner.AutoCircuits(doc, e);
+            Electrical.ElectricalDesigner.AutoConduits(doc, e);
+            Electrical.ElectricalDesigner.AutoSizeWires(doc, e);
+            Electrical.ElectricalDesigner.AutoSizeConduits(doc, e);
 
             // Hidráulica: tanque elevado de 1000 L sobre la cubierta, puntos de agua y desagüe.
             var tank = Free(FixtureCatalog.Tanque, new(8.0, 5.0), 3.0, 1.2);
@@ -59,6 +77,83 @@ public static partial class BuildingTemplates
             foreach (var p in new[] { sink, basin, shower }) Wire(tank, p, "tuberia");
         });
         return doc;
+    }
+
+    /// <summary>
+    /// Nave de 30 × 15 m con marcos de acero (columnas cada 6 m y vigas de lado a lado) y su instalación eléctrica:
+    /// campanas industriales colgadas de las vigas, contactos trifásicos y de 127 V en las columnas, dos máquinas con
+    /// su desconectador, alumbrado de la oficina, luces de emergencia y tubería conduit a la vista bajo las vigas.
+    /// </summary>
+    public static BuildingDocument NaveConInstalacionElectrica()
+    {
+        var doc = NaveIndustrial();
+        doc.Name = "Nave industrial con instalación eléctrica";
+        const string L = "N0";
+        doc.Edit(e =>
+        {
+            AddSteelFrames(e, L);
+        });
+        doc.Edit(e =>
+        {
+            PlacedFixture At(FixtureType t, double x, double y, double? h = null) =>
+                FixturePlacer.Place(doc, e, t, L, new(x, y), h) ?? throw new InvalidOperationException($"No cabe {t.Name} en ({x}, {y}).");
+
+            // Centro de carga y base de medidor junto a la puerta de la oficina.
+            At(FixtureCatalog.Tablero, 8.0, 0.2);
+            At(FixtureCatalog.Medidor, 9.5, -0.2);
+
+            // Campanas: tres por viga intermedia, colgadas 0,5 m bajo la viga.
+            for (int x = 6; x <= 24; x += 6)
+                foreach (var y in new[] { 3.75, 7.5, 11.25 })
+                    At(FixtureCatalog.Campana, x, y);
+            // Apagadores de las campanas en la columna junto al portón.
+            var s1 = At(FixtureCatalog.Interruptor, 12.0, 0.45);
+            var s2 = At(FixtureCatalog.Interruptor, 18.0, 0.45);
+
+            // Contactos en las columnas: trifásicos para máquinas portátiles y de 127 V con GFCI para herramienta.
+            foreach (var x in new[] { 12.0, 24.0 }) At(FixtureCatalog.ContactoTrifasico, x, 14.55);
+            foreach (var x in new[] { 6.0, 24.0, 29.8 }) At(FixtureCatalog.ContactoGfci, x, 0.45);
+
+            // Dos máquinas con su interruptor de seguridad en la columna más cercana.
+            At(FixtureCatalog.Motor, 15, 10);
+            At(FixtureCatalog.Motor, 21, 10);
+            At(FixtureCatalog.Desconectador, 18.0, 14.55);
+
+            // Oficina: paneles LED bajo su techo de 3 m, apagador y contactos. Aseos: plafón.
+            At(FixtureCatalog.PanelLed, 4.75, 1.6, -4.0);
+            At(FixtureCatalog.PanelLed, 4.75, 3.4, -4.0);
+            At(FixtureCatalog.Interruptor, 5.95, 4.6);
+            At(FixtureCatalog.Tomacorriente, 3.6, 2.5);
+            At(FixtureCatalog.Tomacorriente, 5.0, 0.15);
+            At(FixtureCatalog.Luminaria, 1.75, 2.5, -4.05);
+            At(FixtureCatalog.Interruptor, 3.45, 1.5);
+
+            // Luces de emergencia sobre las salidas.
+            At(FixtureCatalog.Emergencia, 18.6, 0.2);
+            At(FixtureCatalog.Emergencia, 10.5, 0.2);
+
+            // Las campanas de las dos primeras vigas con un apagador y las otras dos con el otro.
+            foreach (var f in doc.Fixtures.Where(f => f.Kind == FixtureCatalog.Campana.Kind))
+                e.Electrical.Set(new Electrical.FixtureElectrical(f.Id, ControlledBy: [f.Position.X < 15 ? s1.Id : s2.Id]));
+            Electrical.ElectricalDesigner.AutoSwitches(doc, e);
+            Electrical.ElectricalDesigner.AutoCircuits(doc, e);
+            Electrical.ElectricalDesigner.AutoConduits(doc, e);
+            Electrical.ElectricalDesigner.AutoSizeWires(doc, e);
+            Electrical.ElectricalDesigner.AutoSizeConduits(doc, e);
+        });
+        return doc;
+    }
+
+    /// <summary>Columnas de acero cada 6 m en los muros largos y vigas de lado a lado.</summary>
+    private static void AddSteelFrames(BuildingDocument.Editor e, string level)
+    {
+        for (int x = 0; x <= 30; x += 6)
+        {
+            double cx = Math.Clamp(x, 0.2, 29.8);
+            e.AddColumn(level, new(cx, 0.2), 0.35, 0.35, 0, "acero");
+            e.AddColumn(level, new(cx, 14.8), 0.35, 0.35, 0, "acero");
+            e.AddBeam(level, new(cx, 0.2), new(cx, 14.8), 0.25, 0.60, "acero");
+        }
     }
 
     /// <summary>Edificio de 4 plantas iguales con dos apartamentos por planta y escalera central.</summary>

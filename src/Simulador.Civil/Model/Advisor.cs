@@ -109,7 +109,19 @@ public static class BuildingAdvisor
     }
 
     private static List<PlacedFixture> FixturesIn(BuildingDocument doc, Space sp, string kind) =>
-        doc.Fixtures.Where(f => f.Kind == kind && f.LevelId == sp.LevelId && Geo.Contains(sp.Outline, f.Position.Xy)).ToList();
+        doc.Fixtures.Where(f => SameFamily(f, kind) && f.LevelId == sp.LevelId && Geo.Contains(sp.Outline, f.Position.Xy)).ToList();
+
+    /// <summary>Los tipos eléctricos cuentan por familia: cualquier contacto, luminaria, apagador o tablero.</summary>
+    private static bool SameFamily(PlacedFixture f, string kind) => kind switch
+    {
+        "tomacorriente" => FixtureCatalog.RoleOf(f) == ElecRole.Outlet,
+        "luminaria" => FixtureCatalog.RoleOf(f) == ElecRole.Light,
+        "interruptor" => FixtureCatalog.RoleOf(f) == ElecRole.Switch,
+        "tablero" => FixtureCatalog.RoleOf(f) == ElecRole.Panel,
+        _ => f.Kind == kind,
+    };
+
+    private static bool IsWiredElec(PlacedFixture f) => FixtureCatalog.RoleOf(f) is ElecRole.Outlet or ElecRole.Switch or ElecRole.Light or ElecRole.Load or ElecRole.Box;
 
     private static void SuggestOutlets(BuildingDocument doc, Space sp, List<Suggestion> list)
     {
@@ -244,8 +256,8 @@ public static class BuildingAdvisor
     private static void SuggestWiring(BuildingDocument doc, List<Suggestion> list)
     {
         var routed = doc.Routes.SelectMany(r => new[] { r.FromFixtureId, r.ToFixtureId }).ToHashSet();
-        var elec = doc.Fixtures.Where(f => f.Kind is "tomacorriente" or "interruptor" or "luminaria").ToList();
-        var board = doc.Fixtures.FirstOrDefault(f => f.Kind == "tablero");
+        var elec = doc.Fixtures.Where(f => IsWiredElec(f)).ToList();
+        var board = doc.Fixtures.FirstOrDefault(f => FixtureCatalog.RoleOf(f) == ElecRole.Panel);
         if (elec.Count > 0 && board is null)
         {
             var ground = doc.Levels.MinBy(l => l.Elevation)!;
@@ -263,7 +275,7 @@ public static class BuildingAdvisor
                         if (along > w.Length - 0.2) along = o.Offset - o.Width / 2 - 0.6;
                         var q = e.AddFixture(new PlacedFixture(e.NewId("F"), "electrico", "tablero", e.NewComponentId("Q"), null, w.LevelId, w.Id,
                             doc.GetWallPoint(w.Id, face, Math.Clamp(along, 0.2, w.Length - 0.2), FixtureCatalog.Tablero.DefaultHeight)));
-                        foreach (var f in doc.Fixtures.Where(f => f.Kind is "tomacorriente" or "interruptor" or "luminaria").ToList())
+                        foreach (var f in doc.Fixtures.Where(f => IsWiredElec(f)).ToList())
                             e.AddRoute(new Route(e.NewId("R"), "electrico", "tubo_electrico", q.Id, f.Id, RouteBuilder.ViaCeiling(doc, q, f)));
                     }));
         }
@@ -274,7 +286,7 @@ public static class BuildingAdvisor
                 $"{n} elemento(s) eléctricos sin conectar al tablero {board.ComponentId}: se propone trazar sus rutas.",
                 e =>
                 {
-                    foreach (var f in doc.Fixtures.Where(f => f.Kind is "tomacorriente" or "interruptor" or "luminaria" && !routed.Contains(f.Id)).ToList())
+                    foreach (var f in doc.Fixtures.Where(f => IsWiredElec(f) && !routed.Contains(f.Id)).ToList())
                         e.AddRoute(new Route(e.NewId("R"), "electrico", "tubo_electrico", board.Id, f.Id, RouteBuilder.ViaCeiling(doc, board, f)));
                 }));
         }
@@ -382,7 +394,7 @@ public static class BuildingAdvisor
         Add("Electricidad", "Tubo eléctrico", conduit * 1.1, "m", "tubo_electrico_m");
         Add("Electricidad", "Cable (fase, neutro y tierra)", conduit * 3 * 1.1, "m", "cable_m");
         foreach (var (kind, key, name) in new[] { ("tomacorriente", "tomacorriente", "Tomacorrientes"), ("interruptor", "interruptor", "Interruptores"), ("luminaria", "luminaria", "Luminarias"), ("tablero", "tablero", "Tableros") })
-            Add("Electricidad", name, doc.Fixtures.Count(f => f.Kind == kind), "ud", key);
+            Add("Electricidad", name, doc.Fixtures.Count(f => SameFamily(f, kind)), "ud", key);
 
         Add("Hidráulica", "Tubería", doc.Routes.Where(r => r.ModuleId == "hidraulica").Sum(r => r.Length) * 1.1, "m", "tuberia_m");
         Add("Hidráulica", "Puntos de agua", doc.Fixtures.Count(f => f.Kind == "punto_agua"), "ud", "punto_agua");
