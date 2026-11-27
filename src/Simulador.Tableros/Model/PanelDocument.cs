@@ -83,8 +83,39 @@ public sealed class Enclosure
     /// </summary>
     public bool DoubleFront { get; set; }
 
-    [JsonIgnore] public double PlateWidth => Math.Max(50, Width - 2 * PlateMargin);
-    [JsonIgnore] public double PlateHeight => Math.Max(50, Height - 2 * PlateMargin);
+    /// <summary>Envolvente de catálogo: marca, serie y referencia (null = genérica o a medida).</summary>
+    public string? Brand { get; set; }
+    public string? Series { get; set; }
+    public string? Reference { get; set; }
+    /// <summary>Medida de la placa de montaje del catálogo (mm). null = la envolvente menos <see cref="PlateMargin"/> por lado.</summary>
+    public double? PlateW { get; set; }
+    public double? PlateH { get; set; }
+    /// <summary>Hojas de la puerta: 1 o 2 (armarios anchos, con bisagras a los dos lados).</summary>
+    public int Doors { get; set; } = 1;
+    /// <summary>Color de la chapa (ARGB). null = gris claro de serie.</summary>
+    public uint? Color { get; set; }
+    /// <summary>Zócalo de 100 mm debajo (armarios de pie).</summary>
+    public bool Plinth { get; set; }
+
+    [JsonIgnore] public double PlateWidth => Math.Max(50, Math.Min(Width - 10, PlateW ?? Width - 2 * PlateMargin));
+    [JsonIgnore] public double PlateHeight => Math.Max(50, Math.Min(Height - 10, PlateH ?? Height - 2 * PlateMargin));
+    /// <summary>Distancia del borde izquierdo de la envolvente a la placa (la placa va centrada).</summary>
+    [JsonIgnore] public double PlateLeft => (Width - PlateWidth) / 2;
+    /// <summary>Distancia del techo de la envolvente a la placa.</summary>
+    [JsonIgnore] public double PlateTop => (Height - PlateHeight) / 2;
+    /// <summary>Ancho de la hoja donde van los mandos: la izquierda si hay dos.</summary>
+    [JsonIgnore] public double LeafWidth => Doors > 1 ? Width / 2 : Width;
+    [JsonIgnore] public EnclosureModel? CatalogModel => EnclosureCatalog.Find(Brand, Reference);
+
+    /// <summary>Se ha cambiado la medida a mano: deja de ser el modelo de catálogo.</summary>
+    public void ClearCatalog()
+    {
+        Brand = Series = Reference = null;
+        PlateW = PlateH = null;
+        Color = null;
+        Doors = 1;
+        Plinth = false;
+    }
     /// <summary>Hueco libre delante de la placa (fondo útil para los aparatos).</summary>
     [JsonIgnore] public double UsableDepth => DoubleFront ? Math.Max(20, Depth / 2 - 35) : Math.Max(20, Depth - 35);
 

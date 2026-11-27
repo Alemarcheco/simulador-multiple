@@ -38,6 +38,20 @@ public static class AutoLayout
         var fits = false;
         var front = plate;
         List<PanelDevice> rear = [];
+        if (chooseEnclosure && e.Brand is { } brand)
+        {
+            // Armario de catálogo: el modelo más pequeño de la misma marca en el que cabe todo.
+            foreach (var m in EnclosureCatalog.Candidates(brand, e.DoubleFront))
+            {
+                m.ApplyTo(e);
+                if (e.UsableDepth < maxDepth + 10) continue;
+                (front, rear) = Split(doc, plate);
+                if (TryRows(doc, front, false, apply: false) && TryRows(doc, rear, true, apply: false) && DoorFits(doc)) { fits = true; break; }
+            }
+            // Ningún modelo de la marca alcanza: se sigue con las medidas genéricas.
+            if (!fits) e.ClearCatalog();
+            else chooseEnclosure = false;
+        }
         if (chooseEnclosure)
         {
             foreach (var (w, h, dp) in e.DoubleFront ? DoubleFrontSizes : StandardSizes)
@@ -110,8 +124,8 @@ public static class AutoLayout
         var door = doc.OnDoor.ToList();
         if (door.Count == 0) return true;
         // Filas de puerta (de Ø22 y de controladores grandes) en el 60 % de arriba de la altura.
-        var rows = DoorRows(door.OrderBy(d => d.Kind == "controlador" ? 0 : 1).ToList(), doc.Enclosure.Width);
-        return rows.All(r => r.Sum(Pitch) <= doc.Enclosure.Width - 100 + 0.01)
+        var rows = DoorRows(door.OrderBy(d => d.Kind == "controlador" ? 0 : 1).ToList(), doc.Enclosure.LeafWidth);
+        return rows.All(r => r.Sum(Pitch) <= doc.Enclosure.LeafWidth - 100 + 0.01)
                && 80 + rows.Sum(r => r.Max(d => Math.Max(30, d.Height)) + 60) < doc.Enclosure.Height * 0.7;
     }
 
@@ -217,7 +231,8 @@ public static class AutoLayout
         var door = doc.OnDoor.OrderBy(d => d.Kind switch { "controlador" => -1, "instrumento" => 0, "seta" => 1, "selector" => 2, "pulsador" => 3, "piloto" => 4, _ => 5 })
             .ThenBy(d => d.Tag, TagComparer.Instance).ToList();
         if (door.Count == 0) return;
-        var w = doc.Enclosure.Width;
+        // Con dos hojas, los mandos van centrados en la izquierda (no en la junta del centro).
+        var w = doc.Enclosure.LeafWidth;
         var y = Math.Min(200, doc.Enclosure.Height * 0.2);
         foreach (var row in DoorRows(door, w))
         {
@@ -266,8 +281,8 @@ public static class AutoLayout
     public static bool ClashesBehind(PanelDocument doc, PanelDevice door)
     {
         var e = doc.Enclosure;
-        return doc.PlateOf(door.Rear).Any(p => p.X + e.PlateMargin < door.X + door.Width && door.X < p.X + e.PlateMargin + p.Width
-                                    && p.Y + e.PlateMargin < door.Y + door.Height && door.Y < p.Y + e.PlateMargin + p.Height
+        return doc.PlateOf(door.Rear).Any(p => p.X + e.PlateLeft < door.X + door.Width && door.X < p.X + e.PlateLeft + p.Width
+                                    && p.Y + e.PlateTop < door.Y + door.Height && door.Y < p.Y + e.PlateTop + p.Height
                                     && p.Depth + door.Depth > e.UsableDepth + 10);
     }
 

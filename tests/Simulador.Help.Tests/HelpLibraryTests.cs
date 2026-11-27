@@ -47,6 +47,7 @@ public class HelpLibraryTests
     [Theory]
     [InlineData("¿Cómo simulo un circuito?", "circuitos/simular-el-circuito")]
     [InlineData("exportar stl", "cad3d/exportar-para-imprimir-stl-3mf-y-step")]
+    [InlineData("escaneo lidar", "cad3d/piezas-escaneadas-con-el-movil")]
     [InlineData("gerber", "circuitos/fabricar-la-placa")]
     [InlineData("el motor no arranca", "electrico/por-que-no-arranca-el-motor")]
     [InlineData("golpe de ariete", "hidraulica/golpe-de-ariete")]
@@ -95,6 +96,8 @@ public class HelpLibraryTests
         Assert.StartsWith("banco/instrumentos", Library.ForContext("banco", ["Instrumentos", "🧩 Mesa libre"]).Id);
         Assert.StartsWith("banco/avisos", Library.ForContext("banco", ["Avisos", "🧩 Mesa libre"]).Id);
         Assert.StartsWith("banco/mesa-libre", Library.ForContext("banco", ["🧩 Mesa libre"]).Id);
+        Assert.StartsWith("banco/vista-3d", Library.ForContext("banco", ["🧊 Vista 3D", "🧩 Mesa libre"]).Id);
+        Assert.StartsWith("banco/diagrama-de-bloques", Library.ForContext("banco", ["🔗 Diagrama de bloques", "🧩 Mesa libre"]).Id);
         // Sub-pestaña sin tema propio: la introducción de la guía.
         Assert.Equal("circuitos", Library.ForContext("circuitos", ["Mensajes de ngspice"]).Id);
         // Pestaña sin guía (o ninguna): la guía general.

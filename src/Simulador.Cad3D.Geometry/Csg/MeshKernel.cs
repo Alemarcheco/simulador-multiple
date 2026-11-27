@@ -152,6 +152,14 @@ public sealed class MeshKernel : IGeometryKernel
     public ISolid Subtract(ISolid a, ISolid b) => new Solid(Get(a).Subtract(Get(b)));
     public ISolid Intersect(ISolid a, ISolid b) => new Solid(Get(a).Intersect(Get(b)));
 
+    public ISolid FromMesh(Mesh mesh)
+    {
+        var polys = new List<Polygon>(mesh.TriangleCount);
+        foreach (var (a, b, c) in mesh.Triangles())
+            if (Polygon.Create(new[] { a, b, c }) is { } p) polys.Add(p);
+        return new Solid(new CsgSolid(polys));
+    }
+
     public Mesh ToMesh(ISolid solid)
     {
         var tris = new List<(Vec3, Vec3, Vec3)>();

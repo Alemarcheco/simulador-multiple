@@ -44,6 +44,19 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         // Paquetes .edz que trae el programa y los que importó el usuario.
         try { LibraryStore.EnsureLoaded(); }
         catch (Exception ex) { host.SetStatus($"No se pudieron cargar las librerías de fabricante: {ex.Message}"); }
+        // Piezas escaneadas que guarda Diseño 3D como aparato: se cargan al momento y aparecen en «Añadir aparato».
+        ModuleExchange.Subscribe(ModuleExchange.LibraryPackageSaved, path => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var r = LibraryStore.LoadFile(path);
+                FillLibraryMenu();
+                Refresh();
+                if (r.Items.Count > 0)
+                    _host.SetStatus($"Nueva pieza en la librería: {r.Items[0].Brand} {r.Items[0].Reference}. Está en «Añadir aparato › Librería {r.Items[0].Brand}».");
+            }
+            catch (Exception ex) { _host.SetStatus($"No se pudo cargar la pieza guardada: {ex.Message}"); }
+        }));
         _doc = PanelBuilder.Examples[0].Create();
 
         _plate.SelectionChanged += () => OnSelection(_plate);
@@ -54,6 +67,17 @@ internal sealed class TablerosView : DockPanel, IMenuSource
         _door.Hint += t => _host.SetStatus(t);
         _props.Changed += Commit;
         _props.ArrangeRequested += () => { AutoLayout.Arrange(_doc, chooseEnclosure: false); Commit("Redistribuir"); };
+        _props.SmallestOfBrandRequested += () =>
+        {
+            var fits = AutoLayout.Arrange(_doc);
+            PanelBuilder.SuggestFan(_doc);
+            _plate.Fit();
+            _door.Fit();
+            var e = _doc.Enclosure;
+            Commit(e.Reference is not null
+                ? $"Armario elegido: {e.Brand} {e.Reference} ({e.Height:0} × {e.Width:0} × {e.Depth:0} mm){(fits ? "" : " — ni el más grande alcanza")}"
+                : "Ningún modelo de la marca alcanza: se ha elegido una medida genérica");
+        };
         _props.DoubleFrontChanged += () =>
         {
             AutoLayout.Arrange(_doc);

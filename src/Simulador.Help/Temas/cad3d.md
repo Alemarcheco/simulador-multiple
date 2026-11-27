@@ -44,6 +44,17 @@ La operación de texto escribe letras con una fuente de Windows. Elige la altura
 - `Caja para placa…` abre un `.placa` de **Circuitos y PCB** y crea una caja a su medida, con postes en los taladros de montaje y huecos en las paredes para los conectores.
 - `Caja con tapa…` crea un encapsulado con tapa con reborde, postes y ventilación a partir de las medidas interiores que elijas.
 
+## Piezas escaneadas con el móvil
+<!-- palabras: escaneo, escanear, escaner, lidar, iphone, polycam, scaniverse, 3d scanner app, kiri, fotogrametria, usdz, obj, ply, glb, gltf, malla, reparar, arreglar, nube de puntos -->
+`Importar escaneo…` (o **Archivo › Importar escaneo 3D…**) trae una pieza escaneada con el móvil: con tu app **Escáner 3D**, Polycam, Scaniverse, 3d Scanner App, KIRI Engine u otra. Lee **USDZ**, **OBJ** (con su .mtl y textura), **GLB/glTF**, **PLY** y **STL**. Pasa solo de metros a milímetros y pone Z hacia arriba.
+
+- **Qué archivo usar**: el del modo **Objeto** (modelo.usdz, con textura) es el mejor para piezas pequeñas. El de modo **Espacio** (malla.obj o malla.stl) sirve, pero no tiene color y suele traer la mesa. El `nube_puntos.ply` son solo puntos, no una superficie: no vale.
+- **Arreglarla**: en el panel de la derecha. *Cortar la base* quita la mesa o el suelo y deja la base plana; *Quitar trozos sueltos* borra el polvo y los objetos de alrededor; *Tapar agujeros* cierra la pieza; *Triángulos como mucho* la simplifica; *Suavizado* quita el ruido; *Enderezar en planta* gira para que el lado largo vaya según X; *Medida real* la escala a lo que mide de verdad (mídela con el calibre y escribe una medida). Con *Rotación* la colocas de pie o tumbada.
+- **Abajo, en la barra de estado**, sale lo que hizo: triángulos, medida en mm, agujeros tapados y si quedó cerrada.
+- **Combinarla**: puedes añadirle un agujero u otras formas; se calcula con mallas, así que no se puede exportar a STEP (sí a STL y 3MF para imprimir).
+- **Usarla en un tablero**: `Guardar como aparato…` la guarda en la librería de **Tableros eléctricos** con su marca, referencia, tipo y la cara que se apoya en la placa (la de abajo o la de atrás). Aparece al momento en `🧩 Añadir aparato › Librería <marca>` con su forma y sus colores.
+- **Pasar el archivo del iPhone al PC**: en la app, *Compartir* → iCloud Drive, correo o AirDrop; o con el cable desde la app *Dispositivos Apple* / iTunes de Windows, en *Archivos*.
+
 ## Exportar para imprimir: STL, 3MF y STEP
 <!-- palabras: exportar, stl, 3mf, step, imprimir, impresora 3d, cura, prusaslicer, bambu, laminador, slicer, freecad -->
 Están en el menú **Archivo**:

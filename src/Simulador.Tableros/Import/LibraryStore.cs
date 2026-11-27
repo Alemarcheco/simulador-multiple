@@ -45,6 +45,15 @@ public static class LibraryStore
         return new(items, notes);
     }
 
+    /// <summary>Lee un paquete que ya está en su sitio (p. ej. el que acaba de guardar Diseño 3D) y lo añade a la librería.</summary>
+    public static EdzImporter.Result LoadFile(string path)
+    {
+        var r = EdzImporter.Read(path);
+        ManufacturerCatalog.Register(r.Items);
+        return r;
+    }
+
+
     /// <summary>
     /// Lee los archivos elegidos y los añade a la librería: los .edz se copian a la carpeta del usuario; los STEP del
     /// fabricante (.stp/.step, sueltos o en .zip) se giran automáticamente y se guardan como .edz.

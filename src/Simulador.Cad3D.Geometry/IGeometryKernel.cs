@@ -43,6 +43,13 @@ public interface IGeometryKernel
     ISolid Subtract(ISolid a, ISolid b);
     ISolid Intersect(ISolid a, ISolid b);
 
+    /// <summary>
+    /// Sólido a partir de una malla de triángulos (p. ej. una pieza escaneada). Solo lo sabe hacer el motor de mallas;
+    /// el resto avisa.
+    /// </summary>
+    ISolid FromMesh(Mesh mesh) =>
+        throw new NotSupportedException("las piezas escaneadas son mallas: este motor no las admite (expórtalas en STL o 3MF, no en STEP)");
+
     /// <summary>Malla cerrada lista para visualizar o exportar a STL/3MF.</summary>
     Mesh ToMesh(ISolid solid);
 }

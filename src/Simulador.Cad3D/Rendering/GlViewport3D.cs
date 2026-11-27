@@ -51,8 +51,15 @@ public sealed unsafe class GlViewport3D : OpenGlControlBase
         {
             var target = it.Overlay ? overlay : solid;
             float r = it.Color.R / 255f, g = it.Color.G / 255f, b = it.Color.B / 255f, a = it.Color.A / 255f;
+            var colors = it.TriangleColors is { } tc && tc.Count == it.Mesh.TriangleCount ? tc : null;
+            int ti = -1;
             foreach (var (p0, p1, p2) in it.Mesh.Triangles())
             {
+                if (colors is not null)
+                {
+                    uint c = colors[++ti];
+                    r = ((c >> 16) & 0xFF) / 255f; g = ((c >> 8) & 0xFF) / 255f; b = (c & 0xFF) / 255f;
+                }
                 var n = (p1 - p0).Cross(p2 - p0).Normalized();
                 foreach (var p in new[] { p0, p1, p2 })
                 {

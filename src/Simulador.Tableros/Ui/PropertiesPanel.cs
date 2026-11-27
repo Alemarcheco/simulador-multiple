@@ -18,6 +18,8 @@ internal sealed class PropertiesPanel : ScrollViewer
     public event Action? ArrangeRequested;
     /// <summary>Se ha marcado o quitado el doble frente: hay que elegir armario y repartir de nuevo.</summary>
     public event Action? DoubleFrontChanged;
+    /// <summary>Elegir el armario más pequeño de la marca en el que cabe todo y redistribuir.</summary>
+    public event Action? SmallestOfBrandRequested;
 
     public PropertiesPanel()
     {
@@ -118,7 +120,8 @@ internal sealed class PropertiesPanel : ScrollViewer
                 _stack.Children.Add(new TextBlock
                 {
                     TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.7,
-                    Text = current.Verified ? $"Medidas de la ficha del fabricante ({current.Source})." : "Medidas típicas: la ficha del fabricante no las da; compruébalas en su catálogo.",
+                    Text = current.Source.StartsWith("Pieza escaneada", StringComparison.Ordinal) ? $"Medidas del escaneo ({current.Source})."
+                        : current.Verified ? $"Medidas de la ficha del fabricante ({current.Source})." : "Medidas típicas: la ficha del fabricante no las da; compruébalas en su catálogo.",
                 });
         }
         Combo("Ubicación", ["Placa de montaje", "Puerta", "Fuera del tablero (campo)"], (int)d.Location, i => d.Location = (DeviceLocation)i);
@@ -175,15 +178,59 @@ internal sealed class PropertiesPanel : ScrollViewer
         var e = doc.Enclosure;
         Title("Envolvente", "Nada seleccionado: aquí cambias la caja o el armario. Haz clic en un aparato para ver los suyos.");
         Text("Nombre del tablero", doc.Name, v => doc.Name = v);
+        // Librería de envolventes por fabricante: al elegir un modelo, la placa y la puerta toman sus medidas.
+        var brands = EnclosureCatalog.Brands.Prepend("Genérico (medidas típicas)").ToArray();
+        Combo("Fabricante del armario", brands, Math.Max(0, Array.IndexOf(brands, e.Brand ?? "")), i =>
+        {
+            if (i == 0) { e.ClearCatalog(); return; }
+            // La marca nueva: el modelo más parecido a la medida actual (el usuario afina después en «Modelo»).
+            var best = EnclosureCatalog.Candidates(brands[i], e.DoubleFront)
+                .OrderBy(m => Math.Abs(m.Width - e.Width) + Math.Abs(m.Height - e.Height) + 0.5 * Math.Abs(m.Depth - e.Depth))
+                .FirstOrDefault() ?? EnclosureCatalog.OfBrand(brands[i]).First();
+            best.ApplyTo(e);
+        });
+        if (e.Brand is { } brand)
+        {
+            var series = EnclosureCatalog.OfBrand(brand).Select(m => m.Series).Distinct().ToArray();
+            var current = e.Series is { } cs0 && series.Contains(cs0) ? cs0 : series[0];
+            if (series.Length > 1)
+                Combo("Serie", series, Array.IndexOf(series, current), i =>
+                {
+                    // Otra serie: su modelo más parecido a la medida actual.
+                    EnclosureCatalog.OfBrand(brand).Where(m => m.Series == series[i])
+                        .OrderBy(m => Math.Abs(m.Width - e.Width) + Math.Abs(m.Height - e.Height) + 0.5 * Math.Abs(m.Depth - e.Depth))
+                        .First().ApplyTo(e);
+                });
+            var models = EnclosureCatalog.OfBrand(brand).Where(m => m.Series == current)
+                .OrderBy(m => m.Height).ThenBy(m => m.Width).ThenBy(m => m.Depth).ToList();
+            Combo("Modelo (alto × ancho × fondo, mm)", models.Select(m => m.Display).ToArray(),
+                models.FindIndex(m => m.Reference == e.Reference), i => models[i].ApplyTo(e));
+            if (e.CatalogModel is { } cm)
+            {
+                _stack.Children.Add(new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.8,
+                    Text = $"{cm.Material}, {cm.Ip}, {(cm.Doors > 1 ? "2 puertas" : "1 puerta")}. Placa de montaje {cm.PlateWidth:0} × {cm.PlateHeight:0} mm (ancho × alto).\n{cm.Provenance}" +
+                           (cm.FloorStanding ? "\nEl zócalo de 100 mm se pide aparte; se dibuja para ver el conjunto." : ""),
+                });
+                if (e.DoubleFront && !cm.FloorStanding)
+                    _stack.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Brushes.OrangeRed, Text = "Este modelo es mural: el doble frente pide un armario de pie." });
+            }
+            var smallest = new Button { Content = "Elegir el más pequeño que sirva", Margin = new Thickness(0, 4, 0, 0) };
+            ToolTip.SetTip(smallest, $"Prueba los modelos {brand} de menor a mayor y redistribuye los aparatos en el primero en que caben.");
+            smallest.Click += (_, _) => SmallestOfBrandRequested?.Invoke();
+            _stack.Children.Add(smallest);
+        }
         Combo("Tipo", [Enclosure.KindName(EnclosureKind.MuralMetalico), Enclosure.KindName(EnclosureKind.ArmarioDePie), Enclosure.KindName(EnclosureKind.CajaPoliester)],
             (int)e.Kind, i => e.Kind = (EnclosureKind)i);
         var sizes = e.DoubleFront ? AutoLayout.DoubleFrontSizes : AutoLayout.StandardSizes;
-        Combo("Medida normalizada", sizes.Select(s => $"{s.W:0} × {s.H:0} × {s.D:0} mm").Prepend("A medida").ToArray(),
-            Array.FindIndex(sizes, s => s.W == e.Width && s.H == e.Height && s.D == e.Depth) + 1,
+        Combo("Medida genérica (an × al × f)", sizes.Select(s => $"{s.W:0} × {s.H:0} × {s.D:0} mm").Prepend(e.Brand is null ? "A medida" : "Del catálogo").ToArray(),
+            e.Brand is null ? Array.FindIndex(sizes, s => s.W == e.Width && s.H == e.Height && s.D == e.Depth) + 1 : 0,
             i =>
             {
                 if (i == 0) return;
                 (e.Width, e.Height, e.Depth) = sizes[i - 1];
+                e.ClearCatalog();
             });
         var df = new CheckBox { Content = "Doble frente (placa y puerta delante y detrás)", IsChecked = e.DoubleFront, Margin = new Thickness(0, 4, 0, 0) };
         ToolTip.SetTip(df, "Armario de pie con dos placas espalda con espalda, cada una con su puerta. Al marcarlo se elige armario y se reparten los aparatos entre las dos caras.");
@@ -194,9 +241,10 @@ internal sealed class PropertiesPanel : ScrollViewer
             DoubleFrontChanged?.Invoke();
         };
         _stack.Children.Add(df);
-        Number("Ancho (mm)", e.Width, 150, 3000, v => e.Width = v, 50);
-        Number("Alto (mm)", e.Height, 150, 2400, v => e.Height = v, 50);
-        Number("Fondo (mm)", e.Depth, 80, 800, v => e.Depth = v, 50);
+        // Cambiar una medida a mano deja la envolvente «a medida» (ya no es el modelo del catálogo).
+        Number("Ancho (mm)", e.Width, 150, 3000, v => { if (v != e.Width) { e.Width = v; e.ClearCatalog(); } }, 50);
+        Number("Alto (mm)", e.Height, 150, 2400, v => { if (v != e.Height) { e.Height = v; e.ClearCatalog(); } }, 50);
+        Number("Fondo (mm)", e.Depth, 80, 800, v => { if (v != e.Depth) { e.Depth = v; e.ClearCatalog(); } }, 50);
         Text("Grado de protección", e.Ip, v => e.Ip = v);
         var arrange = new Button { Content = "Redistribuir en esta medida", Margin = new Thickness(0, 6, 0, 0) };
         arrange.Click += (_, _) => ArrangeRequested?.Invoke();
